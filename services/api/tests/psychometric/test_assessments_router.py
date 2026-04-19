@@ -10904,6 +10904,612 @@ class TestErqRouting:
         assert body["severity"] == "continuous"
 
 
+class TestScsSfRouting:
+    """SCS-SF (Raes 2011) router dispatch.
+
+    Wire contract invariants pinned here — especially the
+    asymmetric scoring convention that makes SCS-SF unique in the
+    package:
+    - **Continuous-sentinel severity** — ``severity="continuous"``
+      (Raes 2011 published no bands).  No hand-rolled thresholds.
+    - **6 subscales populated** — largest subscale count in the
+      package.  Keys: ``self_kindness`` / ``self_judgment`` /
+      ``common_humanity`` / ``isolation`` / ``mindfulness`` /
+      ``over_identification``.  Each is a 2-item raw sum (2-10).
+    - **Asymmetric scoring (TOTAL post-flip, SUBSCALES raw)** —
+      the deliberate scoring convention.  Subscales read as their
+      NATIVE construct (so ``subscale_self_judgment=10`` means the
+      patient maximally endorsed self-judgment), while the total
+      reads in the self-compassion direction (higher = more
+      compassion) via post-flipping the 6 uncompassionate items.
+      This is the reason for the 6-subscale wire exposure — the
+      positive/negative dyad pattern is clinically readable.  If
+      subscales were post-flipped, the "high SK + high SJ" CFT-
+      target dyad would collapse to indistinguishable mid values.
+    - **Built-in acquiescence catch** — all-1s and all-5s both yield
+      total=36 (midpoint); the test layer pins this at the wire
+      boundary so a naive "higher = always better" renderer must
+      surface subscales to detect the pattern.
+    - **1-5 Likert envelope** — 0 rejects (below floor), 6 rejects
+      (above ceiling).  12 items required.
+    - No ``cutoff_used`` / ``positive_screen`` / ``triggering_items``.
+    - ``requires_t3`` always False — no safety item.
+    - Cross-instrument coexistence: SCS-SF + PHQ-9 (low SCS-SF +
+      depression → CFT routing), SCS-SF + TAS-20 (shame
+      +alexithymia → double-barrier CFT + affect-labeling), SCS-SF
+      + AUDIT (substance use + low self-compassion → Brooks 2012
+      relapse-risk pattern).
+    """
+
+    def test_all_threes_midline_total_is_36(self, client: TestClient) -> None:
+        """All items at 3 (midline) → total 36 (midpoint).  Each
+        subscale at 6.  Midline flip-invariance — the balanced
+        construct design means midline responders land at the
+        exact center."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": "user-scssf-mid",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "scssf"
+        assert body["total"] == 36
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        subs = body["subscales"]
+        # Every subscale at 6 (2 items × raw 3).
+        for key in (
+            "self_kindness",
+            "self_judgment",
+            "common_humanity",
+            "isolation",
+            "mindfulness",
+            "over_identification",
+        ):
+            assert subs[key] == 6, f"{key} should be 6"
+
+    def test_all_ones_yields_total_36_acquiescence_invariant(
+        self, client: TestClient
+    ) -> None:
+        """All items at 1 (strongly disagree).  Total = 36 because
+        positive items (stay 1) and negative items (flip to 5) sum
+        to 12×3 equivalent.  Clinically: a patient who disagreed
+        with EVERY item lands at the midline self-compassion total
+        — strongly disagreeing with "I'm kind to myself" offsets
+        strongly disagreeing with "I'm judgmental toward myself".
+        Subscales reveal the pattern: every subscale at 2
+        (floor)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [1] * 12,
+                "user_id": "user-scssf-ones",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["total"] == 36
+        subs = body["subscales"]
+        for key in subs:
+            assert subs[key] == 2
+
+    def test_all_fives_yields_total_36_acquiescence_invariant(
+        self, client: TestClient
+    ) -> None:
+        """All items at 5.  Total = 36 (same reason, opposite
+        direction).  Subscales all at 10 (ceiling).  The
+        acquiescent 'yes to everything' responder is DETECTABLE
+        at the subscale level but not at the total.  Pins that
+        the wire exposes subscales precisely because the total
+        alone cannot distinguish this bias."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [5] * 12,
+                "user_id": "user-scssf-fives",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["total"] == 36
+        subs = body["subscales"]
+        for key in subs:
+            assert subs[key] == 10
+
+    def test_maximum_self_compassion_total_60(
+        self, client: TestClient
+    ) -> None:
+        """Positive items (2, 3, 5, 6, 7, 10) at 5; negative items
+        (1, 4, 8, 9, 11, 12) at 1.  Post-flip all 5s → total 60.
+        Subscales: SK/CH/M = 10 each, SJ/I/OI = 2 each.  The
+        protective profile."""
+        items = [0] * 12
+        for pos in (2, 3, 5, 6, 7, 10):
+            items[pos - 1] = 5
+        for pos in (1, 4, 8, 9, 11, 12):
+            items[pos - 1] = 1
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": items,
+                "user_id": "user-scssf-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["total"] == 60
+        subs = body["subscales"]
+        assert subs["self_kindness"] == 10
+        assert subs["common_humanity"] == 10
+        assert subs["mindfulness"] == 10
+        assert subs["self_judgment"] == 2
+        assert subs["isolation"] == 2
+        assert subs["over_identification"] == 2
+
+    def test_minimum_self_compassion_total_12_relapse_risk(
+        self, client: TestClient
+    ) -> None:
+        """Positive items at 1; negative items at 5.  Post-flip all
+        1s → total 12 (floor).  Subscales: SK/CH/M = 2, SJ/I/OI =
+        10.  The relapse-risk profile — Brooks 2012 SUD validation
+        / Tangney 2011 shame-addiction pathway — the intervention
+        layer routes this profile to CFT before the next urge
+        episode."""
+        items = [0] * 12
+        for pos in (2, 3, 5, 6, 7, 10):
+            items[pos - 1] = 1
+        for pos in (1, 4, 8, 9, 11, 12):
+            items[pos - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": items,
+                "user_id": "user-scssf-min",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["total"] == 12
+        subs = body["subscales"]
+        assert subs["self_kindness"] == 2
+        assert subs["common_humanity"] == 2
+        assert subs["mindfulness"] == 2
+        assert subs["self_judgment"] == 10
+        assert subs["isolation"] == 10
+        assert subs["over_identification"] == 10
+        # No safety escalation regardless of score.
+        assert body["requires_t3"] is False
+
+    def test_subscales_are_raw_not_post_flip_wire_contract(
+        self, client: TestClient
+    ) -> None:
+        """Critical asymmetry pin at the WIRE boundary.
+
+        Set only item 11 (Self-Judgment reverse) to 5; leave all
+        others at 3.  If the router were silently post-flipping
+        subscales, ``subscale_self_judgment`` would be (6-5) + 3 =
+        4.  Raw convention gives 5 + 3 = 8 — this is what must
+        come over the wire."""
+        items = [3] * 12
+        items[10] = 5  # item 11 raw=5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": items,
+                "user_id": "user-scssf-raw-sub",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        subs = body["subscales"]
+        assert subs["self_judgment"] == 8  # raw
+        assert subs["self_judgment"] != 4  # NOT post-flipped
+
+    def test_high_sk_and_high_sj_cft_target_dyad_visible(
+        self, client: TestClient
+    ) -> None:
+        """High Self-Kindness AND high Self-Judgment — the CFT-
+        target dyad.  Items 2/6 (SK) at 5; items 11/12 (SJ) at 5;
+        others at 3.  Subscales should show both at 10, which is
+        the clinically actionable pattern CFT explicitly targets
+        (positive self-beliefs coexisting with harsh self-
+        criticism).  If subscales collapsed to post-flip, SJ would
+        read 2 (low) and the pattern would be invisible."""
+        items = [3] * 12
+        items[1] = 5   # item 2 (SK)
+        items[5] = 5   # item 6 (SK)
+        items[10] = 5  # item 11 (SJ)
+        items[11] = 5  # item 12 (SJ)
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": items,
+                "user_id": "user-scssf-cft-dyad",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        subs = body["subscales"]
+        assert subs["self_kindness"] == 10
+        assert subs["self_judgment"] == 10  # BOTH high — the CFT dyad
+
+    def test_six_subscale_keys_on_wire(self, client: TestClient) -> None:
+        """The wire envelope carries exactly 6 subscale keys.
+        Renderers must enumerate keys, not hardcode a fixed count.
+        Pins the SCS-SF subscale count against TAS-20 (3) /
+        DERS-16 (5) / ERQ (2) / URICA (4)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": "user-scssf-keys",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        subs = response.json()["subscales"]
+        assert set(subs.keys()) == {
+            "self_kindness",
+            "self_judgment",
+            "common_humanity",
+            "isolation",
+            "mindfulness",
+            "over_identification",
+        }
+        assert len(subs) == 6
+
+    def test_cutoff_used_not_populated(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": "user-scssf-no-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [1] * 12,
+                "user_id": "user-scssf-no-trig",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": "user-scssf-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.json()["instrument_version"] == "scssf-1.0.0"
+
+    def test_eleven_items_rejects(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 11,
+                "user_id": "user-scssf-eleven",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_thirteen_items_rejects(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 13,
+                "user_id": "user-scssf-thirteen",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_zero_rejects_below_floor(self, client: TestClient) -> None:
+        bad = [3] * 12
+        bad[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": bad,
+                "user_id": "user-scssf-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_six_rejects_above_ceiling(self, client: TestClient) -> None:
+        bad = [3] * 12
+        bad[0] = 6
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": bad,
+                "user_id": "user-scssf-six",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_persists_raw_pre_flip_items_with_subscales(
+        self, client: TestClient
+    ) -> None:
+        """POST persists the RAW 12-tuple (pre-flip) to the
+        repository, and the 6-subscale RAW-sum map to subscales.
+        Audit invariant: a clinician reviewing the record sees
+        what the patient ticked (not internal post-flip) AND reads
+        subscales in native construct direction."""
+        user = "user-scssf-persist"
+        raw = [3] * 12
+        # Distinctive values at reverse positions.
+        raw[0] = 5   # item 1 OI reverse; raw stored as 5, NOT flipped 1
+        raw[10] = 4  # item 11 SJ reverse; raw stored as 4, NOT flipped 2
+        raw[1] = 5   # item 2 SK positive
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": raw,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "scssf"
+        assert rec.severity == "continuous"
+        # Raw audit invariant: reverse-item values preserved pre-flip.
+        assert rec.raw_items[0] == 5   # NOT 1 (post-flip)
+        assert rec.raw_items[10] == 4  # NOT 2 (post-flip)
+        assert rec.raw_items[1] == 5
+        # Subscales populated with RAW sums.
+        assert rec.subscales is not None
+        # OI = items 1, 9 → raw 5 + 3 = 8.
+        assert rec.subscales["over_identification"] == 8
+        # SJ = items 11, 12 → raw 4 + 3 = 7.
+        assert rec.subscales["self_judgment"] == 7
+        # SK = items 2, 6 → raw 5 + 3 = 8.
+        assert rec.subscales["self_kindness"] == 8
+
+    def test_history_projects_scssf(self, client: TestClient) -> None:
+        user = "user-scssf-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert hist.status_code == 200
+        items = hist.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "scssf"
+        assert entry["total"] == 36
+        assert entry["severity"] == "continuous"
+
+    def test_coexists_with_phq9_low_compassion_plus_depression_routing(
+        self, client: TestClient
+    ) -> None:
+        """SCS-SF + PHQ-9 co-persist.  The low-compassion-plus-
+        depression profile is the Luyten 2013 / Werner 2019 finding
+        — self-criticism mediates the depression outcome.  Router
+        must preserve both signals for the intervention-selection
+        layer (CFT vs standard CBT routing)."""
+        user = "user-scssf-phq9"
+        phq = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [2] * 9,  # moderate
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert phq.status_code == 201
+
+        # Low-compassion submission (pure negative profile).
+        items = [0] * 12
+        for pos in (2, 3, 5, 6, 7, 10):
+            items[pos - 1] = 1
+        for pos in (1, 4, 8, 9, 11, 12):
+            items[pos - 1] = 5
+        sc = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": items,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert sc.status_code == 201
+        sc_body = sc.json()
+        assert sc_body["total"] == 12
+        assert sc_body["requires_t3"] is False
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "phq9" in instruments
+        assert "scssf" in instruments
+
+    def test_coexists_with_tas20_shame_plus_alexithymia(
+        self, client: TestClient
+    ) -> None:
+        """SCS-SF + TAS-20 — the 'double-barrier' profile: shame
+        (low compassion) + alexithymia (can't identify the
+        emotion driving the shame).  Intervention layer routes
+        this combination to affect-labeling FIRST (TAS-20
+        upstream), compassion work SECOND (SCS-SF), skills work
+        THIRD (DERS-16)."""
+        user = "user-scssf-tas20"
+        ta = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert ta.status_code == 201
+
+        sc = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert sc.status_code == 201
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "tas20" in instruments
+        assert "scssf" in instruments
+
+    def test_six_subscale_count_distinguishes_from_other_instruments(
+        self, client: TestClient
+    ) -> None:
+        """Sanity pin that SCS-SF ships 6 subscales while its
+        sibling subscale-bearing instruments ship different
+        counts.  Renderers must not hardcode any fixed subscale
+        count — enumerate keys."""
+        user = "user-scssf-subscale-counts"
+        # SCS-SF: 6.
+        sc = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert len(sc.json()["subscales"]) == 6
+        # DERS-16: 5.
+        de = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert len(de.json()["subscales"]) == 5
+        # TAS-20: 3.
+        ta = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert len(ta.json()["subscales"]) == 3
+        # ERQ: 2.
+        er = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert len(er.json()["subscales"]) == 2
+
+    def test_continuous_sentinel_not_banded(self, client: TestClient) -> None:
+        """Pins that SCS-SF joins the continuous-sentinel cluster,
+        not the banded cluster (TAS-20)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "user_id": "user-scssf-sentinel",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["severity"] == "continuous"
+        assert body["severity"] not in (
+            "non_alexithymic",
+            "possible_alexithymia",
+            "alexithymic",
+        )
+
+    def test_ignores_mdq_and_sex_fields(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "scssf",
+                "items": [3] * 12,
+                "sex": "female",
+                "concurrent_symptoms": True,
+                "functional_impairment": "moderate",
+                "user_id": "user-scssf-ignores",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "scssf"
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

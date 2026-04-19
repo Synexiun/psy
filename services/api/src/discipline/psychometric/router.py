@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ.
+CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -635,6 +635,55 @@ Safety routing:
   ``positive_screen`` NOT set — ERQ has no binary cutoff.  No T3
   — the 10 items probe self-rated strategy use; none probe
   suicidality.  See ``scoring/erq.py``.
+- SCS-SF (Raes 2011): 12 items, 1-5 Likert.  Measures **self-
+  compassion** — the 3-component construct pair (self-kindness
+  vs self-judgment, common humanity vs isolation, mindfulness
+  vs over-identification) that is the empirically documented
+  antagonist of shame.  Clinically load-bearing for the
+  platform: shame-avoidance drives the abstinence-violation
+  effect (Marlatt 1985) — relapse → shame → disengagement →
+  next relapse — and low SCS-SF is the measurement signal
+  identifying patients at relapse-risk-via-shame.  The product
+  CLAUDE.md enshrines "compassion-first relapse copy" as a
+  non-negotiable rule; SCS-SF is the measurement lever the
+  intervention-selection layer reads to route low-compassion
+  patients to Compassion Focused Therapy (CFT; Gilbert 2014)
+  tool variants BEFORE the next urge episode.  Six subscales per
+  Raes 2011 factor structure — Self-Kindness (items 2, 6),
+  Self-Judgment (11, 12), Common Humanity (5, 10), Isolation
+  (4, 8), Mindfulness (3, 7), Over-Identification (1, 9).
+  **Novel 6-subscale wire** — largest subscale count in the
+  package (DERS-16 had 5, URICA had 4, TAS-20 had 3, ERQ /
+  LOT-R had 2).  Surfaced via the ``subscales`` map with keys
+  ``self_kindness`` / ``self_judgment`` / ``common_humanity`` /
+  ``isolation`` / ``mindfulness`` / ``over_identification``.
+  **Novel scoring asymmetry** — the TOTAL is computed POST-flip
+  (6 reverse items arithmetically reflected → aggregate reads
+  in the self-compassion direction, range 12-60), while
+  SUBSCALES are computed on RAW values (native construct
+  direction — ``subscale_self_judgment`` reads as "how much
+  self-judgment does the patient endorse", NOT the post-flip
+  inversion).  This asymmetry is DELIBERATE per Raes 2011 /
+  Neff 2016 scoring methodology; it preserves the positive/
+  negative construct dyad structure so a clinician reading the
+  subscale card sees the native dyad imbalance (e.g. "high SK
+  and high SJ" = CFT-target dyad) rather than the aggregate-
+  direction collapse.  Subscales are 2-10 (2 items × 1-5
+  Likert).  **Built-in acquiescence catch**: all-1s and all-5s
+  both yield total=36 (midpoint) because the balanced positive
+  and negative items cancel — a feature of Neff 2003 / Raes
+  2011 instrument design, not a bug.  The clinician-UI layer
+  flags this pattern for bias review.  Higher-is-better
+  direction (more self-compassion = higher total); uniform
+  with WHO-5 / CD-RISC-10 / LOT-R / DTCQ-8 / BRS.  **Continuous-
+  sentinel severity** — Raes 2011 published no validated bands;
+  hand-rolling a cutoff from the descriptive "< 30 low, > 45
+  high" literature ranges would violate CLAUDE.md's "Don't
+  hand-roll severity thresholds" rule.  Router emits
+  ``severity="continuous"``.  ``cutoff_used`` /
+  ``positive_screen`` NOT set.  No T3 — the 12 items probe
+  dispositional self-related responding; none probe suicidality.
+  See ``scoring/scssf.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -772,6 +821,10 @@ from .scoring.readiness_ruler import (
     InvalidResponseError as ReadinessRulerInvalid,
     score_readiness_ruler,
 )
+from .scoring.scssf import (
+    InvalidResponseError as ScsSfInvalid,
+    score_scssf,
+)
 from .scoring.sds import (
     InvalidResponseError as SdsInvalid,
     Substance as SdsSubstance,
@@ -838,6 +891,7 @@ Instrument = Literal[
     "lotr",
     "tas20",
     "erq",
+    "scssf",
 ]
 
 
@@ -881,6 +935,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "lotr": 10,
     "tas20": 20,
     "erq": 10,
+    "scssf": 12,
 }
 
 
@@ -2288,6 +2343,82 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=er.instrument_version,
         )
+    if payload.instrument == "scssf":
+        # Raes, Pommier, Neff & Van Gucht 2011 Self-Compassion Scale
+        # Short Form — the validated 12-item short form of Neff 2003's
+        # 26-item SCS.  Measures self-compassion: the 3-component
+        # construct pair (self-kindness vs self-judgment, common
+        # humanity vs isolation, mindfulness vs over-identification)
+        # that is the empirically documented antagonist of shame
+        # (MacBeth & Gumley 2012 meta-analysis).  Clinically load-
+        # bearing for the platform's "compassion-first relapse copy"
+        # non-negotiable (CLAUDE.md): shame-avoidance drives the
+        # abstinence-violation effect (Marlatt 1985), and low SCS-SF
+        # is the measurement signal identifying relapse-risk-via-
+        # shame patients.  The intervention-selection layer routes
+        # low-compassion / high-uncompassionate-self-responding
+        # profiles to CFT (Gilbert 2014) tool variants BEFORE the
+        # next urge episode, and proactively re-engages those
+        # patients post-relapse with compassion-framed copy (never
+        # "streak reset", never "you failed").
+        # 12 items, 1-5 Likert.  Reverse-keying on the 6 uncompassion-
+        # ate items (1, 4, 8, 9, 11, 12) via the PSWQ / LOT-R /
+        # TAS-20 arithmetic-reflection idiom (``flipped = 6 - raw``).
+        # Six 2-item subscales per Raes 2011 / Neff 2003 factor
+        # structure — largest subscale count in the package (DERS-16
+        # had 5, URICA had 4, TAS-20 had 3, ERQ / LOT-R had 2).
+        # Surfaced via ``subscales`` map with keys ``self_kindness``
+        # / ``self_judgment`` / ``common_humanity`` / ``isolation`` /
+        # ``mindfulness`` / ``over_identification``.
+        # **Novel scoring asymmetry** — TOTAL is POST-flip (aggregate
+        # reads in self-compassion direction, range 12-60), but
+        # SUBSCALES are RAW (native construct direction — SJ reads as
+        # "how much self-judgment does the patient endorse", NOT the
+        # post-flip inversion).  This is DELIBERATE per Raes 2011 /
+        # Neff 2016 methodology: subscales preserve the positive /
+        # negative construct dyad structure so a clinician can read
+        # the dyad imbalance directly (e.g. "high SK + high SJ" =
+        # CFT-target dyad) rather than the collapsed post-flip view.
+        # Note this differs from TAS-20 where subscales ARE post-
+        # flipped — because TAS-20's 3 subscales all measure the
+        # same pathology direction, while SCS-SF's 6 subscales are
+        # intentional positive/negative pairs.
+        # **Built-in acquiescence catch**: all-1s and all-5s both
+        # yield total=36 (midpoint) because the balanced positive
+        # and negative items cancel.  This is a FEATURE of the
+        # Neff 2003 / Raes 2011 instrument design — the clinician-
+        # UI layer flags this pattern (all subscales simultaneously
+        # at 10) for bias review.
+        # **Higher-is-better** direction (uniform with WHO-5 /
+        # CD-RISC-10 / LOT-R / DTCQ-8 / BRS).
+        # **Continuous-sentinel** — Raes 2011 published no validated
+        # bands.  Hand-rolling a cutoff from descriptive ranges
+        # (< 30 low, > 45 high in the literature) would violate
+        # CLAUDE.md's "Don't hand-roll severity thresholds" rule.
+        # Router emits ``severity="continuous"`` (uniform with
+        # DERS-16 / ERQ / BRS / PSWQ / SDS / K6 / CD-RISC-10 /
+        # LOT-R / PACS / BIS-11).
+        # ``cutoff_used`` / ``positive_screen`` NOT set.  No T3 —
+        # the 12 items probe dispositional self-related responding;
+        # none probe suicidality.  Acute ideation screening stays
+        # on PHQ-9 item 9 / C-SSRS.  See ``scoring/scssf.py``.
+        sc = score_scssf(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="scssf",
+            total=sc.total,
+            severity="continuous",
+            requires_t3=False,
+            subscales={
+                "self_kindness": sc.subscale_self_kindness,
+                "self_judgment": sc.subscale_self_judgment,
+                "common_humanity": sc.subscale_common_humanity,
+                "isolation": sc.subscale_isolation,
+                "mindfulness": sc.subscale_mindfulness,
+                "over_identification": sc.subscale_over_identification,
+            },
+            instrument_version=sc.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2442,6 +2573,7 @@ async def submit_assessment(
         LotrInvalid,
         Tas20Invalid,
         ErqInvalid,
+        ScsSfInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
