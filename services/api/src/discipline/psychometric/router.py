@@ -1,5 +1,5 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
-C-SSRS, PSS-10, DAST-10, MDQ.
+C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -34,13 +34,16 @@ Safety routing:
   T3 check per Kroenke 2001).
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
-- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ have no safety
-  items — ``requires_t3`` is always False for these instruments.
-  WHO-5 ``depression_screen`` band is *not* a T3 trigger; T3 is
-  reserved for active suicidality per
+- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5 have
+  no safety items — ``requires_t3`` is always False for these
+  instruments.  WHO-5 ``depression_screen`` band is *not* a T3
+  trigger; T3 is reserved for active suicidality per
   Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ screen
   is a referral signal for a bipolar-spectrum structured interview,
   not a crisis signal — see ``scoring/mdq.py`` module docstring.
+  A positive PC-PTSD-5 is a referral signal for trauma-informed care
+  (CAPS-5 / PCL-5 structured interview, EMDR / TF-CBT intake), not a
+  crisis signal — see ``scoring/pcptsd5.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -86,6 +89,10 @@ from .scoring.mdq import (
     InvalidResponseError as MdqInvalid,
     score_mdq,
 )
+from .scoring.pcptsd5 import (
+    InvalidResponseError as PcPtsd5Invalid,
+    score_pcptsd5,
+)
 from .scoring.phq9 import InvalidResponseError as Phq9Invalid, score_phq9
 from .scoring.pss10 import InvalidResponseError as Pss10Invalid, score_pss10
 from .scoring.who5 import InvalidResponseError as Who5Invalid, score_who5
@@ -110,6 +117,7 @@ Instrument = Literal[
     "pss10",
     "dast10",
     "mdq",
+    "pcptsd5",
 ]
 
 
@@ -126,6 +134,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pss10": 10,
     "dast10": 10,
     "mdq": 13,
+    "pcptsd5": 5,
 }
 
 
@@ -357,6 +366,24 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=d.instrument_version,
         )
+    if payload.instrument == "pcptsd5":
+        # Prins 2016 — 5-item PTSD screen, positive at >= 3.  Total
+        # carries the positive_count (0-5); severity echoes
+        # positive/negative_screen uniform with AUDIT-C and MDQ so
+        # a chart-view client rendering screen-style instruments
+        # uses one projection layer across all three.
+        pt = score_pcptsd5(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pcptsd5",
+            total=pt.positive_count,
+            severity=(
+                "positive_screen" if pt.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=pt.positive_screen,
+            instrument_version=pt.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -484,6 +511,7 @@ async def submit_assessment(
         Pss10Invalid,
         Dast10Invalid,
         MdqInvalid,
+        PcPtsd5Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

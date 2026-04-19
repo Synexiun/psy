@@ -46,6 +46,12 @@ LOINC_CODES: dict[str, str] = {
     # integer plus the MDQ LOINC code know to interpret it as an endorsed-
     # item count, not a severity sum.
     "mdq": "71354-5",
+    # PC-PTSD-5 (Prins 2016) uses LOINC 89204-2 for the total endorsed-item
+    # count.  Same semantic as MDQ: ``valueInteger`` carries the
+    # ``positive_count`` (0-5), not a weighted sum.  A positive screen
+    # (>= 3) is a referral signal for CAPS-5 / PCL-5 / trauma-informed
+    # care, not a severity band.
+    "pcptsd5": "89204-2",
 }
 
 LOINC_DISPLAY: dict[str, str] = {
@@ -57,6 +63,7 @@ LOINC_DISPLAY: dict[str, str] = {
     "who5": "WHO-5 Well-Being Index total score",
     "pss10": "Perceived Stress Scale 10 item (PSS-10) total score",
     "mdq": "Mood Disorder Questionnaire (MDQ) positive item count",
+    "pcptsd5": "Primary Care PTSD Screen for DSM-5 (PC-PTSD-5) positive item count",
 }
 
 # HL7 v3 terminology URIs — pinned as constants so callers (and tests) can

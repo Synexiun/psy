@@ -1178,6 +1178,209 @@ class TestMdqRouting:
 
 
 # =============================================================================
+# PC-PTSD-5 (Prins 2016) — 5-item primary-care PTSD screen
+# =============================================================================
+
+
+class TestPcPtsd5Routing:
+    """PC-PTSD-5 over the wire.
+
+    Router-level contract verification for the 5-item cutoff screen.
+    The scorer's own unit tests exhaustively pin the ``>= 3`` cutoff
+    and item validation; these tests pin (1) the dispatch branch picks
+    ``score_pcptsd5``, (2) the wire envelope surfaces ``positive_screen``
+    and carries the positive-item count as ``total`` (uniform with MDQ
+    and AUDIT-C), and (3) ``requires_t3`` is always False — PC-PTSD-5
+    has no safety item so the T3 pathway is never reachable from a
+    PTSD screen (per Docs/Whitepapers/04_Safety_Framework.md §T3).
+    """
+
+    def _post_pcptsd5(
+        self,
+        client: TestClient,
+        *,
+        positive_count: int,
+    ) -> Any:
+        """Build a PC-PTSD-5 request body with N items endorsed (yes).
+
+        Order doesn't matter — the scorer sums — but endorsing the
+        first N items makes test intent obvious to a reader.
+        """
+        items = [1] * positive_count + [0] * (5 - positive_count)
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "pcptsd5", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_three_positives_at_cutoff_is_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """At the Prins 2016 cutoff (exactly 3 of 5 endorsed) → the
+        wire response surfaces ``positive_screen=True``.  This is the
+        boundary case a fence-post bug would break most visibly."""
+        resp = self._post_pcptsd5(client, positive_count=3)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pcptsd5"
+        # ``total`` carries the positive-item count (0-5), not a
+        # weighted sum.  Receiving FHIR systems read this as the
+        # valueInteger on the Observation emission.
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "pcptsd5-1.0.0"
+
+    def test_two_positives_below_cutoff_is_negative_screen(
+        self, client: TestClient
+    ) -> None:
+        """Below cutoff (2 of 5 endorsed) → negative_screen.  Prins 2016
+        considered cutoff 2 in the validation work but selected 3; the
+        router must follow the chosen operating point."""
+        resp = self._post_pcptsd5(client, positive_count=2)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pcptsd5"
+        assert body["total"] == 2
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_zero_positives_is_negative_screen(self, client: TestClient) -> None:
+        """All items negative → negative screen.  The degenerate case:
+        a patient who answered ``no`` to every symptom."""
+        resp = self._post_pcptsd5(client, positive_count=0)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_all_five_positives_is_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """Full symptom cluster endorsed → clearly positive."""
+        resp = self._post_pcptsd5(client, positive_count=5)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 5
+        assert body["positive_screen"] is True
+
+    def test_positive_screen_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: even a maximum PC-PTSD-5
+        score (all 5 symptoms endorsed) never fires the T3 crisis
+        pathway.  T3 is reserved for active suicidality; a positive
+        PTSD screen is a referral signal for trauma-informed care
+        (CAPS-5 / PCL-5 / EMDR / TF-CBT intake), not a crisis signal.
+        A regression that let PTSD screens fire T3 would spam the
+        clinical-ops safety queue and desensitize responders to
+        genuine crisis events."""
+        resp = self._post_pcptsd5(client, positive_count=5)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        # The T3 payload fields must be absent/null for PC-PTSD-5 —
+        # if a router refactor started surfacing them on non-T3
+        # instruments, a reviewer-facing clinician UI would render
+        # empty panels.
+        assert body.get("t3_reason") is None
+
+    def test_rejects_four_items(self, client: TestClient) -> None:
+        """Wrong item count → 422.  Client-side bug where the UI
+        dropped an item should surface as a validation error, not a
+        silent partial score."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcptsd5", "items": [1, 1, 1, 0]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_six_items(self, client: TestClient) -> None:
+        """Extra item → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcptsd5", "items": [1, 1, 1, 0, 0, 0]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Item value > 1 → 422.  PC-PTSD-5 is pure binary — a
+        4-point Likert-style response is a contract violation."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcptsd5", "items": [1, 2, 1, 0, 0]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        """Negative item value → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcptsd5", "items": [1, -1, 1, 0, 0]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """A submission with a user_id shows up in the per-user history
+        with the positive_screen flag captured — the history endpoint
+        relies on the stored record via the repository.  Downstream
+        clinician UI renders the positive-screen badge from this
+        persisted field, not from a re-score at read time."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "pcptsd5",
+            "items": [1, 1, 1, 0, 0],
+            "user_id": "user-pcptsd5-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-pcptsd5-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "pcptsd5"
+        assert stored.total == 3
+        assert stored.positive_screen is True
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """``concurrent_symptoms`` and ``functional_impairment`` are
+        MDQ-only.  If a client mistakenly sends them on a PC-PTSD-5
+        request, the scorer ignores them — the dispatcher handles
+        pcptsd5 before the MDQ fallthrough so those fields never
+        reach the MDQ validation.  This is a defensive pin against
+        dispatcher-ordering regressions."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pcptsd5",
+                "items": [1, 1, 1, 0, 0],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pcptsd5"
+        assert body["positive_screen"] is True
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
