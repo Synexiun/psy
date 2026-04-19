@@ -84,6 +84,17 @@ class AssessmentRecord:
     cutoff_used: int | None = None
     positive_screen: bool | None = None
     triggering_items: tuple[int, ...] | None = None
+    # Multi-subscale profile surfacing — URICA-first (precontemplation /
+    # contemplation / action / maintenance), reusable for PCL-5 clusters,
+    # OCI-R subtypes, and BIS-11 factors without schema churn.  Stored as
+    # a plain ``dict`` rather than a frozen mapping because the router
+    # constructs the mapping fresh per dispatch; mutating the stored
+    # dict from a caller would be a policy violation, not a mechanical
+    # one — matching the raw_items convention (tuple for genuine
+    # immutability) vs triggering_items (also tuple) is deliberately
+    # relaxed here since the subscale map is a computed projection, not
+    # raw user input.
+    subscales: dict[str, int] | None = None
     instrument_version: str | None = None
     sex: str | None = None
     behavior_within_3mo: bool | None = None

@@ -1,6 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8.
+PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -37,8 +37,8 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8 have no safety items — ``requires_t3`` is always False for
-  these instruments.  WHO-5 ``depression_screen``
+  DTCQ-8, URICA have no safety items — ``requires_t3`` is always
+  False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -98,7 +98,23 @@ Safety routing:
   must register DTCQ-8 in the higher-is-better partition when
   Sprint-X adds DTCQ-8 trajectory coverage.  No safety item;
   a DTCQ-8 of 0 ("no confidence at all") is a skill-building
-  signal, not a crisis signal.  See ``scoring/dtcq8.py``.
+  signal, not a crisis signal.  See ``scoring/dtcq8.py``.  URICA
+  (McConnaughy 1983 / DiClemente & Hughes 1990) is the 16-item
+  short-form University of Rhode Island Change Assessment — the
+  multi-stage profile partner to Readiness Ruler (where Ruler is
+  the single-item snapshot, URICA carries the full four-stage
+  distribution across precontemplation / contemplation / action /
+  maintenance).  **First multi-subscale wire-exposed instrument**
+  in the package — the dispatch surfaces the four subscale sums
+  on the response envelope's ``subscales`` map so the intervention
+  layer reads the stage profile (not just the Readiness aggregate)
+  to pick stage-matched scripts.  **First signed-total instrument**
+  — URICA Readiness = ``C + A + M − PC`` is a signed integer
+  (range -8 to +56) where a negative value is clinically meaningful
+  (precontemplation-dominant profile).  Higher-is-better direction
+  (same as WHO-5 / Ruler / DTCQ-8).  No safety item; a negative
+  Readiness is a motivation signal, not a crisis signal.  See
+  ``scoring/urica.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -183,6 +199,10 @@ from .scoring.readiness_ruler import (
     InvalidResponseError as ReadinessRulerInvalid,
     score_readiness_ruler,
 )
+from .scoring.urica import (
+    InvalidResponseError as UricaInvalid,
+    score_urica,
+)
 from .scoring.who5 import InvalidResponseError as Who5Invalid, score_who5
 from .trajectories import RCI_THRESHOLDS, compute_point
 
@@ -215,6 +235,7 @@ Instrument = Literal[
     "craving_vas",
     "readiness_ruler",
     "dtcq8",
+    "urica",
 ]
 
 
@@ -241,6 +262,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "craving_vas": 1,
     "readiness_ruler": 1,
     "dtcq8": 8,
+    "urica": 16,
 }
 
 
@@ -335,6 +357,17 @@ class AssessmentResult(BaseModel):
       a short machine-readable reason code for logging/display.
     - ``triggering_items`` — C-SSRS only; 1-indexed item numbers that
       drove the risk band.  Empty tuple when no items fired.
+    - ``subscales`` — URICA only at present; a map of subscale-name →
+      subscale-total for multi-subscale instruments.  URICA exposes
+      the four stages of change (precontemplation / contemplation /
+      action / maintenance) as four int entries so the intervention
+      layer reads the stage profile alongside the Readiness aggregate.
+      The field shape is generic so future sprints can surface
+      PCL-5 clusters (B/C/D/E), OCI-R subtypes (hoarding/checking/
+      ordering/neutralizing/washing/obsessing), and BIS-11 subscales
+      (attentional/motor/non_planning) without schema churn — each
+      adds its own ``subscales`` entries while the envelope shape
+      stays stable.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -372,6 +405,7 @@ class AssessmentResult(BaseModel):
     cutoff_used: int | None = None
     positive_screen: bool | None = None
     triggering_items: list[int] | None = None
+    subscales: dict[str, int] | None = None
     instrument_version: str | None = None
 
 
@@ -752,6 +786,49 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=d.instrument_version,
         )
+    if payload.instrument == "urica":
+        # McConnaughy 1983 / DiClemente & Hughes 1990 — 16-item
+        # stages-of-change profile.  **First multi-subscale wire-
+        # exposed instrument** in the package — the dispatch surfaces
+        # the four subscale sums (precontemplation / contemplation /
+        # action / maintenance) on the response envelope's ``subscales``
+        # map so the intervention layer reads the stage profile
+        # alongside the Readiness aggregate without a second round-trip.
+        # The field shape is generic (``dict[str, int]``) so PCL-5
+        # cluster surfacing, OCI-R subtypes, and BIS-11 subscales can
+        # ride the same envelope in later sprints without wire-schema
+        # churn.  **First signed total** — Readiness = ``C + A + M −
+        # PC`` is a signed int (range −8 to +56); a negative value is
+        # clinically meaningful (precontemplation-dominant profile).
+        # **Continuous-severity envelope** (same sentinel as PACS /
+        # VAS / Ruler / DTCQ-8) — DiClemente & Hughes 1990 publishes
+        # no bands and the canonical analytic approach is
+        # cluster-analysis of the profile, not cutoff thresholding.
+        # Hand-rolling Readiness bands would violate CLAUDE.md's
+        # "Don't hand-roll severity thresholds" rule.  **Direction
+        # semantics: higher is better** — the fourth higher-is-better
+        # instrument after WHO-5 / Ruler / DTCQ-8.  The trajectory
+        # layer must apply the same direction-inversion logic when
+        # URICA trajectory coverage is added.  No safety routing:
+        # a precontemplation-dominant profile is a motivation signal
+        # routing to MI-scripted interventions, not a crisis signal.
+        # Acute ideation is gated by PHQ-9 item 9 / C-SSRS per the
+        # uniform safety-posture convention.  See ``scoring/urica.py``.
+        u = score_urica(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="urica",
+            total=u.total,
+            severity="continuous",
+            requires_t3=False,
+            subscales={
+                "precontemplation": u.precontemplation,
+                "contemplation": u.contemplation,
+                "action": u.action,
+                "maintenance": u.maintenance,
+            },
+            instrument_version=u.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -889,6 +966,7 @@ async def submit_assessment(
         CravingVasInvalid,
         ReadinessRulerInvalid,
         Dtcq8Invalid,
+        UricaInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
@@ -935,6 +1013,15 @@ def _persist_record(
         if result.triggering_items is not None
         else None
     )
+    # Copy the subscale dict so a future caller that mutates their
+    # reference (e.g. a test harness reusing a submission builder)
+    # doesn't retroactively alter the stored record.  ``None`` stays
+    # ``None`` — the repository record carries the "no subscales
+    # applicable" signal verbatim for instruments that don't surface
+    # subscales on the wire.
+    subscales = (
+        dict(result.subscales) if result.subscales is not None else None
+    )
     record = AssessmentRecord(
         assessment_id=result.assessment_id,
         user_id=payload.user_id or "",
@@ -949,6 +1036,7 @@ def _persist_record(
         cutoff_used=result.cutoff_used,
         positive_screen=result.positive_screen,
         triggering_items=triggering,
+        subscales=subscales,
         instrument_version=result.instrument_version,
         sex=payload.sex,
         behavior_within_3mo=payload.behavior_within_3mo,
@@ -1097,6 +1185,7 @@ class AssessmentHistoryItem(BaseModel):
     cutoff_used: int | None = None
     positive_screen: bool | None = None
     triggering_items: list[int] | None = None
+    subscales: dict[str, int] | None = None
     instrument_version: str | None = None
 
 
@@ -1184,6 +1273,9 @@ async def history(
                 list(r.triggering_items)
                 if r.triggering_items is not None
                 else None
+            ),
+            subscales=(
+                dict(r.subscales) if r.subscales is not None else None
             ),
             instrument_version=r.instrument_version,
         )

@@ -3101,6 +3101,380 @@ class TestDtcq8Routing:
         assert body["severity"] == "continuous"
 
 
+class TestUricaRouting:
+    """URICA short (DiClemente & Hughes 1990) over the wire.
+
+    URICA is the **first multi-subscale wire-exposed instrument** in the
+    package — the dispatch surfaces the four stages-of-change
+    subscales (precontemplation / contemplation / action / maintenance)
+    on the response envelope's ``subscales`` map so the intervention
+    layer reads the stage profile alongside the Readiness aggregate
+    without a second round-trip.  It is also the **first signed-total
+    instrument** — Readiness = ``C + A + M − PC`` is a signed int
+    (range −8 to +56) where a negative reading is clinically meaningful
+    (precontemplation-dominant profile).
+
+    These tests pin (1) the dispatch branch picks ``score_urica``,
+    (2) the wire envelope carries ``severity == "continuous"``,
+    (3) ``requires_t3`` is always False (URICA has no safety item),
+    (4) the ``subscales`` dict is present and carries the four
+    DiClemente & Hughes 1990 stage keys with correct integer values,
+    (5) the 32-item URICA-long-form is rejected at 422 (explicit
+    misroute guard — the short form MUST NOT silently accept the
+    long-form payload), (6) the 1-5 range is enforced with ``0``
+    explicitly rejected (the Likert min is 1, not 0 — off-by-one guard
+    against a validator copy-pasted from a 0-based PHQ-9 / GAD-7
+    scorer), (7) negative Readiness survives the pydantic serialization
+    path (int, signed), and (8) submission with a user_id persists the
+    subscales map verbatim to the history timeline so clinician-UI
+    renderers can fetch the stage profile without re-scoring.
+    """
+
+    def _post_urica(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+        user_id: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {"instrument": "urica", "items": items}
+        if user_id is not None:
+            body["user_id"] = user_id
+        return client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_balanced_profile(self, client: TestClient) -> None:
+        """Uniform 3 ("undecided") across all 16 items → every subscale
+        sums to 12; Readiness = 12 + 12 + 12 − 12 = 24.  ``severity``
+        must be the continuous sentinel, ``requires_t3`` False, and the
+        subscales map must carry all four stage keys with matching
+        values."""
+        resp = self._post_urica(client, items=[3] * 16)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "urica"
+        assert body["total"] == 24
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "urica-1.0.0"
+        # Subscales present and correctly keyed.
+        assert body["subscales"] == {
+            "precontemplation": 12,
+            "contemplation": 12,
+            "action": 12,
+            "maintenance": 12,
+        }
+
+    def test_deep_action_profile_maximum_readiness(
+        self, client: TestClient
+    ) -> None:
+        """Precontemplation all 1s (minimal), Contemplation / Action /
+        Maintenance all 5s (maximal) → PC=4, C/A/M=20 each → Readiness
+        = 20 + 20 + 20 − 4 = **+56** (the maximum, deep-action profile).
+        Pins both the ceiling of the signed range and that the positive
+        extreme serializes cleanly."""
+        items = [1] * 4 + [5] * 4 + [5] * 4 + [5] * 4
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 56
+        assert body["subscales"] == {
+            "precontemplation": 4,
+            "contemplation": 20,
+            "action": 20,
+            "maintenance": 20,
+        }
+        assert body["severity"] == "continuous"
+
+    def test_pure_precontemplator_negative_readiness_on_wire(
+        self, client: TestClient
+    ) -> None:
+        """PC all 5s (maximal), others all 1s (minimal) → PC=20,
+        C/A/M=4 each → Readiness = 4 + 4 + 4 − 20 = **−8** (the floor
+        of the signed range).  This is THE load-bearing test for the
+        signed-total contract — a caller serializing through an
+        ``int`` field (not ``uint``) must survive the negative value
+        end-to-end with no overflow, no clipping, and no absolute-
+        value mistake anywhere in the stack.  URICA is the first
+        instrument in the package whose wire ``total`` can be
+        negative; a regression that clamped to 0 (or took absolute
+        value) would silently misclassify precontemplation-dominant
+        users as neutral and break the cluster-analytic subtype
+        read-out at the intervention-selection layer."""
+        items = [5] * 4 + [1] * 4 + [1] * 4 + [1] * 4
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        # Signed-int survival — the whole point of the test.
+        assert body["total"] == -8
+        assert isinstance(body["total"], int)
+        assert body["subscales"] == {
+            "precontemplation": 20,
+            "contemplation": 4,
+            "action": 4,
+            "maintenance": 4,
+        }
+        # Still no T3 — negative Readiness is an MI signal, not a
+        # crisis signal.  This is the uniform safety-posture
+        # convention across PACS / VAS / Ruler / DTCQ-8.
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_zero_crossing_vignette(self, client: TestClient) -> None:
+        """Boundary case — Readiness exactly 0.  PC = 3+3+3+3 = 12,
+        and C + A + M = 4+4+4 = 12 → Readiness = 12 − 12 = 0.  A
+        regression that treated 0 as "missing" (instead of the
+        legitimate "neutral Readiness" signal) would silently drop
+        the point from trajectory charts."""
+        # PC = 3*4 = 12.  Need C + A + M = 12 total — use 2+2+2+2=8 for
+        # contemplation, then 1+1+1+1=4 for action, then 0 for
+        # maintenance — wait, floor is 1.  Use 1+1+1+1=4 three times =
+        # 12.  Redistribute: C=4, A=4, M=4 → sum 12 = PC.
+        items = [3] * 4 + [1] * 4 + [1] * 4 + [1] * 4
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert isinstance(body["total"], int)
+        assert body["subscales"] == {
+            "precontemplation": 12,
+            "contemplation": 4,
+            "action": 4,
+            "maintenance": 4,
+        }
+
+    def test_maintenance_with_relapse_warning_profile(
+        self, client: TestClient
+    ) -> None:
+        """Clinical vignette — moderate PC (10) indicating creeping
+        ambivalence, low-moderate C (12), moderate A (14), high M (18):
+        Readiness = 12 + 14 + 18 − 10 = 34.  The stage profile itself
+        (not just the aggregate) is the intervention signal — the
+        trajectory layer reading this vs a prior pure-maintenance
+        profile flags the creeping precontemplation as a relapse-
+        warning pattern.  Pins that the per-subscale integers survive
+        the dispatch unchanged."""
+        # PC sum 10: 2+3+2+3
+        # C sum 12: 3+3+3+3
+        # A sum 14: 4+4+3+3
+        # M sum 18: 5+5+4+4
+        items = [2, 3, 2, 3] + [3, 3, 3, 3] + [4, 4, 3, 3] + [5, 5, 4, 4]
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 34
+        assert body["subscales"] == {
+            "precontemplation": 10,
+            "contemplation": 12,
+            "action": 14,
+            "maintenance": 18,
+        }
+        assert body["severity"] == "continuous"
+
+    def test_no_t3_fires_even_on_extreme_precontemplation(
+        self, client: TestClient
+    ) -> None:
+        """Critical clinical-safety contract: URICA max-PC + min-others
+        ("I definitely don't have a problem") must NOT fire T3.  A
+        precontemplation-dominant user is routed to MI-scripted
+        interventions (decisional-balance elicitation, empathic
+        reflection of ambivalence), not to the crisis path.  Acute
+        ideation is gated by PHQ-9 item 9 / C-SSRS per the uniform
+        safety-posture convention across PACS / VAS / Ruler / DTCQ-8."""
+        items = [5] * 4 + [1] * 4 + [1] * 4 + [1] * 4
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_empty_list(self, client: TestClient) -> None:
+        resp = self._post_urica(client, items=[])
+        assert resp.status_code == 422
+
+    def test_rejects_fifteen_items(self, client: TestClient) -> None:
+        """Off-by-one below.  A caller submitting 15 items would
+        silently drop one stage's fourth item if padding existed;
+        the dispatch must 422 with a URICA-specific message."""
+        resp = self._post_urica(client, items=[3] * 15)
+        assert resp.status_code == 422
+
+    def test_rejects_seventeen_items(self, client: TestClient) -> None:
+        """Off-by-one above.  17 items would either land silently in
+        one subscale or be truncated with loss of information."""
+        resp = self._post_urica(client, items=[3] * 17)
+        assert resp.status_code == 422
+
+    def test_rejects_thirty_two_long_form_misroute(
+        self, client: TestClient
+    ) -> None:
+        """32 items is the **URICA long form** (McConnaughy 1983).  The
+        16-item short-form dispatch must NOT silently accept a
+        long-form payload — the per-subscale positional mapping is
+        different (long form uses 8-item subscales, short form 4), so
+        silently scoring would produce wrong subscale sums and a wrong
+        Readiness aggregate.  Load-bearing guard: any regression that
+        relaxed item_count validation to ``%4 == 0`` would accept both
+        shapes silently."""
+        resp = self._post_urica(client, items=[3] * 32)
+        assert resp.status_code == 422
+
+    def test_rejects_zero_value(self, client: TestClient) -> None:
+        """URICA Likert range is 1-5 (NOT 0-based).  A caller wiring
+        URICA through a 0-based Likert code path (PHQ-9, GAD-7,
+        PSS-10) would send 0s, which must 422.  Silently accepting 0
+        would corrupt every subscale sum proportional to the number
+        of zeros submitted.  This is the **critical regression guard**
+        for the 1-based Likert shape — second instrument in the
+        package after BIS-11 where 0 is out of range."""
+        items = [0] + [3] * 15
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 422
+
+    def test_rejects_six_value(self, client: TestClient) -> None:
+        """Off-by-one above the 1-5 ceiling → 422."""
+        items = [3] * 15 + [6]
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 422
+
+    def test_rejects_negative_value(self, client: TestClient) -> None:
+        """Signed-int submission that sneaks past an unsigned int
+        validator → 422.  Belt-and-braces given URICA's signed-total
+        output — callers must not submit signed *inputs*; only the
+        Readiness aggregate is signed."""
+        items = [-1] + [3] * 15
+        resp = self._post_urica(client, items=items)
+        assert resp.status_code == 422
+
+    def test_persists_subscales_verbatim_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id lands in per-user history with the
+        ``subscales`` dict preserved verbatim.  This is the load-bearing
+        contract for the **multi-subscale wire-exposure pattern** — a
+        clinician-UI surface rendering the stages-of-change profile
+        reads the stored subscales from the history endpoint without
+        re-scoring.  A regression that dropped the subscales map
+        during persistence would force every render to re-score from
+        raw_items (duplicating work and bloating the clinician
+        portal's read path)."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Deep-action profile — distinctive per-subscale values so
+        # a swap regression shows up across multiple assertions.
+        # PC = 1+2+1+2 = 6
+        # C  = 4+4+4+4 = 16
+        # A  = 5+5+5+4 = 19
+        # M  = 5+5+4+4 = 18
+        # Readiness = 16 + 19 + 18 − 6 = 47
+        submitted = [1, 2, 1, 2] + [4, 4, 4, 4] + [5, 5, 5, 4] + [5, 5, 4, 4]
+        body = {
+            "instrument": "urica",
+            "items": submitted,
+            "user_id": "user-urica-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        response_body = resp.json()
+        assert response_body["total"] == 47
+        assert response_body["subscales"] == {
+            "precontemplation": 6,
+            "contemplation": 16,
+            "action": 19,
+            "maintenance": 18,
+        }
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-urica-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "urica"
+        assert stored.severity == "continuous"
+        assert stored.requires_t3 is False
+        assert stored.total == 47
+        assert stored.subscales == {
+            "precontemplation": 6,
+            "contemplation": 16,
+            "action": 19,
+            "maintenance": 18,
+        }
+        # Raw items preserved positionally for trajectory re-scoring
+        # and audit — uniform with DTCQ-8 / PACS / VAS.
+        assert stored.raw_items == tuple(submitted)
+
+    def test_history_projection_surfaces_subscales(
+        self, client: TestClient
+    ) -> None:
+        """``GET /v1/assessments/history`` projection must carry the
+        ``subscales`` dict so clinician-UI timeline views don't need
+        to issue per-row re-reads through the PHI-boundary-gated
+        repository path for the stage-profile summary."""
+        body = {
+            "instrument": "urica",
+            "items": [3] * 16,
+            "user_id": "user-urica-2",
+        }
+        post_resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert post_resp.status_code == 201
+
+        history_resp = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-urica-2"},
+        )
+        assert history_resp.status_code == 200
+        history_body = history_resp.json()
+        assert history_body["total"] == 1
+        item = history_body["items"][0]
+        assert item["instrument"] == "urica"
+        assert item["total"] == 24
+        assert item["subscales"] == {
+            "precontemplation": 12,
+            "contemplation": 12,
+            "action": 12,
+            "maintenance": 12,
+        }
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """instrument=urica + MDQ fields → MDQ fields ignored, URICA
+        dispatch runs cleanly.  Defensive pin across the dispatcher-
+        ordering contract — same guard as DTCQ-8 / PACS / VAS / Ruler /
+        BIS-11 / PHQ-15."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "urica",
+                "items": [3] * 16,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "urica"
+        assert body["total"] == 24
+        assert body["severity"] == "continuous"
+        assert body["subscales"] == {
+            "precontemplation": 12,
+            "contemplation": 12,
+            "action": 12,
+            "maintenance": 12,
+        }
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
