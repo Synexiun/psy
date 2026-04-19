@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10.
+GAD-2, OASIS, K10, SDS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -190,6 +190,31 @@ Safety routing:
   unvalidated.  No safety routing: K10's hopelessness items
   (4 / 9 / 10) are affect probes, not intent probes — T3 remains
   reserved for PHQ-9 item 9 / C-SSRS.  See ``scoring/k10.py``.
+  SDS (Gossop 1995) is the 5-item Severity of Dependence Scale — a
+  *psychological-dependence* screen for a specified substance,
+  deliberately orthogonal to use-volume-and-frequency (AUDIT / AUDIT-C /
+  DAST-10).  The instrument captures the subjective compulsive-use
+  construct (loss of control, worry about use, desire to stop, perceived
+  difficulty of abstaining) — a patient can be DAST-low / SDS-high
+  (infrequent but ego-dystonic use) or DAST-high / SDS-low (heavy but
+  ego-syntonic use), and those two patterns have very different
+  treatment paths.  **First instrument with substance-adaptive
+  cutoffs** — extends the AUDIT-C per-population-cutoff precedent (sex)
+  to a second demographic axis (substance).  Cutoffs per Gossop 1995
+  and the substance-specific follow-up literature: heroin ≥ 5,
+  cannabis ≥ 3 (Martin 2006 / Swift 1998), cocaine ≥ 3 (Kaye & Darke
+  2002), amphetamine ≥ 4 (Topp & Mattick 1997); substance unspecified
+  falls back to the lowest (≥ 3) as a safety-conservative default —
+  same posture as AUDIT-C sex = "unspecified".  The router maps onto
+  the cutoff-only wire envelope (severity = "positive_screen" /
+  "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 /
+  MDQ / AUDIT-C.  ``cutoff_used`` echoes the substance-keyed cutoff so
+  a clinician-UI renders "positive at ≥ N" with no re-derivation.
+  **No subscale exposure**: Gossop 1995 validates unidimensionality;
+  splitting items into cognitive / behavioral factors is unvalidated.
+  No safety routing: SDS has no suicidality item — a high SDS is a
+  psychological-dependence work-up signal, not a crisis signal.  See
+  ``scoring/sds.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -290,6 +315,11 @@ from .scoring.readiness_ruler import (
     InvalidResponseError as ReadinessRulerInvalid,
     score_readiness_ruler,
 )
+from .scoring.sds import (
+    InvalidResponseError as SdsInvalid,
+    Substance as SdsSubstance,
+    score_sds,
+)
 from .scoring.urica import (
     InvalidResponseError as UricaInvalid,
     score_urica,
@@ -331,6 +361,7 @@ Instrument = Literal[
     "gad2",
     "oasis",
     "k10",
+    "sds",
 ]
 
 
@@ -362,6 +393,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "gad2": 2,
     "oasis": 5,
     "k10": 10,
+    "sds": 5,
 }
 
 
@@ -398,6 +430,12 @@ class AssessmentRequest(BaseModel):
     would silently produce ``negative_screen`` regardless of Part 1,
     so surfacing the gap explicitly at the wire boundary is the right
     clinical posture.
+
+    ``substance`` is SDS-only; it selects the Gossop 1995 / follow-up-
+    literature cutoff used to derive ``positive_screen``.  Default
+    ``None`` means 'not supplied' — the scorer applies the
+    safety-conservative ``unspecified`` cutoff (≥ 3).  Ignored by
+    other instruments.
     """
 
     instrument: Instrument
@@ -426,6 +464,16 @@ class AssessmentRequest(BaseModel):
             "MDQ only; Part 3 — one of 'none'/'minor'/'moderate'/'serious'. "
             "Required when instrument == 'mdq'.  Only 'moderate' or "
             "'serious' satisfies the Hirschfeld 2000 positive-screen gate."
+        ),
+    )
+    substance: SdsSubstance | None = Field(
+        default=None,
+        description=(
+            "SDS only; one of 'heroin'/'cannabis'/'cocaine'/'amphetamine'/"
+            "'unspecified'.  Selects the published positive-screen cutoff "
+            "(heroin ≥ 5, cannabis/cocaine ≥ 3, amphetamine ≥ 4).  Omit or "
+            "send None to fall back to the conservative 'unspecified' "
+            "cutoff (≥ 3) — same posture as AUDIT-C sex='unspecified'."
         ),
     )
     user_id: str | None = Field(
@@ -469,10 +517,10 @@ class AssessmentResult(BaseModel):
       (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
-      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / WHO-5 /
-      AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 /
-      ISI / PHQ-15 / PACS / Craving VAS / Readiness Ruler / DTCQ-8)
-      emit ``subscales=None``.
+      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / SDS /
+      WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ /
+      PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS / Readiness Ruler /
+      DTCQ-8) emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -1105,6 +1153,37 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=k.instrument_version,
         )
+    if payload.instrument == "sds":
+        # Gossop 1995 Severity of Dependence Scale — 5-item 0-3 Likert
+        # psychological-dependence screen, total 0-15.  Cutoff envelope
+        # (uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 / AUDIT-C):
+        # severity is "positive_screen" / "negative_screen"; the
+        # substance-keyed cutoff is echoed via ``cutoff_used`` so the
+        # clinician-UI renders "positive at ≥ N".  ``substance=None``
+        # falls back to the conservative unspecified cutoff (≥ 3) —
+        # same safety posture as AUDIT-C sex=None.  **First instrument
+        # with substance-adaptive cutoffs** — extends the AUDIT-C
+        # per-population-cutoff pattern (sex) to a second demographic
+        # axis (substance).  No subscales (Gossop 1995 validated
+        # unidimensionality), no T3 (no suicidality item — a high SDS
+        # is a psychological-dependence work-up signal, not a crisis
+        # signal).  See ``scoring/sds.py``.
+        s = score_sds(
+            payload.items,
+            substance=payload.substance or "unspecified",
+        )
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="sds",
+            total=s.total,
+            severity=(
+                "positive_screen" if s.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            cutoff_used=s.cutoff_used,
+            positive_screen=s.positive_screen,
+            instrument_version=s.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1247,6 +1326,7 @@ async def submit_assessment(
         Gad2Invalid,
         OasisInvalid,
         K10Invalid,
+        SdsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
@@ -1322,6 +1402,7 @@ def _persist_record(
         behavior_within_3mo=payload.behavior_within_3mo,
         concurrent_symptoms=payload.concurrent_symptoms,
         functional_impairment=payload.functional_impairment,
+        substance=payload.substance,
     )
     repo.save(record)
 

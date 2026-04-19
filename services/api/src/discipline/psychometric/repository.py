@@ -107,6 +107,12 @@ class AssessmentRecord:
     # moderate-or-serious gate) so a future FHIR re-render can preserve
     # the full ordinal distinction.
     functional_impairment: str | None = None
+    # SDS — the substance key used to select the Gossop 1995 /
+    # follow-up-literature cutoff.  Stored verbatim so a clinician
+    # reviewing the record can re-derive the positive_screen decision
+    # without trusting the aggregate.  Non-SDS records leave this
+    # ``None``.
+    substance: str | None = None
 
 
 class InMemoryAssessmentRepository:

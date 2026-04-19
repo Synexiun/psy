@@ -4953,6 +4953,523 @@ class TestK10Routing:
         assert body["severity"] == "very_high"
 
 
+class TestSdsRouting:
+    """SDS (Gossop 1995) router dispatch.
+
+    Wire contract invariants:
+    - Cutoff envelope (``severity`` is "positive_screen" /
+      "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5
+      / AUDIT-C.
+    - ``cutoff_used`` echoes the substance-keyed cutoff (heroin=5,
+      cannabis/cocaine=3, amphetamine=4, unspecified=3) — same
+      pattern AUDIT-C uses for sex-keyed cutoffs.  Load-bearing for
+      clinician-UI ("positive at ≥ N") rendering.
+    - ``positive_screen`` flag echoes the actionable decision.
+    - ``requires_t3`` is always False — SDS has no safety item.
+    - ``subscales=None`` — Gossop 1995 validates unidimensionality.
+    """
+
+    def test_heroin_at_cutoff_is_positive(self, client: TestClient) -> None:
+        """Heroin cutoff is ≥5 (Gossop 1995); total=5 flips to positive."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1, 1],
+                "substance": "heroin",
+                "user_id": "user-sds-heroin-at-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "sds"
+        assert body["total"] == 5
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 5
+        assert body["requires_t3"] is False
+
+    def test_heroin_below_cutoff_is_negative(
+        self, client: TestClient
+    ) -> None:
+        """Heroin total=4 is BELOW cutoff ≥5 — negative screen.  This
+        same total=4 would be POSITIVE for every other supported
+        substance.  Substance-adaptive cutoff is the SDS-defining
+        behavior and this test pins it."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1, 0],
+                "substance": "heroin",
+                "user_id": "user-sds-heroin-below",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 4
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 5
+
+    def test_cannabis_at_cutoff_is_positive(
+        self, client: TestClient
+    ) -> None:
+        """Cannabis cutoff is ≥3 (Martin 2006 / Swift 1998)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "cannabis",
+                "user_id": "user-sds-cannabis-at-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["cutoff_used"] == 3
+
+    def test_cannabis_below_cutoff_is_negative(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 0, 0, 0],
+                "substance": "cannabis",
+                "user_id": "user-sds-cannabis-below",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 2
+        assert body["severity"] == "negative_screen"
+        assert body["cutoff_used"] == 3
+
+    def test_cocaine_at_cutoff_is_positive(
+        self, client: TestClient
+    ) -> None:
+        """Cocaine cutoff is ≥3 (Kaye & Darke 2002/2004)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "cocaine",
+                "user_id": "user-sds-cocaine-at-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["cutoff_used"] == 3
+
+    def test_amphetamine_at_cutoff_is_positive(
+        self, client: TestClient
+    ) -> None:
+        """Amphetamine cutoff is ≥4 (Topp & Mattick 1997) — sits
+        BETWEEN cannabis/cocaine (3) and heroin (5)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1, 0],
+                "substance": "amphetamine",
+                "user_id": "user-sds-amp-at-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 4
+        assert body["severity"] == "positive_screen"
+        assert body["cutoff_used"] == 4
+
+    def test_amphetamine_below_cutoff_is_negative(
+        self, client: TestClient
+    ) -> None:
+        """Amphetamine total=3 is BELOW cutoff ≥4.  Same total=3 is
+        POSITIVE for cannabis/cocaine (≥3).  Middle-cutoff band is the
+        amphetamine-specific distinction."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "amphetamine",
+                "user_id": "user-sds-amp-below",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "negative_screen"
+        assert body["cutoff_used"] == 4
+
+    def test_unspecified_uses_conservative_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """When substance is 'unspecified', the cutoff is the lowest
+        (≥ 3) — safety-conservative default.  Same posture as
+        AUDIT-C sex='unspecified'."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "unspecified",
+                "user_id": "user-sds-unspec",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["cutoff_used"] == 3
+
+    def test_substance_omitted_falls_back_to_conservative(
+        self, client: TestClient
+    ) -> None:
+        """Omitting ``substance`` entirely must behave identically to
+        sending ``"unspecified"`` — conservative fallback, not a 422.
+        Mirrors AUDIT-C sex=None behavior."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "user_id": "user-sds-no-substance",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["cutoff_used"] == 3
+
+    def test_same_total_differs_across_substances(
+        self, client: TestClient
+    ) -> None:
+        """Total=4: negative for heroin (≥5), positive for everything
+        else.  This is the whole point of substance-adaptive cutoffs
+        — the same psychometric signal carries different clinical
+        meaning depending on substance.  Wire-level pin so a
+        regression in the router → scorer substance plumbing cannot
+        silently produce the wrong band."""
+        items = [1, 1, 1, 1, 0]
+        substances_and_expected: list[tuple[str, bool]] = [
+            ("heroin", False),
+            ("cannabis", True),
+            ("cocaine", True),
+            ("amphetamine", True),
+            ("unspecified", True),
+        ]
+        for substance, expected_positive in substances_and_expected:
+            response = client.post(
+                "/v1/assessments",
+                json={
+                    "instrument": "sds",
+                    "items": items,
+                    "substance": substance,
+                    "user_id": f"user-sds-{substance}-total4",
+                },
+                headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+            )
+            assert response.status_code == 201
+            body = response.json()
+            assert body["total"] == 4, f"{substance} total drift"
+            assert body["positive_screen"] is expected_positive, (
+                f"{substance} at total=4 expected "
+                f"positive={expected_positive}, got {body['positive_screen']}"
+            )
+
+    def test_maximum_total_is_positive_for_every_substance(
+        self, client: TestClient
+    ) -> None:
+        """Total=15 (max) must be positive regardless of substance —
+        this is the sanity check that substance-adaptive cutoffs don't
+        ever cross the 'max total is always positive' invariant."""
+        for substance in [
+            "heroin",
+            "cannabis",
+            "cocaine",
+            "amphetamine",
+            "unspecified",
+        ]:
+            response = client.post(
+                "/v1/assessments",
+                json={
+                    "instrument": "sds",
+                    "items": [3, 3, 3, 3, 3],
+                    "substance": substance,
+                    "user_id": f"user-sds-{substance}-max",
+                },
+                headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+            )
+            assert response.status_code == 201
+            body = response.json()
+            assert body["total"] == 15
+            assert body["positive_screen"] is True
+
+    def test_positive_screen_does_not_fire_t3(
+        self, client: TestClient
+    ) -> None:
+        """Even max total + most conservative cutoff must NOT fire T3
+        — SDS has no safety item.  Pins the no-T3 invariant."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [3, 3, 3, 3, 3],
+                "substance": "cannabis",
+                "user_id": "user-sds-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        """Gossop 1995 validates unidimensional total — no subscales
+        exposed on wire."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "cannabis",
+                "user_id": "user-sds-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["subscales"] is None
+
+    def test_rejects_four_items(self, client: TestClient) -> None:
+        """SDS requires exactly 5 items — 4-item submission is 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1],
+                "substance": "heroin",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_six_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1, 1, 1],
+                "substance": "heroin",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_three_items_auditc_misroute(
+        self, client: TestClient
+    ) -> None:
+        """3 items is AUDIT-C territory — must NOT silently score as
+        SDS."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [2, 2, 2],
+                "substance": "cannabis",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_out_of_range_four(self, client: TestClient) -> None:
+        """SDS items are 0-3.  A 4 is out of range even though 4 is a
+        valid cutoff value for amphetamine — the client MUST NOT
+        conflate 'valid cutoff' with 'valid item response'."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [4, 0, 0, 0, 0],
+                "substance": "cannabis",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [-1, 0, 0, 0, 0],
+                "substance": "cannabis",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_invalid_substance(self, client: TestClient) -> None:
+        """``substance`` is a Pydantic Literal; an unknown value is
+        422 at the validation layer before dispatch."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "methamphetamine",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submitted SDS records land in the repository with the
+        substance-keyed cutoff and positive_screen flag intact, so
+        the clinician-UI history view renders the correct envelope."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [2, 2, 1, 1, 1],
+                "substance": "heroin",
+                "user_id": "user-sds-persist",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-sds-persist", limit=5)
+        assert len(records) == 1
+        r = records[0]
+        assert r.instrument == "sds"
+        assert r.total == 7
+        assert r.severity == "positive_screen"
+        assert r.positive_screen is True
+        assert r.cutoff_used == 5
+        assert r.substance == "heroin"
+
+    def test_history_projection_surfaces_cutoff_envelope(
+        self, client: TestClient
+    ) -> None:
+        """The /history projection surfaces severity, cutoff_used,
+        and positive_screen so a clinician can read the SDS record
+        without a separate lookup."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "cannabis",
+                "user_id": "user-sds-history",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-sds-history"},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "sds"
+        assert entry["total"] == 3
+        assert entry["severity"] == "positive_screen"
+
+    def test_sds_and_auditc_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """Both SDS and AUDIT-C use the cutoff envelope AND a
+        per-demographic cutoff axis (substance vs sex).  Co-landing
+        on the same user's timeline must preserve distinct
+        ``cutoff_used`` values and distinct envelopes — no cross-
+        instrument bleed."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        user = "user-sds-auditc-coexist"
+        r1 = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1, 1],
+                "substance": "heroin",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert r1.status_code == 201
+        r2 = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "audit_c",
+                "items": [2, 2, 2],
+                "sex": "female",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert r2.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert by_instrument["sds"].cutoff_used == 5
+        assert by_instrument["sds"].substance == "heroin"
+        assert by_instrument["audit_c"].cutoff_used == 3
+        assert by_instrument["audit_c"].sex == "female"
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """MDQ's Parts 2/3 fields in an SDS submission must be
+        ignored (not 422'd, not routed through MDQ scorer)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 0, 0],
+                "substance": "cannabis",
+                "concurrent_symptoms": True,
+                "functional_impairment": "moderate",
+                "user_id": "user-sds-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "sds"
+        assert body["total"] == 3
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
