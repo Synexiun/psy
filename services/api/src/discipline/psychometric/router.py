@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ.
+CD-RISC-10, PSWQ, LOT-R.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -535,6 +535,35 @@ Safety routing:
   ceiling endorse GAD-DSM-5-criterion uncontrollability, NOT
   suicidality.  Acute ideation screening remains PHQ-9 item 9 /
   C-SSRS.  See ``scoring/pswq.py``.
+- LOT-R (Scheier, Carver & Bridges 1994): 10-item payload on the
+  wire (6 scored + 4 filler); the filler items are present on the
+  patient-facing form to obscure the optimism construct from demand
+  characteristics and are NOT summed into the total.  0-4 Likert,
+  post-flip range 0-24, **higher is better** (more dispositional
+  optimism) — uniform direction with CD-RISC-10 / WHO-5 / DTCQ-8 /
+  Readiness Ruler, opposite of PHQ-9 / GAD-7 / DERS-16 / PCL-5 /
+  OCI-R / K10 / WSAS / PSWQ.  Reuses the reverse-keying pattern
+  established by PSWQ: items 3, 7, 9 are pessimism-worded and
+  flipped (``flipped = 4 - raw``) before summing.  **First filler-
+  item pattern in the package** — earlier instruments scored every
+  validated-input item; LOT-R is the first with within-form
+  camouflage.  The audit-trail invariant is preserved: the stored
+  ``items`` tuple echoes all 10 raw responses (including the 4
+  filler values) so a clinician reviewing the record sees exactly
+  what the patient ticked on the form.  Per CLAUDE.md "don't hand-
+  roll severity thresholds", LOT-R ships as a continuous
+  dimensional measure uniform with PACS / Craving VAS / DERS-16 /
+  CD-RISC-10 / PSWQ; envelope carries ``severity="continuous"``.
+  Scheier 1994 reported general-population means (~14-15) but
+  published no cross-calibrated clinical cutpoints.  Unidimensional
+  per Scheier 1994 CFA — no subscales dict (Chang 1997's
+  optimism/pessimism two-factor split is sample-specific and
+  deliberately rejected).  ``cutoff_used`` / ``positive_screen``
+  NOT set.  **No T3** — all 10 items probe the optimism-pessimism
+  construct and general-affect fillers; none probe suicidality,
+  self-harm, or crisis behavior.  LOT-R pairs directly with
+  CD-RISC-10 as the two-axis trait-positive-psychology layer
+  (capacity + expectancy).  See ``scoring/lotr.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -620,6 +649,10 @@ from .scoring.k10 import (
 from .scoring.k6 import (
     InvalidResponseError as K6Invalid,
     score_k6,
+)
+from .scoring.lotr import (
+    InvalidResponseError as LotrInvalid,
+    score_lotr,
 )
 from .scoring.mdq import (
     ImpairmentLevel,
@@ -723,6 +756,7 @@ Instrument = Literal[
     "ders16",
     "cdrisc10",
     "pswq",
+    "lotr",
 ]
 
 
@@ -763,6 +797,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "ders16": 16,
     "cdrisc10": 10,
     "pswq": 16,
+    "lotr": 10,
 }
 
 
@@ -908,7 +943,7 @@ class AssessmentResult(BaseModel):
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
       SDS / DUDIT / ASRS-6 / AAQ-II / WSAS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
-      Readiness Ruler / DTCQ-8 / CD-RISC-10 / PSWQ) emit ``subscales=None``.
+      Readiness Ruler / DTCQ-8 / CD-RISC-10 / PSWQ / LOT-R) emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -919,8 +954,8 @@ class AssessmentResult(BaseModel):
     For PACS (Flannery 1999), Craving VAS (Sayette 2000), Readiness
     Ruler (Rollnick 1999 / Heather 2008), DTCQ-8 (Sklar & Turner
     1999), DERS-16 (Bjureberg 2016), CD-RISC-10 (Campbell-Sills &
-    Stein 2007), and PSWQ (Meyer 1990), ``severity`` is the literal
-    sentinel ``"continuous"``.  None of these instruments publishes
+    Stein 2007), PSWQ (Meyer 1990), and LOT-R (Scheier 1994),
+    ``severity`` is the literal sentinel ``"continuous"``.  None of these instruments publishes
     severity bands; the trajectory layer extracts the clinical
     signal from ``total`` directly — week-over-week Δ for PACS,
     within-episode Δ + EMA trajectory for VAS, week-over-week Δ for
@@ -929,11 +964,13 @@ class AssessmentResult(BaseModel):
     on total+subscales for DERS-16, RCI-style change on the total
     for CD-RISC-10 with the "below general-population mean (< 31)"
     flag surfaced as contextual UI only (not a classification, not
-    a gate), and RCI-style change on the total for PSWQ with the
+    a gate), RCI-style change on the total for PSWQ with the
     "above GAD-sample mean (≥ 60)" flag surfaced as contextual UI
-    only.  Direction semantics differ: VAS / PACS / DERS-16 / PSWQ
-    are higher-is-worse; the Ruler / DTCQ-8 / CD-RISC-10 are
-    higher-is-better (same direction as WHO-5).  Clients rendering these results must not attempt to
+    only, and RCI-style change on the total for LOT-R with the
+    "below general-population mean (< 14)" flag surfaced as
+    contextual UI only.  Direction semantics differ: VAS / PACS /
+    DERS-16 / PSWQ are higher-is-worse; the Ruler / DTCQ-8 /
+    CD-RISC-10 / LOT-R are higher-is-better (same direction as WHO-5).  Clients rendering these results must not attempt to
     classify status from ``severity`` — show ``total`` and the
     trajectory chart instead.  Direction semantics differ:
     VAS and PACS are higher-is-worse (craving rising = deterioration);
@@ -1947,6 +1984,72 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=pw.instrument_version,
         )
+    if payload.instrument == "lotr":
+        # Scheier, Carver & Bridges 1994 Life Orientation Test Revised —
+        # the validated 10-item (6 scored + 4 filler) revision of the
+        # original 1985 LOT.  Measures **dispositional optimism** — the
+        # generalized outcome expectancy that good things (rather than
+        # bad) will happen to a person across life domains.  Pairs
+        # DIRECTLY with CD-RISC-10 as the two-axis trait-positive-
+        # psychology layer:  CD-RISC-10 answers "CAN I bounce back?"
+        # (resilience capacity); LOT-R answers "DO I EXPECT good things
+        # to happen?" (outcome expectancy).  Together they predict
+        # treatment adherence (Carver 2010 meta-analysis: optimists stay
+        # in treatment longer), effort allocation to implementation-
+        # intention scaffolding (low-optimism patients route to short-
+        # horizon small-wins scaffolding; high-optimism patients tolerate
+        # longer arcs without disengagement), and recovery-slope
+        # steepness (optimism predicts post-intervention recovery
+        # velocity above baseline-severity covariates).
+        # 10 items on the wire, 0-4 Likert (0 = "strongly disagree", 4 =
+        # "strongly agree"); **6 items scored + 4 filler**.  Scored
+        # positions (1-indexed): 1, 3, 4, 7, 9, 10.  Filler positions:
+        # 2, 5, 6, 8 — included on the form to obscure the optimism
+        # construct against demand characteristics (optimism is a
+        # socially-desirable trait) but NOT summed.  **First filler-
+        # item pattern in the package** — earlier instruments scored
+        # every validated item.  The router accepts a 10-item payload
+        # because the patient sees 10 items; the scorer drops the 4
+        # filler positions during summation.  Audit-trail invariant:
+        # the stored record preserves all 10 raw responses — what the
+        # patient ticked — not just the 6 scored values.
+        # Reuses the reverse-keying pattern from PSWQ.  Items 3, 7, 9
+        # are pessimism-worded; the scorer applies the arithmetic-
+        # reflection flip ``flipped = 4 - raw`` to those items before
+        # summing so every post-flip scored item contributes in the
+        # optimism direction uniformly.  Post-flip range 0-24.
+        # **Higher is better** — uniform direction with CD-RISC-10 /
+        # WHO-5 / DTCQ-8 / Readiness Ruler; opposite of PHQ-9 / GAD-7 /
+        # DERS-16 / PCL-5 / OCI-R / K10 / WSAS / PSWQ.  Clients
+        # rendering LOT-R scores must not reuse the higher-is-worse
+        # visual language — a falling LOT-R is a DETERIORATION.
+        # **No severity bands** — Scheier 1994 reported general-
+        # population means (~14-15 U.S. adults) but published no
+        # cross-calibrated clinical cutpoints; Carver 2010's 400-study
+        # review did not yield a cross-calibrated threshold either.
+        # Per CLAUDE.md "don't hand-roll severity thresholds", LOT-R
+        # ships as a continuous dimensional measure uniform with PACS /
+        # Craving VAS / DERS-16 / CD-RISC-10 / PSWQ; envelope carries
+        # ``severity="continuous"``.  Clinician-UI layer may surface a
+        # "below general-population mean" (< 14) context flag — NOT a
+        # classification, NOT a gate.  Unidimensional per Scheier 1994
+        # CFA — no subscales dict (Chang 1997's optimism/pessimism
+        # two-factor split is sample-specific and deliberately
+        # rejected).  ``cutoff_used`` / ``positive_screen`` NOT set
+        # (continuous, not cutoff).  **No T3** — all 10 items probe
+        # the optimism-pessimism construct and general-affect fillers;
+        # none probe suicidality, self-harm, or crisis behavior.
+        # Acute ideation screening stays on PHQ-9 item 9 / C-SSRS.
+        # See ``scoring/lotr.py``.
+        lr = score_lotr(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="lotr",
+            total=lr.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=lr.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2098,6 +2201,7 @@ async def submit_assessment(
         Ders16Invalid,
         Cdrisc10Invalid,
         PswqInvalid,
+        LotrInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

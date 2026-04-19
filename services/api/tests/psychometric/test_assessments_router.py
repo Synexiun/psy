@@ -9347,6 +9347,552 @@ class TestPswqRouting:
         assert body["severity"] == "continuous"
 
 
+class TestLotrRouting:
+    """LOT-R (Scheier, Carver & Bridges 1994) router dispatch.
+
+    Wire contract invariants:
+    - Continuous envelope (``severity`` = "continuous" literal)
+      uniform with Craving VAS / PACS / DERS-16 / CD-RISC-10 / PSWQ.
+      No banded classification because Scheier 1994 published no
+      cross-calibrated clinical cutpoints; Carver 2010's 400-study
+      review did not produce one either.  Trajectory layer extracts
+      clinical signal via RCI-style change detection (Jacobson &
+      Truax 1991) on the 0-24 total.
+    - **Higher-is-better direction** — uniform with CD-RISC-10 /
+      WHO-5 / DTCQ-8 / Readiness Ruler, OPPOSITE of PHQ-9 / GAD-7 /
+      DERS-16 / PCL-5 / OCI-R / K10 / WSAS / PSWQ.  A falling LOT-R
+      total is a DETERIORATION, not an improvement.
+    - **First filler-item pattern** — 10 items on the wire (6 scored
+      + 4 filler).  Scored positions 1, 3, 4, 7, 9, 10; filler
+      positions 2, 5, 6, 8.  Router accepts a 10-item payload
+      because the patient sees 10 items on the form; only the 6
+      scored positions contribute to the sum.  Audit-trail invariant
+      preserved: the stored record echoes all 10 raw responses.
+    - **Reverse-keying reused from PSWQ** — items 3, 7, 9 are
+      pessimism-worded and arithmetic-reflected (``4 - raw``) inside
+      the scorer before summing.  The router test layer verifies
+      only the observable wire behavior (total matches expected
+      post-flip sum); the detailed per-item math is covered in
+      ``test_lotr_scoring.py``.
+    - No ``cutoff_used`` / ``positive_screen`` — continuous.
+    - ``requires_t3`` is always False — LOT-R has no safety item.
+    - ``subscales`` is None — unidimensional per Scheier 1994 CFA
+      (Chang 1997 two-factor split is sample-specific and rejected).
+    - ``triggering_items`` is None — no firing-item concept.
+    - 0-4 Likert envelope — novel on the router surface; -1 rejects
+      (below floor), 5 rejects (above ceiling).  10 items required.
+    - Cross-instrument coexistence: LOT-R + CD-RISC-10 is the
+      trait-positive-psychology DIRECT pair (both higher-is-better
+      continuous); LOT-R + PSWQ is the direction-opposite trait
+      pair (both continuous, opposite direction).
+    """
+
+    def test_all_twos_is_12_continuous(self, client: TestClient) -> None:
+        """Every item at 2 (midline) — total 12 (flip-invariant:
+        ``4 - 2 = 2``).  ``severity`` is the "continuous" sentinel."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": "user-lotr-mid",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "lotr"
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_all_zeros_total_12_acquiescence_floor(
+        self, client: TestClient
+    ) -> None:
+        """Every raw item at 0.  Scored items 1, 4, 10 (direct)
+        contribute 0 each; scored items 3, 7, 9 (reverse) post-flip
+        contribute ``4 - 0 = 4`` each.  Total = 0+4+0+4+4+0 = 12.
+        Fillers excluded.  This is the dis-acquiescence catch: a
+        patient who strong-disagrees with everything lands at
+        midline, not at floor."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [0] * 10,
+                "user_id": "user-lotr-all-zeros",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+
+    def test_all_fours_total_12_acquiescence_ceiling(
+        self, client: TestClient
+    ) -> None:
+        """Every raw item at 4.  Direct items (1, 4, 10) contribute
+        4 each; reverse items (3, 7, 9) post-flip contribute
+        ``4 - 4 = 0`` each.  Total = 4+0+4+0+0+4 = 12.  This is the
+        acquiescence-bias catch: a responder who checks "strongly
+        agree" for every item lands at midline (12), NOT ceiling
+        (24).  A clinician reading 12 on a mixed-direction
+        instrument knows to flag response-set bias."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [4] * 10,
+                "user_id": "user-lotr-all-fours",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+
+    def test_maximum_optimism_ceiling(self, client: TestClient) -> None:
+        """Maximum-optimism pattern: direct items at 4, reverse items
+        at 0 (patient strong-disagrees with pessimism-worded items).
+        Fillers set to 2 — must not affect the total.  Contributions:
+        4 + 4 + 4 + 4 + 4 + 4 = 24 (instrument ceiling).  ``severity``
+        still "continuous" — no "high-optimism" band."""
+        items = [0] * 10
+        items[0] = 4   # item 1 direct
+        items[2] = 0   # item 3 reverse
+        items[3] = 4   # item 4 direct
+        items[6] = 0   # item 7 reverse
+        items[8] = 0   # item 9 reverse
+        items[9] = 4   # item 10 direct
+        items[1] = 2   # item 2 filler
+        items[4] = 2   # item 5 filler
+        items[5] = 2   # item 6 filler
+        items[7] = 2   # item 8 filler
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": items,
+                "user_id": "user-lotr-ceiling",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 24
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_minimum_optimism_floor(self, client: TestClient) -> None:
+        """Minimum-optimism pattern: direct items at 0, reverse items
+        at 4 (patient strong-agrees with pessimism-worded items).
+        Contributions: 0 + 0 + 0 + 0 + 0 + 0 = 0 (instrument floor).
+        A low LOT-R is a strong signal for outcome-expectancy
+        scaffolding but NOT a crisis gate — ``requires_t3`` remains
+        False even at floor."""
+        items = [0] * 10
+        items[0] = 0   # item 1 direct
+        items[2] = 4   # item 3 reverse
+        items[3] = 0   # item 4 direct
+        items[6] = 4   # item 7 reverse
+        items[8] = 4   # item 9 reverse
+        items[9] = 0   # item 10 direct
+        # Fillers default 0 — should not affect.
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": items,
+                "user_id": "user-lotr-floor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_filler_items_do_not_change_total_on_wire(
+        self, client: TestClient
+    ) -> None:
+        """Wire-level filler exclusion test.  Hold the 6 scored
+        positions at the max-optimism pattern; vary the 4 filler
+        positions between 0 and 4.  Both submissions must return
+        total = 24 — the fillers never contribute."""
+        # Scored max-optimism + fillers at 0.
+        items_a = [4, 0, 0, 4, 0, 0, 0, 0, 0, 4]
+        # Scored max-optimism + fillers at 4.
+        items_b = [4, 4, 0, 4, 4, 4, 0, 4, 0, 4]
+        resp_a = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": items_a,
+                "user_id": "user-lotr-fill-a",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        resp_b = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": items_b,
+                "user_id": "user-lotr-fill-b",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp_a.status_code == 201
+        assert resp_b.status_code == 201
+        assert resp_a.json()["total"] == 24
+        assert resp_b.json()["total"] == 24
+
+    def test_cutoff_used_not_populated(self, client: TestClient) -> None:
+        """``cutoff_used`` is None because LOT-R has no cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": "user-lotr-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_subscales_is_none(self, client: TestClient) -> None:
+        """``subscales`` is None — LOT-R is unidimensional per
+        Scheier 1994 (Chang 1997 two-factor split rejected)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": "user-lotr-nosubs",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [4] * 10,
+                "user_id": "user-lotr-notrig",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": "user-lotr-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["instrument_version"] == "lotr-1.0.0"
+
+    def test_too_few_items_rejects(self, client: TestClient) -> None:
+        """9 items fails — exactly 10 required.  Guards against
+        clients that pre-strip fillers and send only the 6 scored
+        positions (or send 9 hoping for a lenient scorer)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 9,
+                "user_id": "user-lotr-few",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_too_many_items_rejects(self, client: TestClient) -> None:
+        """11 items fails — exactly 10 required.  Guards against
+        misroute to DUDIT (11) / PSWQ (16) / URICA (16) / DERS-16 (16)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 11,
+                "user_id": "user-lotr-many",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_six_scored_items_only_rejects(self, client: TestClient) -> None:
+        """A caller who pre-strips fillers and sends only the 6
+        scored items must be rejected — the wire contract requires
+        all 10."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [4, 0, 4, 0, 0, 4],
+                "user_id": "user-lotr-six",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_five_rejects_above_ceiling(self, client: TestClient) -> None:
+        """5 fails — ceiling is 4, not 5 (1-5 PSWQ envelope
+        misroute) or 7 (1-7 ERQ range)."""
+        bad = [2] * 10
+        bad[0] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": bad,
+                "user_id": "user-lotr-five",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_negative_rejects_below_floor(self, client: TestClient) -> None:
+        bad = [2] * 10
+        bad[0] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": bad,
+                "user_id": "user-lotr-neg",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_out_of_range_at_filler_position_rejects(
+        self, client: TestClient
+    ) -> None:
+        """Range violation at a filler position still rejects —
+        fillers are validated identically to scored items because
+        a value outside [0, 4] in a filler slot is a wire-format
+        violation regardless of whether it will be summed."""
+        bad = [2] * 10
+        bad[1] = 7  # item 2, filler
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": bad,
+                "user_id": "user-lotr-filler-oor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_zero_and_four_accept_boundaries(
+        self, client: TestClient
+    ) -> None:
+        """0 and 4 are the envelope boundaries and must both accept."""
+        items = [0, 4, 0, 4, 0, 4, 0, 4, 0, 4]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": items,
+                "user_id": "user-lotr-boundaries",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_persists_all_ten_raw_items_including_fillers(
+        self, client: TestClient
+    ) -> None:
+        """POST persists ALL 10 raw items to the repository — the 4
+        filler values and the 6 scored raw pre-flip values.  Audit
+        invariant: the stored record must show exactly what the
+        patient ticked on the 10-item form, not the scorer's
+        internal post-flip or filler-stripped representation."""
+        user = "user-lotr-persist"
+        # Scored direct=3, reverse=1 (moderate optimist); fillers
+        # set distinctively so we can verify each filler is preserved.
+        raw = [3, 1, 1, 3, 2, 3, 1, 4, 1, 3]
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": raw,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "lotr"
+        assert rec.severity == "continuous"
+        assert rec.subscales is None
+        # Audit invariant: all 10 raw items preserved.
+        assert tuple(rec.raw_items) == tuple(raw)
+        # Filler values preserved verbatim (positions 2, 5, 6, 8 —
+        # 0-indexed 1, 4, 5, 7).
+        assert rec.raw_items[1] == 1  # item 2
+        assert rec.raw_items[4] == 2  # item 5
+        assert rec.raw_items[5] == 3  # item 6
+        assert rec.raw_items[7] == 4  # item 8
+        # Reverse-item raw preserved (pre-flip), not post-flip.
+        assert rec.raw_items[2] == 1  # item 3, raw (not 3 = 4-1)
+        # Scored total: direct 3+3+3 + reverse (4-1)+(4-1)+(4-1) = 18.
+        assert rec.total == 18
+
+    def test_history_projects_lotr(self, client: TestClient) -> None:
+        """GET /history surfaces the LOT-R result with continuous
+        severity and no subscales field."""
+        user = "user-lotr-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "lotr"
+        assert entry["total"] == 12
+        assert entry["severity"] == "continuous"
+
+    def test_coexists_with_cdrisc10_direct_trait_pair(
+        self, client: TestClient
+    ) -> None:
+        """LOT-R (outcome expectancy) + CD-RISC-10 (resilience
+        capacity) is the trait-positive-psychology DIRECT pair —
+        both higher-is-better continuous.  Together they form the
+        two-axis trait layer: "CAN I bounce back?" (CD-RISC-10) +
+        "DO I EXPECT good things?" (LOT-R).  Both must persist
+        cleanly with matching ``severity="continuous"``."""
+        user = "user-lotr-cdrisc10"
+        cd = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert cd.status_code == 201
+        assert cd.json()["severity"] == "continuous"
+
+        lr = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert lr.status_code == 201
+        assert lr.json()["severity"] == "continuous"
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "cdrisc10" in instruments
+        assert "lotr" in instruments
+
+    def test_coexists_with_pswq_opposite_trait_directions(
+        self, client: TestClient
+    ) -> None:
+        """LOT-R (higher-is-better dispositional optimism) + PSWQ
+        (higher-is-worse trait worry) — direction-opposite trait
+        pair.  Both continuous-sentinel on the wire but semantically
+        opposite.  A pessimistic-worrier profile (low LOT-R + high
+        PSWQ) is the classic GAD-ruminator cluster that responds to
+        CBT-for-GAD + optimism training combined interventions
+        (Hanssen 2013)."""
+        user = "user-lotr-pswq"
+        pw = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert pw.status_code == 201
+        assert pw.json()["severity"] == "continuous"
+
+        lr = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert lr.status_code == 201
+        assert lr.json()["severity"] == "continuous"
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "pswq" in instruments
+        assert "lotr" in instruments
+
+    def test_ignores_mdq_and_sex_fields(self, client: TestClient) -> None:
+        """MDQ / AUDIT-C-specific fields at the request body are
+        silently ignored for non-MDQ / non-AUDIT-C instruments."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "lotr",
+                "items": [2] * 10,
+                "sex": "female",
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-lotr-ignores",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "lotr"
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
