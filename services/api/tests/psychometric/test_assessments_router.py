@@ -30804,3 +30804,296 @@ class TestPhq9Routing:
         assert a["total"] == b["total"]
         assert a["severity"] == b["severity"]
         assert a["requires_t3"] == b["requires_t3"]
+
+
+# ---------------------------------------------------------------------------
+# TestGad7Routing
+# ---------------------------------------------------------------------------
+
+
+class TestGad7Routing:
+    """HTTP-layer tests for GAD-7 (Spitzer, Kroenke, Williams, Lowe 2006).
+
+    7 items, 0-3 Likert. Total 0-21, HIGHER = MORE anxiety.
+    Severity bands: none (0-4), mild (5-9), moderate (10-14), severe (15-21).
+    requires_t3=False. No cutoff_used, no positive_screen, no subscales.
+    """
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"gad7-test-{idem_key}"}
+
+    @staticmethod
+    def _floor_items() -> list[int]:
+        return [0] * 7
+
+    @staticmethod
+    def _ceil_items() -> list[int]:
+        return [3] * 7
+
+    @staticmethod
+    def _items_with_total(total: int) -> list[int]:
+        """Build a valid 7-item list with the given total (0-21)."""
+        items = [0] * 7
+        remaining = total
+        for i in range(7):
+            add = min(3, remaining)
+            items[i] += add
+            remaining -= add
+            if remaining == 0:
+                break
+        return items
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_gad7_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_gad7_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_gad7_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "gad7"
+
+    def test_gad7_total_floor(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("total-floor"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_gad7_total_ceil(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._ceil_items()},
+            headers=self._headers("total-ceil"),
+        ).json()
+        assert body["total"] == 21
+
+    def test_gad7_severity_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("sev-present"),
+        ).json()
+        assert "severity" in body
+
+    def test_gad7_requires_t3_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._ceil_items()},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_gad7_no_cutoff_used(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_gad7_no_positive_screen(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("no-ps"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_gad7_no_subscales(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._floor_items()},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    # ------------------------------------------------------------------
+    # Severity bands (Spitzer 2006)
+    # ------------------------------------------------------------------
+
+    def test_gad7_severity_none_at_0(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(0)},
+            headers=self._headers("sev-none-0"),
+        ).json()
+        assert body["severity"] == "none"
+
+    def test_gad7_severity_none_at_4(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(4)},
+            headers=self._headers("sev-none-4"),
+        ).json()
+        assert body["severity"] == "none"
+
+    def test_gad7_severity_mild_at_5(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(5)},
+            headers=self._headers("sev-mild-5"),
+        ).json()
+        assert body["severity"] == "mild"
+
+    def test_gad7_severity_mild_at_9(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(9)},
+            headers=self._headers("sev-mild-9"),
+        ).json()
+        assert body["severity"] == "mild"
+
+    def test_gad7_severity_moderate_at_10(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(10)},
+            headers=self._headers("sev-mod-10"),
+        ).json()
+        assert body["severity"] == "moderate"
+
+    def test_gad7_severity_moderate_at_14(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(14)},
+            headers=self._headers("sev-mod-14"),
+        ).json()
+        assert body["severity"] == "moderate"
+
+    def test_gad7_severity_severe_at_15(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(15)},
+            headers=self._headers("sev-severe-15"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    def test_gad7_severity_severe_at_21(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._ceil_items()},
+            headers=self._headers("sev-severe-21"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    # ------------------------------------------------------------------
+    # Item-count validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_gad7_6_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": [0] * 6},
+            headers=self._headers("cnt-6"),
+        )
+        assert resp.status_code == 422
+
+    def test_gad7_8_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": [0] * 8},
+            headers=self._headers("cnt-8"),
+        )
+        assert resp.status_code == 422
+
+    def test_gad7_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-range validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_gad7_item_4_returns_422(self, client: TestClient) -> None:
+        items = [0] * 7
+        items[0] = 4
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": items},
+            headers=self._headers("range-4"),
+        )
+        assert resp.status_code == 422
+
+    def test_gad7_negative_item_returns_422(self, client: TestClient) -> None:
+        items = [0] * 7
+        items[2] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_gad7_gad_severe(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._ceil_items()},
+            headers=self._headers("vig-severe"),
+        ).json()
+        assert body["severity"] == "severe"
+        assert body["requires_t3"] is False
+
+    def test_gad7_subclinical(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": self._items_with_total(2)},
+            headers=self._headers("vig-sub"),
+        ).json()
+        assert body["severity"] == "none"
+
+    def test_gad7_total_matches_sum(self, client: TestClient) -> None:
+        items = [0, 1, 2, 3, 2, 1, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": items},
+            headers=self._headers("sum-match"),
+        ).json()
+        assert body["total"] == sum(items)
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_gad7_deterministic(self, client: TestClient) -> None:
+        items = [0, 1, 2, 3, 2, 1, 0]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad7", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
