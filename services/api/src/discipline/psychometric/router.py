@@ -1,5 +1,5 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
-C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5.
+C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -48,7 +48,9 @@ Safety routing:
   signal — see ``scoring/isi.py``.  A positive PCL-5 screen is the
   structured follow-up to PC-PTSD-5 — referral for trauma-focused
   therapy (PE / CPT / EMDR), not a crisis signal — see
-  ``scoring/pcl5.py``.
+  ``scoring/pcl5.py``.  A positive OCI-R screen routes to
+  subtype-appropriate OCD therapy (ERP / CBT-H / thought-action-
+  fusion work) — not a crisis signal — see ``scoring/ocir.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -95,6 +97,10 @@ from .scoring.mdq import (
     InvalidResponseError as MdqInvalid,
     score_mdq,
 )
+from .scoring.ocir import (
+    InvalidResponseError as OcirInvalid,
+    score_ocir,
+)
 from .scoring.pcl5 import (
     InvalidResponseError as Pcl5Invalid,
     score_pcl5,
@@ -130,6 +136,7 @@ Instrument = Literal[
     "pcptsd5",
     "isi",
     "pcl5",
+    "ocir",
 ]
 
 
@@ -149,6 +156,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pcptsd5": 5,
     "isi": 7,
     "pcl5": 20,
+    "ocir": 18,
 }
 
 
@@ -434,6 +442,27 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=pcl.positive_screen,
             instrument_version=pcl.instrument_version,
         )
+    if payload.instrument == "ocir":
+        # Foa 2002 — 18-item 0-4 Likert, total 0-72, positive at
+        # >= 21.  Wire envelope matches PCL-5's screen semantic.
+        # Six 3-item subscales (hoarding / checking / ordering /
+        # neutralizing / washing / obsessing) are computed by the
+        # scorer but not surfaced on the wire yet — subscale
+        # surfacing is planned as a cross-cutting sprint that
+        # extends AssessmentResult / AssessmentRecord / FHIR
+        # components together for PCL-5 and OCI-R.
+        ocir = score_ocir(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="ocir",
+            total=ocir.total,
+            severity=(
+                "positive_screen" if ocir.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=ocir.positive_screen,
+            instrument_version=ocir.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -564,6 +593,7 @@ async def submit_assessment(
         PcPtsd5Invalid,
         IsiInvalid,
         Pcl5Invalid,
+        OcirInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

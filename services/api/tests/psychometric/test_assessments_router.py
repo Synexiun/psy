@@ -1730,6 +1730,175 @@ class TestPcl5Routing:
         assert body["positive_screen"] is True
 
 
+class TestOcirRouting:
+    """OCI-R over the wire.
+
+    Router-level contract verification for the 18-item 0-4 Likert OCD
+    screener.  The scorer's own unit tests exhaustively pin the ``>=
+    21`` cutoff and the six distributed subscales (hoarding / checking
+    / ordering / neutralizing / washing / obsessing).  These tests
+    pin (1) the dispatch branch picks ``score_ocir``, (2) the wire
+    envelope carries ``total`` = summed severity (0-72) + ``severity``
+    = positive/negative_screen (uniform with PCL-5 / PC-PTSD-5 /
+    MDQ), (3) the 18-item body fits under the Pydantic envelope
+    (``max_length`` was widened to 20 for PCL-5 — 18 fits
+    comfortably), and (4) ``requires_t3`` is always False.
+    """
+
+    def _post_ocir(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "ocir", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_above_cutoff(self, client: TestClient) -> None:
+        """All 18 items at 4 → total 72 → positive screen.  The
+        envelope carries total = summed severity (0-72), NOT the
+        positive-item count like MDQ / PC-PTSD-5.  Receiving FHIR
+        systems reading this integer + the OCI-R LOINC must interpret
+        it as a severity sum."""
+        resp = self._post_ocir(client, items=[4] * 18)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "ocir"
+        assert body["total"] == 72
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "ocir-1.0.0"
+
+    def test_cutoff_boundary_at_twenty_one(
+        self, client: TestClient
+    ) -> None:
+        """Total exactly 21 → positive screen (the Foa 2002 operating
+        point).  A fence-post regression here would misclassify
+        patients at the exact clinical decision threshold."""
+        # Build: 5 items at 4 (=20) + 1 item at 1 = 21; rest zero.
+        items = [0] * 18
+        for i in range(5):
+            items[i] = 4
+        items[5] = 1
+        resp = self._post_ocir(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 21
+        assert body["positive_screen"] is True
+
+    def test_just_below_cutoff_is_negative(
+        self, client: TestClient
+    ) -> None:
+        """Total 20 → negative screen.  Complements the boundary test
+        from the other side so both comparator directions are pinned."""
+        items = [0] * 18
+        for i in range(5):
+            items[i] = 4
+        resp = self._post_ocir(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 20
+        assert body["positive_screen"] is False
+
+    def test_zero_total_is_negative_screen(self, client: TestClient) -> None:
+        """All items 0 → total 0 → negative screen.  The degenerate
+        case — a patient with no OCD symptom distress."""
+        resp = self._post_ocir(client, items=[0] * 18)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_max_severity_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: OCI-R total 72 (maximum
+        severity) does NOT fire the T3 crisis pathway.  Severe OCD
+        carries elevated suicidality risk, but the OCI-R itself has
+        no suicidality item — obsessing-subscale items resemble
+        "intrusive thoughts" but do not probe acute harm.  T3 is
+        reserved for active suicidality via C-SSRS or PHQ-9 item 9.
+        Letting OCI-R fire T3 would spam the clinical-ops queue."""
+        resp = self._post_ocir(client, items=[4] * 18)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_seventeen_items(self, client: TestClient) -> None:
+        resp = self._post_ocir(client, items=[0] * 17)
+        assert resp.status_code == 422
+
+    def test_rejects_nineteen_items(self, client: TestClient) -> None:
+        resp = self._post_ocir(client, items=[0] * 19)
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Item > 4 → 422."""
+        items = [0] * 18
+        items[0] = 5
+        resp = self._post_ocir(client, items=items)
+        assert resp.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id shows in per-user history with the
+        positive_screen flag captured.  The clinician-UI reads
+        positive_screen from the stored record; a future subscale-
+        surfacing sprint will add the six subscale scores to the
+        history projection for intervention-selection display."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Build a clearly-positive OCI-R (all items at 2 = total 36).
+        items = [2] * 18
+        body = {
+            "instrument": "ocir",
+            "items": items,
+            "user_id": "user-ocir-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-ocir-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "ocir"
+        assert stored.total == 36
+        assert stored.positive_screen is True
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """Client mistakenly sending MDQ-only fields with
+        instrument=ocir → dispatcher reaches OCI-R branch before the
+        MDQ fallthrough; the extra fields are ignored.  Defensive
+        pin against dispatcher-ordering regressions."""
+        items = [2] * 18  # total 36 → positive
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ocir",
+                "items": items,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "ocir"
+        assert body["positive_screen"] is True
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

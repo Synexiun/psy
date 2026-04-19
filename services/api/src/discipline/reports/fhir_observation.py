@@ -68,6 +68,15 @@ LOINC_CODES: dict[str, str] = {
     # under the PCL-5 panel — the cluster codes exist in LOINC but
     # are not emitted yet.
     "pcl5": "91006-2",
+    # OCI-R (Foa 2002) uses LOINC 90232-4 for the total 0-72 severity
+    # sum.  Same treatment as PCL-5: ``valueInteger`` carries the
+    # summed 0-4 Likert items; positive_screen (>= 21 per Foa 2002)
+    # is surfaced via valueCodeableConcept.  Six 3-item subscales
+    # (hoarding / checking / ordering / neutralizing / washing /
+    # obsessing) are computed by the scorer and will be emitted as
+    # Observation components in the planned cluster/subscale
+    # surfacing sprint.
+    "ocir": "90232-4",
 }
 
 LOINC_DISPLAY: dict[str, str] = {
@@ -82,6 +91,7 @@ LOINC_DISPLAY: dict[str, str] = {
     "pcptsd5": "Primary Care PTSD Screen for DSM-5 (PC-PTSD-5) positive item count",
     "isi": "Insomnia Severity Index (ISI) total score",
     "pcl5": "PTSD Checklist for DSM-5 (PCL-5) total score",
+    "ocir": "Obsessive-Compulsive Inventory - Revised (OCI-R) total score",
 }
 
 # HL7 v3 terminology URIs — pinned as constants so callers (and tests) can
