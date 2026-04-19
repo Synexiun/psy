@@ -2650,6 +2650,205 @@ class TestCravingVasRouting:
         assert body["severity"] == "continuous"
 
 
+class TestReadinessRulerRouting:
+    """Readiness Ruler (Rollnick 1999 / Heather 2008) over the wire.
+
+    Readiness Ruler is the package's **second single-item instrument**
+    (after Craving VAS from Sprint 36) and the **first
+    higher-is-better continuous-severity instrument** besides WHO-5.
+    It uses a 0-10 integer range (distinct from VAS's 0-100) and
+    emits the ``"continuous"`` severity sentinel — the wire shape is
+    identical to VAS even though the construct is semantically
+    opposed (VAS: craving intensity, higher = worse; Ruler:
+    motivation to change, higher = better).
+
+    These tests pin (1) the dispatch branch picks
+    ``score_readiness_ruler``, (2) the wire envelope carries
+    ``severity == "continuous"`` across the full 0-10 range,
+    (3) ``requires_t3`` is always False (low motivation is an MI
+    intervention signal, not a crisis signal), (4) the envelope
+    (min_length=1 post-Sprint-36) accepts a 1-element payload,
+    (5) 0 and 2+ item payloads are rejected at 422, (6) out-of-range
+    values (11, 100, -1) are 422 — including a regression guard for
+    a VAS-range confusion (0-100 vs 0-10).
+    """
+
+    def _post_rr(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "readiness_ruler", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_fully_ready(self, client: TestClient) -> None:
+        """Single item at 10 → total 10 → severity 'continuous'.  The
+        action / maintenance stage.  Ruler values flow directly into
+        the motivation-axis lookup the intervention layer reads
+        alongside the craving axis to pick a tool variant."""
+        resp = self._post_rr(client, items=[10])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "readiness_ruler"
+        assert body["total"] == 10
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "readiness_ruler-1.0.0"
+
+    def test_zero_ready_still_returns_continuous_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """Ruler = 0 is "not ready at all" — the pre-contemplation
+        stance.  The sentinel ``"continuous"`` is invariant across
+        the full 0-10 range; a regression that coerced this case to
+        a distinct label (e.g. 'precontemplation') would cross the
+        "Don't hand-roll severity thresholds" line from CLAUDE.md."""
+        resp = self._post_rr(client, items=[0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_midrange_total_is_still_continuous(
+        self, client: TestClient
+    ) -> None:
+        """Ruler = 5 (contemplation / preparation midpoint) must not
+        pick up a banded label.  If a future refactor imports the
+        PHQ-9 severity classifier for "mild/moderate" branding into
+        this path, this test catches the cross-wire."""
+        resp = self._post_rr(client, items=[5])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 5
+        assert body["severity"] == "continuous"
+
+    def test_zero_ready_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: Ruler 0 ("not ready at
+        all") does NOT fire T3.  Low motivation pairs with low-agency
+        mood profiles, but the product responds with MI-scripted
+        interventions (decisional-balance, change-talk elicitation),
+        not with T4 human handoff.  Acute ideation is gated by PHQ-9
+        item 9 / C-SSRS per the uniform safety-posture convention."""
+        resp = self._post_rr(client, items=[0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_envelope_accepts_single_item(self, client: TestClient) -> None:
+        """Continued regression guard on the Sprint 36 ``min_length=1``
+        drop.  Both single-item instruments (VAS and Ruler) depend
+        on it — a revert to min_length=3 would 422 both of them
+        identically."""
+        resp = self._post_rr(client, items=[7])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 7
+        assert body["instrument"] == "readiness_ruler"
+
+    def test_rejects_empty_list(self, client: TestClient) -> None:
+        resp = self._post_rr(client, items=[])
+        assert resp.status_code == 422
+
+    def test_rejects_two_items(self, client: TestClient) -> None:
+        """Two items → 422.  A caller sending two items is most
+        commonly submitting a PHQ-2 / GAD-2 payload with the wrong
+        instrument key.  The dedicated 422 makes the miswire obvious."""
+        resp = self._post_rr(client, items=[5, 5])
+        assert resp.status_code == 422
+
+    def test_rejects_sixteen_items(self, client: TestClient) -> None:
+        """16 items is the URICA short-form shape (§3.1 row #10 —
+        planned for a future sprint).  When URICA ships, the Ruler
+        dispatch must NOT silently accept a misrouted URICA payload."""
+        resp = self._post_rr(client, items=[2] * 16)
+        assert resp.status_code == 422
+
+    def test_rejects_eleven(self, client: TestClient) -> None:
+        """Value 11 (one above the Heather 2008 ceiling) → 422.  The
+        classic off-by-one regression guard."""
+        resp = self._post_rr(client, items=[11])
+        assert resp.status_code == 422
+
+    def test_rejects_one_hundred_vas_range_confusion(
+        self, client: TestClient
+    ) -> None:
+        """Value 100 → 422.  Regression guard against a caller who
+        switched from Craving VAS to Readiness Ruler but forgot to
+        rescale 0-100 → 0-10.  Since both instruments use the same
+        single-item wire shape, a silent VAS→Ruler misroute would
+        otherwise be invisible."""
+        resp = self._post_rr(client, items=[100])
+        assert resp.status_code == 422
+
+    def test_rejects_negative_value(self, client: TestClient) -> None:
+        """Negative Ruler → 422.  Regression guard against a client
+        that sent a signed integer instead of the unsigned 0-10
+        scalar."""
+        resp = self._post_rr(client, items=[-1])
+        assert resp.status_code == 422
+
+    def test_persists_ruler_submission_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id lands in per-user history with the
+        continuous sentinel and the single integer captured.
+        Trajectory analysis reads stored Ruler totals across the
+        timeline — a regression that dropped the total during
+        persistence would silently break the motivation-trajectory
+        signal the intervention layer reads for tool-variant
+        selection."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "readiness_ruler",
+            "items": [8],
+            "user_id": "user-rr-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-rr-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "readiness_ruler"
+        assert stored.total == 8
+        assert stored.severity == "continuous"
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """instrument=readiness_ruler + MDQ fields → MDQ fields
+        ignored, Ruler dispatch runs cleanly.  Defensive pin across
+        the dispatcher-ordering contract — same guard as PACS / VAS /
+        BIS-11 / PHQ-15."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "readiness_ruler",
+                "items": [6],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "readiness_ruler"
+        assert body["total"] == 6
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

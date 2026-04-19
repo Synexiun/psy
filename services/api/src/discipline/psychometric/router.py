@@ -1,6 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS, BIS-11, Craving VAS.
+PACS, BIS-11, Craving VAS, Readiness Ruler.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -36,8 +36,9 @@ Safety routing:
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
-  PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS have no safety
-  items — ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
+  PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler
+  have no safety items — ``requires_t3`` is always False for these
+  instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -73,7 +74,17 @@ Safety routing:
   momentary-point craving at urge-onset and post-intervention so
   the contextual bandit can train on within-episode Δ.  No
   safety item; a VAS of 100 is "strongest craving ever felt",
-  not active suicidality.  See ``scoring/craving_vas.py``.
+  not active suicidality.  See ``scoring/craving_vas.py``.  The
+  Readiness Ruler (Rollnick 1999 / Heather 2008) is the single-
+  item 0-10 motivation-to-change companion — the motivation
+  signal the intervention layer pairs with the craving signal to
+  pick a tool variant (MI-scripted elicitation vs effortful-
+  resistance vs maintenance).  Higher-is-better direction
+  (opposite of VAS / PHQ-9 / GAD-7); the trajectory layer
+  applies the same direction-inversion logic it uses for WHO-5.
+  No safety item; a Ruler of 0 ("not ready at all") is a
+  motivation signal, not a crisis signal.  See
+  ``scoring/readiness_ruler.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -150,6 +161,10 @@ from .scoring.phq15 import (
     score_phq15,
 )
 from .scoring.pss10 import InvalidResponseError as Pss10Invalid, score_pss10
+from .scoring.readiness_ruler import (
+    InvalidResponseError as ReadinessRulerInvalid,
+    score_readiness_ruler,
+)
 from .scoring.who5 import InvalidResponseError as Who5Invalid, score_who5
 from .trajectories import RCI_THRESHOLDS, compute_point
 
@@ -180,6 +195,7 @@ Instrument = Literal[
     "pacs",
     "bis11",
     "craving_vas",
+    "readiness_ruler",
 ]
 
 
@@ -204,6 +220,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pacs": 5,
     "bis11": 30,
     "craving_vas": 1,
+    "readiness_ruler": 1,
 }
 
 
@@ -305,14 +322,18 @@ class AssessmentResult(BaseModel):
     positive_count is the closest analogue and clients can use it for
     trajectory tracking independently of band changes.
 
-    For PACS (Flannery 1999) and Craving VAS (Sayette 2000),
-    ``severity`` is the literal sentinel ``"continuous"``.  Neither
-    instrument publishes severity bands; the trajectory layer extracts
-    the clinical signal (week-over-week Δ for PACS; within-episode Δ
-    and EMA trajectory for VAS) from ``total`` directly.  Clients
-    rendering PACS or VAS results must not attempt to classify status
-    from ``severity`` — show ``total`` and the trajectory chart
-    instead.
+    For PACS (Flannery 1999), Craving VAS (Sayette 2000), and
+    Readiness Ruler (Rollnick 1999 / Heather 2008), ``severity`` is
+    the literal sentinel ``"continuous"``.  None of these instruments
+    publishes severity bands; the trajectory layer extracts the
+    clinical signal from ``total`` directly — week-over-week Δ for
+    PACS, within-episode Δ + EMA trajectory for VAS, week-over-week
+    Δ for the Ruler.  Direction semantics differ: VAS and PACS are
+    higher-is-worse (craving rising = deterioration), the Ruler is
+    higher-is-better (motivation rising = improvement, same direction
+    as WHO-5).  Clients rendering these results must not attempt to
+    classify status from ``severity`` — show ``total`` and the
+    trajectory chart instead.
     """
 
     assessment_id: str
@@ -625,6 +646,41 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=vas.instrument_version,
         )
+    if payload.instrument == "readiness_ruler":
+        # Rollnick 1999 / Heather 2008 — single-item 0-10 motivation-
+        # to-change ruler.  **Continuous-severity envelope** (same
+        # sentinel as PACS / VAS) — Heather 2008 publishes no bands,
+        # and the MI stages-of-change anchors (pre-contemplation /
+        # contemplation / action) are pedagogical descriptions, NOT
+        # clinically-validated cutoffs with consensus uptake.
+        # Fabricating bands from pedagogical anchors would violate
+        # CLAUDE.md's "Don't hand-roll severity thresholds" rule.
+        # **Direction semantics: higher is better** — unlike Craving
+        # VAS (higher = worse craving) or PHQ-9 / GAD-7 / PSS-10
+        # (higher = worse symptom).  The trajectory layer must apply
+        # the same direction-inversion logic it uses for WHO-5 when
+        # Ruler trajectories are added; until then, wire-layer
+        # behavior is identical to PACS / VAS (emit raw total + the
+        # ``"continuous"`` sentinel).  The Ruler is URICA's single-
+        # item equivalent — the full 16-item 4-subscale stages-of-
+        # change instrument is a separate future sprint per
+        # Docs/Technicals/12_Psychometric_System.md §3.1 row #10.
+        # No safety routing: a Ruler score of 0 ("not ready at all")
+        # is a motivation signal routing to MI-scripted interventions
+        # (decisional-balance elicitation, change-talk amplification),
+        # not a crisis signal.  Acute ideation is gated by PHQ-9 item
+        # 9 / C-SSRS per the PACS / PHQ-15 / OCI-R / ISI / VAS
+        # safety-posture convention.  See
+        # ``scoring/readiness_ruler.py``.
+        rr = score_readiness_ruler(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="readiness_ruler",
+            total=rr.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=rr.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -760,6 +816,7 @@ async def submit_assessment(
         PacsInvalid,
         Bis11Invalid,
         CravingVasInvalid,
+        ReadinessRulerInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
