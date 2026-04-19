@@ -77,6 +77,16 @@ LOINC_CODES: dict[str, str] = {
     # Observation components in the planned cluster/subscale
     # surfacing sprint.
     "ocir": "90232-4",
+    # PHQ-15 (Kroenke 2002) uses LOINC 70273-7 for the total 0-30
+    # somatic-symptom severity sum.  ``valueInteger`` carries the
+    # summed 0-2 Likert items (tighter range than PHQ-9's 0-3 — a
+    # receiving system that assumed a 0-27 ceiling from PHQ-9 would
+    # reject a valid PHQ-15 submission; the LOINC code disambiguates).
+    # Kroenke-2002 severity bands (minimal/low/medium/high) are
+    # surfaced as severity band text on the paired AssessmentResult
+    # and are not currently emitted as a separate FHIR Observation
+    # (same pattern as PHQ-9 / GAD-7 / ISI severity bands).
+    "phq15": "70273-7",
 }
 
 LOINC_DISPLAY: dict[str, str] = {
@@ -92,6 +102,7 @@ LOINC_DISPLAY: dict[str, str] = {
     "isi": "Insomnia Severity Index (ISI) total score",
     "pcl5": "PTSD Checklist for DSM-5 (PCL-5) total score",
     "ocir": "Obsessive-Compulsive Inventory - Revised (OCI-R) total score",
+    "phq15": "Patient Health Questionnaire 15 item (PHQ-15) total score",
 }
 
 # HL7 v3 terminology URIs — pinned as constants so callers (and tests) can

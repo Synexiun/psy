@@ -1899,6 +1899,210 @@ class TestOcirRouting:
         assert body["positive_screen"] is True
 
 
+class TestPhq15Routing:
+    """PHQ-15 over the wire.
+
+    Router-level contract verification for the 15-item 0-2 Likert
+    somatic-symptom scale.  PHQ-15 ships the banded-severity envelope
+    (like PHQ-9 / GAD-7 / ISI) rather than the screen envelope of
+    MDQ / PCL-5 / OCI-R.  These tests pin (1) the dispatch branch
+    picks ``score_phq15``, (2) the wire envelope carries
+    ``severity`` = one of minimal/low/medium/high directly (not
+    positive/negative_screen), (3) ``requires_t3`` is always False
+    (chest-pain and fainting items don't escalate to the safety
+    stream), (4) the 0-2 item range is enforced at the scorer →
+    422 surface.
+    """
+
+    def _post_phq15(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "phq15", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_high_band(self, client: TestClient) -> None:
+        """All 15 items at 2 → total 30 → high band.  Envelope
+        carries severity = 'high' (the Kroenke-2002 band label)
+        directly, NOT positive_screen/negative_screen.  Receiving
+        clients rendering PHQ-family UI read the band text for the
+        severity chip."""
+        resp = self._post_phq15(client, items=[2] * 15)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "phq15"
+        assert body["total"] == 30
+        assert body["severity"] == "high"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "phq15-1.0.0"
+
+    def test_minimal_band_on_zeros(self, client: TestClient) -> None:
+        """All items 0 → minimal band.  The degenerate case — a
+        patient with no somatic complaint burden."""
+        resp = self._post_phq15(client, items=[0] * 15)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "minimal"
+
+    def test_band_boundary_four_is_minimal(
+        self, client: TestClient
+    ) -> None:
+        """Total 4 → minimal band boundary.  A `< 4` regression
+        would push this into low and over-identify."""
+        items = [0] * 15
+        items[0] = 2
+        items[1] = 2  # total 4
+        resp = self._post_phq15(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 4
+        assert body["severity"] == "minimal"
+
+    def test_band_boundary_five_is_low(
+        self, client: TestClient
+    ) -> None:
+        """Total 5 → low band (minimal→low transition)."""
+        items = [0] * 15
+        items[0] = 2
+        items[1] = 2
+        items[2] = 1  # total 5
+        resp = self._post_phq15(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 5
+        assert body["severity"] == "low"
+
+    def test_band_boundary_ten_is_medium(
+        self, client: TestClient
+    ) -> None:
+        """Total 10 → medium band (low→medium transition).  This is
+        the clinical-referral threshold Kroenke 2002 cites for
+        considering a somatic-focused work-up."""
+        items = [0] * 15
+        for i in range(5):
+            items[i] = 2  # total 10
+        resp = self._post_phq15(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 10
+        assert body["severity"] == "medium"
+
+    def test_band_boundary_fifteen_is_high(
+        self, client: TestClient
+    ) -> None:
+        """Total 15 → high band (medium→high transition).  The
+        high band is the 'somatization-dominant — route to
+        interoceptive-exposure work' trigger."""
+        items = [0] * 15
+        for i in range(7):
+            items[i] = 2
+        items[7] = 1  # total 15
+        resp = self._post_phq15(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 15
+        assert body["severity"] == "high"
+
+    def test_max_severity_does_not_fire_t3(
+        self, client: TestClient
+    ) -> None:
+        """Critical clinical-safety contract: PHQ-15 total 30
+        (maximum somatization) does NOT fire T3.  Item 6 (chest
+        pain) and item 8 (fainting) are medical-urgency markers
+        surfaced by the clinician-UI layer separately — they are
+        NOT crisis-routing signals.  Letting PHQ-15 fire T3 would
+        cross the medical-urgency / psychiatric-crisis boundary
+        and desensitize the safety queue."""
+        resp = self._post_phq15(client, items=[2] * 15)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_fourteen_items(self, client: TestClient) -> None:
+        resp = self._post_phq15(client, items=[0] * 14)
+        assert resp.status_code == 422
+
+    def test_rejects_sixteen_items(self, client: TestClient) -> None:
+        resp = self._post_phq15(client, items=[0] * 16)
+        assert resp.status_code == 422
+
+    def test_rejects_phq9_style_item_value(
+        self, client: TestClient
+    ) -> None:
+        """Item 3 supplied (the PHQ-9 max) → 422.  PHQ-15 is 0-2, not
+        0-3 like PHQ-9.  A client that reused a PHQ-9 renderer would
+        submit values up to 3; the router rejects them via the
+        scorer's InvalidResponseError → 422 path."""
+        items = [0] * 15
+        items[0] = 3
+        resp = self._post_phq15(client, items=items)
+        assert resp.status_code == 422
+
+    def test_persists_high_band_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id shows in per-user history with
+        severity band captured.  Clinician-UI renders PHQ-15
+        history with the band chip from the stored severity
+        field; a trajectory-analysis sprint will add RCI
+        deltas against the stored total once a PHQ-15 reliable-
+        change threshold is pinned."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Clearly-high PHQ-15 (all items at 2 → total 30).
+        body = {
+            "instrument": "phq15",
+            "items": [2] * 15,
+            "user_id": "user-phq15-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-phq15-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "phq15"
+        assert stored.total == 30
+        assert stored.severity == "high"
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """Client mistakenly sending MDQ-only fields with
+        instrument=phq15 → dispatcher reaches PHQ-15 branch before
+        the MDQ fallthrough; extra fields are ignored.  Defensive
+        pin against dispatcher-ordering regressions (load-bearing
+        across every non-MDQ branch — a refactor that moved MDQ
+        earlier would silently raise on missing PHQ-15 fields)."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq15",
+                "items": [2] * 15,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "phq15"
+        assert body["severity"] == "high"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

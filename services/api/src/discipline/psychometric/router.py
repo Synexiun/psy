@@ -1,5 +1,5 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
-C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R.
+C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -35,22 +35,27 @@ Safety routing:
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
-  PCL-5 have no safety items — ``requires_t3`` is always False for
-  these instruments.  WHO-5 ``depression_screen`` band is *not* a T3
-  trigger; T3 is reserved for active suicidality per
-  Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ screen
-  is a referral signal for a bipolar-spectrum structured interview,
-  not a crisis signal — see ``scoring/mdq.py`` module docstring.
-  A positive PC-PTSD-5 is a referral signal for trauma-informed care
-  (CAPS-5 / PCL-5 structured interview, EMDR / TF-CBT intake), not a
-  crisis signal — see ``scoring/pcptsd5.py``.  A severe ISI result
-  is a referral signal for CBT-I / sleep medicine, not a crisis
-  signal — see ``scoring/isi.py``.  A positive PCL-5 screen is the
-  structured follow-up to PC-PTSD-5 — referral for trauma-focused
-  therapy (PE / CPT / EMDR), not a crisis signal — see
-  ``scoring/pcl5.py``.  A positive OCI-R screen routes to
+  PCL-5, OCI-R, PHQ-15 have no safety items — ``requires_t3`` is
+  always False for these instruments.  WHO-5 ``depression_screen``
+  band is *not* a T3 trigger; T3 is reserved for active suicidality
+  per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
+  screen is a referral signal for a bipolar-spectrum structured
+  interview, not a crisis signal — see ``scoring/mdq.py`` module
+  docstring.  A positive PC-PTSD-5 is a referral signal for trauma-
+  informed care (CAPS-5 / PCL-5 structured interview, EMDR / TF-CBT
+  intake), not a crisis signal — see ``scoring/pcptsd5.py``.  A
+  severe ISI result is a referral signal for CBT-I / sleep medicine,
+  not a crisis signal — see ``scoring/isi.py``.  A positive PCL-5
+  screen is the structured follow-up to PC-PTSD-5 — referral for
+  trauma-focused therapy (PE / CPT / EMDR), not a crisis signal —
+  see ``scoring/pcl5.py``.  A positive OCI-R screen routes to
   subtype-appropriate OCD therapy (ERP / CBT-H / thought-action-
   fusion work) — not a crisis signal — see ``scoring/ocir.py``.
+  A high PHQ-15 score is a somatization signal routing to
+  interoceptive-exposure / somatic-awareness interventions —
+  item 6 (chest pain) and item 8 (fainting) are medical-urgency
+  markers surfaced by the clinician-UI layer separately and are not
+  T3 triggers — see ``scoring/phq15.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -110,6 +115,10 @@ from .scoring.pcptsd5 import (
     score_pcptsd5,
 )
 from .scoring.phq9 import InvalidResponseError as Phq9Invalid, score_phq9
+from .scoring.phq15 import (
+    InvalidResponseError as Phq15Invalid,
+    score_phq15,
+)
 from .scoring.pss10 import InvalidResponseError as Pss10Invalid, score_pss10
 from .scoring.who5 import InvalidResponseError as Who5Invalid, score_who5
 from .trajectories import RCI_THRESHOLDS, compute_point
@@ -137,6 +146,7 @@ Instrument = Literal[
     "isi",
     "pcl5",
     "ocir",
+    "phq15",
 ]
 
 
@@ -157,6 +167,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "isi": 7,
     "pcl5": 20,
     "ocir": 18,
+    "phq15": 15,
 }
 
 
@@ -463,6 +474,26 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=ocir.positive_screen,
             instrument_version=ocir.instrument_version,
         )
+    if payload.instrument == "phq15":
+        # Kroenke 2002 — 15-item 0-2 Likert somatic symptom scale,
+        # total 0-30.  Severity band (minimal/low/medium/high) uniform
+        # with PHQ-9 / GAD-7 / ISI — banded-severity envelope, NOT the
+        # positive/negative_screen envelope used by PCL-5 / PC-PTSD-5 /
+        # OCI-R / MDQ.  No safety routing: PHQ-15 has no suicidality
+        # item, and item 6 (chest pain) + item 8 (fainting) are
+        # medical-urgency signals surfaced by the clinician-UI layer
+        # separately rather than T3 triggers.  Sex-aware item 4
+        # (menstrual problems) is handled upstream — the scorer takes
+        # 15 pre-coded items; men code item 4 as 0 per Kroenke 2002.
+        phq15 = score_phq15(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="phq15",
+            total=phq15.total,
+            severity=phq15.severity,
+            requires_t3=False,
+            instrument_version=phq15.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -594,6 +625,7 @@ async def submit_assessment(
         IsiInvalid,
         Pcl5Invalid,
         OcirInvalid,
+        Phq15Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
