@@ -50,6 +50,12 @@ from uuid import uuid4
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from discipline.shared.idempotency import (
+    Conflict,
+    Hit,
+    get_idempotency_store,
+    hash_pydantic,
+)
 from discipline.shared.logging import LogStream, get_stream_logger
 
 from .safety_items import evaluate_phq9
@@ -335,10 +341,39 @@ async def submit_assessment(
     When ``requires_t3`` is True (PHQ-9 item 9 OR C-SSRS items 4/5/6
     +recency), a Merkle-chained event is emitted to the safety stream
     so on-call clinical operators can correlate with downstream contact
-    workflows.  GAD-7 / WHO-5 / AUDIT-C / PSS-10 never fire T3, so they
-    never emit a safety event.
+    workflows.  GAD-7 / WHO-5 / AUDIT-C / PSS-10 / DAST-10 never fire
+    T3, so they never emit a safety event.
+
+    Idempotency (RFC 7238-style):
+    - Same ``Idempotency-Key`` + same body → return the cached
+      response and skip side-effects (re-scoring, safety emission).
+    - Same key + different body → 409 Conflict.
+    - Entries expire after 24 h (see
+      :mod:`discipline.shared.idempotency`).
     """
     _validate_item_count(payload)
+
+    store = get_idempotency_store()
+    body_hash = hash_pydantic(payload)
+    cached = store.lookup(idempotency_key, body_hash)
+    if isinstance(cached, Conflict):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "idempotency.conflict",
+                "message": (
+                    "Idempotency-Key was previously seen with a different "
+                    "request body.  Pick a new key or resubmit the original "
+                    "body."
+                ),
+            },
+        )
+    if isinstance(cached, Hit):
+        # Replay: return stored response and skip the safety emission.
+        # Storing an AssessmentResult in the cache means we re-serve the
+        # same assessment_id + identical severity/total fields, which is
+        # what a retrying client expects on a network retry.
+        return cached.response
 
     try:
         result = _dispatch(payload)
@@ -358,6 +393,11 @@ async def submit_assessment(
 
     if result.requires_t3:
         _emit_t3_safety_event(result, user_id=payload.user_id)
+    # Only cache successful results.  A 422 re-raises on replay by
+    # rerunning validation — the invalid payload is deterministic, so
+    # caching the exception would save a few microseconds at the cost
+    # of a much more complex cache invalidation story.
+    store.store(idempotency_key, body_hash, result)
     return result
 
 

@@ -13,6 +13,7 @@ Coverage matrix:
 
 from __future__ import annotations
 
+import uuid
 from typing import Any
 
 import pytest
@@ -22,6 +23,24 @@ from discipline.app import create_app
 
 
 # ---- Fixtures --------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _reset_idempotency_store() -> Any:
+    """Clear the module-level idempotency store before and after each test.
+
+    The existing helper ``_post`` hard-codes ``Idempotency-Key:
+    test-key-abc`` for every submission; without this reset, the second
+    test in a run would see the first test's body under the same key
+    and 409 Conflict.  Test isolation must match the production model
+    where each request is a fresh operation — the cache exists for
+    retry-within-a-single-client, not cross-test fixture reuse.
+    """
+    from discipline.shared.idempotency import get_idempotency_store
+
+    get_idempotency_store().clear()
+    yield
+    get_idempotency_store().clear()
 
 
 @pytest.fixture
@@ -37,10 +56,21 @@ def _post(
     sex: str | None = None,
     headers: dict[str, str] | None = None,
 ) -> Any:
+    """Submit an assessment with a fresh Idempotency-Key per call.
+
+    The default key is a new UUID on every invocation so that a test
+    which loops over multiple bodies (e.g. AUDIT-C across sexes, a
+    response-shape test across every instrument) does not accidentally
+    collide on the idempotency cache and get 409 Conflict on the
+    second iteration.  Tests that need a *specific* key for
+    replay/conflict scenarios bypass this helper and call
+    ``client.post`` directly with explicit headers (see
+    ``TestIdempotency`` below).
+    """
     body: dict[str, Any] = {"instrument": instrument, "items": items}
     if sex is not None:
         body["sex"] = sex
-    h = {"Idempotency-Key": "test-key-abc"}
+    h = {"Idempotency-Key": f"test-{uuid.uuid4()}"}
     if headers:
         h.update(headers)
     return client.post("/v1/assessments", json=body, headers=h)
@@ -1008,9 +1038,243 @@ class TestSafetyStreamT3Emission:
             headers={"Idempotency-Key": "k2"},
         )
         assert len(captured) == 2
-        # Each carries a distinct assessment_id — the idempotency key
-        # isn't yet repository-backed, so unique assessment_ids are the
-        # correlation anchor.
+        # Each carries a distinct assessment_id — different idempotency
+        # keys produce independent submissions.
         assert (
             captured[0]["assessment_id"] != captured[1]["assessment_id"]
         )
+
+
+# =============================================================================
+# Idempotency — replay-safety over the wire
+# =============================================================================
+
+
+class TestIdempotency:
+    """End-to-end idempotency tests through the HTTP surface.
+
+    The store is cleared between tests by the autouse
+    ``_reset_idempotency_store`` fixture so each test starts fresh;
+    within a single test we exercise replay / conflict / cross-key
+    scenarios explicitly.
+
+    Critical property: when a request with a T3-firing payload is
+    replayed under the same key, **no second safety event is emitted**
+    — a retry-induced double emission would inflate the 2-year safety
+    retention pool and create duplicate clinical-ops paging.
+    """
+
+    def test_same_key_same_body_returns_cached_response(
+        self, client: TestClient
+    ) -> None:
+        """Two POSTs with the same key + same body return the same
+        assessment_id — proves the cache is serving the second call."""
+        items = [1, 1, 1, 1, 1, 1, 1, 1, 0]  # phq9 mild
+        headers = {"Idempotency-Key": "same-key-1"}
+        first = _post(client, instrument="phq9", items=items, headers=headers).json()
+        second = _post(
+            client, instrument="phq9", items=items, headers=headers
+        ).json()
+        assert first["assessment_id"] == second["assessment_id"]
+        assert first == second
+
+    def test_same_key_different_body_returns_409(
+        self, client: TestClient
+    ) -> None:
+        """Same key, different items → 409 Conflict with the canonical
+        error code.  A caller that quietly succeeded here would let a
+        client accidentally double-submit a misclicked assessment."""
+        headers = {"Idempotency-Key": "conflict-key-1"}
+        first = _post(
+            client,
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+            headers=headers,
+        )
+        assert first.status_code == 201
+
+        # Different items → different body hash → Conflict.
+        second = _post(
+            client,
+            instrument="phq9",
+            items=[2, 2, 2, 2, 2, 2, 2, 2, 0],
+            headers=headers,
+        )
+        assert second.status_code == 409
+        detail = second.json()["detail"]
+        assert detail["code"] == "idempotency.conflict"
+
+    def test_different_key_same_body_produces_distinct_responses(
+        self, client: TestClient
+    ) -> None:
+        """Cache is keyed on ``(key, body_hash)``, not body alone.  Two
+        clients sending the same payload under different keys get
+        distinct ``assessment_id`` values."""
+        items = [1, 1, 1, 1, 1, 1, 1, 1, 0]
+        first = _post(
+            client,
+            instrument="phq9",
+            items=items,
+            headers={"Idempotency-Key": "k-alpha"},
+        ).json()
+        second = _post(
+            client,
+            instrument="phq9",
+            items=items,
+            headers={"Idempotency-Key": "k-beta"},
+        ).json()
+        assert first["assessment_id"] != second["assessment_id"]
+
+    def test_missing_idempotency_key_rejected(self, client: TestClient) -> None:
+        """The header is required.  FastAPI surfaces a 422 (pydantic
+        validation) rather than silently defaulting."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [0] * 9},
+        )
+        # FastAPI returns 422 when a required Header dependency is missing.
+        assert resp.status_code == 422
+
+    def test_empty_body_formatting_does_not_change_hash(
+        self, client: TestClient
+    ) -> None:
+        """Whitespace / key-ordering differences in the JSON payload
+        must hash identically — the second POST is a valid replay, not
+        a Conflict.  Tests the ``canonical_json_bytes`` determinism
+        end-to-end through FastAPI's Pydantic parsing."""
+        headers = {"Idempotency-Key": "whitespace-k"}
+        # FastAPI + Pydantic parse both bodies to the same model; the
+        # model_dump(mode="json") → sort_keys hash is the same regardless
+        # of the raw wire format.  So two logically-identical requests
+        # produce the same hash → the second is a Hit, not a Conflict.
+        r1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [1, 1, 1, 1, 1, 1, 1, 1, 0]},
+            headers=headers,
+        )
+        r2 = client.post(
+            "/v1/assessments",
+            # Different key ordering in the JSON object.
+            json={"items": [1, 1, 1, 1, 1, 1, 1, 1, 0], "instrument": "phq9"},
+            headers=headers,
+        )
+        assert r1.status_code == 201
+        assert r2.status_code == 201
+        assert r1.json()["assessment_id"] == r2.json()["assessment_id"]
+
+    def test_replay_does_not_reemit_safety_event(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Replay of a T3-firing assessment under the same key must
+        NOT emit a second safety event.  This is the load-bearing
+        clinical property of the cache — a retry-induced double
+        emission would page on-call twice for the same incident and
+        double the 2-year retention footprint."""
+        captured: list[dict[str, Any]] = []
+
+        def capture(event: str, **kwargs: Any) -> None:
+            captured.append({"event": event, **kwargs})
+
+        from discipline.psychometric import router as psych_router
+
+        monkeypatch.setattr(psych_router._safety, "warning", capture)
+
+        items = [0] * 9
+        items[8] = 2  # item 9 positive → T3
+        headers = {"Idempotency-Key": "replay-t3-key"}
+        first = _post(client, instrument="phq9", items=items, headers=headers).json()
+        assert first["requires_t3"] is True
+        assert len(captured) == 1
+
+        # Replay — same key + same body → cache Hit, no new emission.
+        second = _post(
+            client, instrument="phq9", items=items, headers=headers
+        ).json()
+        assert second["requires_t3"] is True
+        assert second["assessment_id"] == first["assessment_id"]
+        assert len(captured) == 1  # still one, not two
+
+    def test_conflict_on_t3_does_not_emit(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A 409 Conflict returns before any scoring or safety-stream
+        work — the second (conflicting) submission must not produce a
+        safety event even if it would have fired T3 on its own merits.
+        Catches a bug where the 409 is raised AFTER dispatch."""
+        captured: list[dict[str, Any]] = []
+
+        def capture(event: str, **kwargs: Any) -> None:
+            captured.append({"event": event, **kwargs})
+
+        from discipline.psychometric import router as psych_router
+
+        monkeypatch.setattr(psych_router._safety, "warning", capture)
+
+        headers = {"Idempotency-Key": "conflict-t3-key"}
+        # First: non-T3 body.
+        _post(
+            client,
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+            headers=headers,
+        )
+        assert len(captured) == 0
+
+        # Second: same key but T3-firing body → 409, no emission.
+        t3_items = [0] * 9
+        t3_items[8] = 2
+        resp = _post(client, instrument="phq9", items=t3_items, headers=headers)
+        assert resp.status_code == 409
+        assert len(captured) == 0
+
+    def test_different_user_id_same_items_is_conflict(
+        self, client: TestClient
+    ) -> None:
+        """``user_id`` is part of the hashed body.  Two submissions
+        under the same key with the same items but different
+        ``user_id`` hash differently and so produce a Conflict.  This
+        pins that the key-owner can't accidentally collapse two
+        patients' submissions."""
+        headers = {"Idempotency-Key": "user-key-1"}
+        first = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "user_id": "u_alice",
+            },
+            headers=headers,
+        )
+        assert first.status_code == 201
+
+        second = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "user_id": "u_bob",
+            },
+            headers=headers,
+        )
+        assert second.status_code == 409
+
+    def test_422_not_cached(self, client: TestClient) -> None:
+        """Validation errors (422) don't populate the cache — the
+        caller can submit the same key next time with a corrected
+        body and get a 201 rather than a stale 422 replay."""
+        headers = {"Idempotency-Key": "bad-then-good-key"}
+        # First: bad item count → 422.
+        bad = _post(client, instrument="phq9", items=[0] * 3, headers=headers)
+        assert bad.status_code == 422
+
+        # Second: same key, well-formed body → the cache did NOT
+        # record the 422, so this proceeds.  But the body hash now
+        # differs from whatever was hashed pre-validation; nothing was
+        # stored either way.  Expected: 201.
+        good = _post(
+            client,
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+            headers=headers,
+        )
+        assert good.status_code == 201
