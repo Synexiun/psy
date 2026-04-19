@@ -52,10 +52,12 @@ Scoring (Weathers 2013; Blevins 2015):
   operating point cited in the National Center for PTSD guidance.
 
 Subscale totals are surfaced on the result dataclass for downstream
-use (intervention choice, trajectory analysis by cluster).  The
-current wire envelope carries only the total + positive_screen;
-a future sprint will expose cluster subscales through a dedicated
-field on AssessmentResult if the clinician UI requires it.
+use (intervention choice, trajectory analysis by cluster) AND on the
+router's AssessmentResult envelope via the generic ``subscales:
+dict[str, int] | None`` field (Sprint 40).  The wire keys
+(``intrusion`` / ``avoidance`` / ``negative_mood`` / ``hyperarousal``)
+match ``PCL5_CLUSTERS`` so clinician-UI renderers key off one source
+of truth.
 
 DSM-5 diagnostic algorithm (alternative to cutoff, requires clinical
 interpretation — NOT a screener decision):
@@ -159,9 +161,10 @@ class Pcl5Result:
       cluster B/C/D/E subscale totals.  Clinically meaningful for
       intervention choice (e.g. exposure therapy for intrusion-
       dominant presentations, cognitive processing therapy for
-      negative-mood-dominant presentations).  Not currently surfaced
-      on the wire envelope — a future sprint may add them when the
-      clinician UI needs them.
+      negative-mood-dominant presentations).  Surfaced on the router's
+      AssessmentResult envelope via the ``subscales`` map (Sprint 40);
+      wire keys are the un-prefixed forms (``intrusion`` / ``avoidance``
+      / ``negative_mood`` / ``hyperarousal``) per ``PCL5_CLUSTERS``.
     - ``items``: verbatim input tuple, pinned for auditability.
 
     Safety posture: ``requires_t3`` is deliberately absent.  PCL-5

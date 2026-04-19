@@ -357,17 +357,22 @@ class AssessmentResult(BaseModel):
       a short machine-readable reason code for logging/display.
     - ``triggering_items`` — C-SSRS only; 1-indexed item numbers that
       drove the risk band.  Empty tuple when no items fired.
-    - ``subscales`` — URICA only at present; a map of subscale-name →
-      subscale-total for multi-subscale instruments.  URICA exposes
-      the four stages of change (precontemplation / contemplation /
-      action / maintenance) as four int entries so the intervention
-      layer reads the stage profile alongside the Readiness aggregate.
-      The field shape is generic so future sprints can surface
-      PCL-5 clusters (B/C/D/E), OCI-R subtypes (hoarding/checking/
-      ordering/neutralizing/washing/obsessing), and BIS-11 subscales
-      (attentional/motor/non_planning) without schema churn — each
-      adds its own ``subscales`` entries while the envelope shape
-      stays stable.
+    - ``subscales`` — multi-subscale instruments; a map of
+      subscale-name → subscale-total.  Populated for URICA (four
+      stages of change: precontemplation / contemplation / action /
+      maintenance), PCL-5 (four DSM-5 clusters: intrusion / avoidance
+      / negative_mood / hyperarousal), OCI-R (six OCD subtypes:
+      hoarding / checking / ordering / neutralizing / washing /
+      obsessing), and BIS-11 (three Patton 1995 second-order factors:
+      attentional / motor / non_planning).  Each subscale is a
+      non-negative integer total on the scorer's native subscale
+      scale.  Keys match the scorer-module constants
+      (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
+      ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
+      source of truth across the whole package.  Instruments without
+      subscales (PHQ-9 / GAD-7 / WHO-5 / AUDIT / AUDIT-C / C-SSRS /
+      PSS-10 / DAST-10 / MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS /
+      Craving VAS / Readiness Ruler / DTCQ-8) emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -568,10 +573,17 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # 0-80, positive at >= 33.  Wire envelope follows PC-PTSD-5 /
         # MDQ / AUDIT-C's positive/negative_screen semantic since
         # PCL-5 is a cutoff-driven screen (not a banded severity
-        # instrument like PHQ-9).  Cluster B/C/D/E subscales are
-        # computed by the scorer but not yet surfaced on the wire —
-        # a future sprint will expose them when the clinician UI
-        # needs cluster-level trajectory analysis.
+        # instrument like PHQ-9).  DSM-5 cluster B/C/D/E subscales
+        # (intrusion / avoidance / negative_mood / hyperarousal) are
+        # surfaced on the ``subscales`` envelope map so the clinician-
+        # UI timeline can render cluster-level trajectory lines
+        # without a per-row repository re-read.  The mapping keys
+        # match ``scoring.pcl5.PCL5_CLUSTERS`` — clinician-UI
+        # renderers that key off the scorer-module constant pick up
+        # the same names in the response payload.  The cluster
+        # profile drives trauma-focused therapy selection (PE for
+        # intrusion-dominant vs CPT for negative-mood-dominant vs EMDR
+        # for mixed) at the intervention-selection layer.
         pcl = score_pcl5(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
@@ -582,17 +594,32 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             ),
             requires_t3=False,
             positive_screen=pcl.positive_screen,
+            subscales={
+                "intrusion": pcl.cluster_intrusion,
+                "avoidance": pcl.cluster_avoidance,
+                "negative_mood": pcl.cluster_negative_mood,
+                "hyperarousal": pcl.cluster_hyperarousal,
+            },
             instrument_version=pcl.instrument_version,
         )
     if payload.instrument == "ocir":
         # Foa 2002 — 18-item 0-4 Likert, total 0-72, positive at
         # >= 21.  Wire envelope matches PCL-5's screen semantic.
         # Six 3-item subscales (hoarding / checking / ordering /
-        # neutralizing / washing / obsessing) are computed by the
-        # scorer but not surfaced on the wire yet — subscale
-        # surfacing is planned as a cross-cutting sprint that
-        # extends AssessmentResult / AssessmentRecord / FHIR
-        # components together for PCL-5 and OCI-R.
+        # neutralizing / washing / obsessing) are surfaced on the
+        # ``subscales`` envelope map so the clinician-UI surface
+        # picks the right subtype-appropriate ERP protocol
+        # (ERP-for-contamination on washing-dominant vs ERP-with-
+        # response-prevention on checking-dominant vs CBT-H for
+        # hoarding-dominant).  Unlike PCL-5's contiguous DSM-5
+        # cluster ranges, OCI-R items are deliberately distributed
+        # across the instrument (item 1 = hoarding, item 2 =
+        # checking, item 3 = ordering, etc.) per Foa 2002 §2.2, so
+        # the scorer's per-subscale summation is load-bearing — a
+        # flat contiguous-slice reading would silently miscategorize
+        # every subscale.  The wire keys match ``scoring.ocir.
+        # OCIR_SUBSCALES`` dict keys so clinician-UI renderers key
+        # off one source of truth.
         ocir = score_ocir(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
@@ -603,6 +630,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             ),
             requires_t3=False,
             positive_screen=ocir.positive_screen,
+            subscales={
+                "hoarding": ocir.subscale_hoarding,
+                "checking": ocir.subscale_checking,
+                "ordering": ocir.subscale_ordering,
+                "neutralizing": ocir.subscale_neutralizing,
+                "washing": ocir.subscale_washing,
+                "obsessing": ocir.subscale_obsessing,
+            },
             instrument_version=ocir.instrument_version,
         )
     if payload.instrument == "phq15":
@@ -636,10 +671,18 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # and the stored record's ``total`` reflects the post-reversal
         # sum, not the raw-response sum.  No safety routing: BIS-11 is
         # a trait inventory with no suicidality / acute-harm item.
-        # Three Patton 1995 subscales (attentional / motor / non_planning)
-        # are computed by the scorer but not surfaced on the wire yet —
-        # a future cross-cutting sprint will add subscale surfacing
-        # across PCL-5 / OCI-R / BIS-11 together.
+        # Three Patton 1995 second-order subscales (attentional /
+        # motor / non_planning) are surfaced on the ``subscales``
+        # envelope map so the intervention layer picks the profile-
+        # appropriate variant: attentional-dominant → mindfulness-
+        # based attention training, motor-dominant → response-delay
+        # / impulse-interruption drills, non_planning-dominant →
+        # implementation-intention scripting.  Distributed-item
+        # composition (same as OCI-R — items are interleaved across
+        # subscales, not contiguous) means the scorer's per-subscale
+        # summation is load-bearing; a contiguous-slice read would
+        # corrupt the aggregate.  Wire keys match
+        # ``scoring.bis11.BIS11_SUBSCALES``.
         bis = score_bis11(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
@@ -647,6 +690,11 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             total=bis.total,
             severity=bis.severity,
             requires_t3=False,
+            subscales={
+                "attentional": bis.subscale_attentional,
+                "motor": bis.subscale_motor,
+                "non_planning": bis.subscale_non_planning,
+            },
             instrument_version=bis.instrument_version,
         )
     if payload.instrument == "pacs":

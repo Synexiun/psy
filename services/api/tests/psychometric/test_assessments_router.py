@@ -1729,6 +1729,98 @@ class TestPcl5Routing:
         assert body["instrument"] == "pcl5"
         assert body["positive_screen"] is True
 
+    def test_subscales_surface_dsm5_clusters(
+        self, client: TestClient
+    ) -> None:
+        """Sprint-40 contract: PCL-5 dispatch emits the four DSM-5
+        cluster subscales (intrusion / avoidance / negative_mood /
+        hyperarousal) on the response envelope's ``subscales`` map
+        so the clinician-UI cluster-trajectory view reads the
+        profile without per-row repository re-scoring.
+
+        Item layout (Weathers 2013): items 1-5 = intrusion,
+        6-7 = avoidance, 8-14 = negative_mood, 15-20 = hyperarousal.
+        Distinctive per-cluster values pin that a swap regression
+        surfaces in multiple assertions.
+        """
+        # intrusion = 5×3 = 15
+        # avoidance = 2×4 = 8
+        # negative_mood = 7×2 = 14
+        # hyperarousal = 6×1 = 6
+        # total = 15 + 8 + 14 + 6 = 43 → positive_screen
+        items = [3] * 5 + [4] * 2 + [2] * 7 + [1] * 6
+        resp = self._post_pcl5(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 43
+        assert body["positive_screen"] is True
+        assert body["subscales"] == {
+            "intrusion": 15,
+            "avoidance": 8,
+            "negative_mood": 14,
+            "hyperarousal": 6,
+        }
+
+    def test_subscales_persist_to_history(self, client: TestClient) -> None:
+        """The subscales map round-trips through the repository and
+        re-appears on the history-endpoint projection.  A regression
+        that dropped subscales during persistence would force
+        cluster-trajectory renderers to re-score from raw_items,
+        duplicating work and bloating the clinician-portal read path."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Intrusion-dominant profile (classic PE-indicated presentation).
+        # intrusion = 4+4+4+3+3 = 18
+        # avoidance = 2+2 = 4
+        # negative_mood = 1×7 = 7
+        # hyperarousal = 1×6 = 6
+        # total = 35 → positive
+        items = [4, 4, 4, 3, 3] + [2, 2] + [1] * 7 + [1] * 6
+        body = {
+            "instrument": "pcl5",
+            "items": items,
+            "user_id": "user-pcl5-subscales-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        response_body = resp.json()
+        assert response_body["subscales"] == {
+            "intrusion": 18,
+            "avoidance": 4,
+            "negative_mood": 7,
+            "hyperarousal": 6,
+        }
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-pcl5-subscales-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.subscales == {
+            "intrusion": 18,
+            "avoidance": 4,
+            "negative_mood": 7,
+            "hyperarousal": 6,
+        }
+
+        history_resp = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-pcl5-subscales-1"},
+        )
+        assert history_resp.status_code == 200
+        item = history_resp.json()["items"][0]
+        assert item["subscales"] == {
+            "intrusion": 18,
+            "avoidance": 4,
+            "negative_mood": 7,
+            "hyperarousal": 6,
+        }
+
 
 class TestOcirRouting:
     """OCI-R over the wire.
@@ -1897,6 +1989,96 @@ class TestOcirRouting:
         body = resp.json()
         assert body["instrument"] == "ocir"
         assert body["positive_screen"] is True
+
+    def test_subscales_surface_six_subtypes(self, client: TestClient) -> None:
+        """Sprint-40 contract: OCI-R dispatch emits the six Foa 2002
+        OCD-subtype subscales (hoarding / checking / ordering /
+        neutralizing / washing / obsessing) on the response envelope's
+        ``subscales`` map.  Item layout is **distributed, not
+        contiguous** (item 1=hoarding, 2=checking, 3=ordering, 4=
+        neutralizing, 5=washing, 6=obsessing, 7=hoarding, ...).  A
+        regression that treated subscales as contiguous 3-item slices
+        would silently swap every subscale.
+
+        Per-subtype distinctive values: hoarding=9, checking=6,
+        ordering=3, neutralizing=0, washing=12, obsessing=1.
+        Total = 31 → positive_screen."""
+        # items 1/7/13 = hoarding: 3+3+3=9
+        # items 2/8/14 = checking: 2+2+2=6
+        # items 3/9/15 = ordering: 1+1+1=3
+        # items 4/10/16 = neutralizing: 0+0+0=0
+        # items 5/11/17 = washing: 4+4+4=12
+        # items 6/12/18 = obsessing: 0+1+0=1
+        items = [
+            3, 2, 1, 0, 4, 0,  # items 1-6
+            3, 2, 1, 0, 4, 1,  # items 7-12
+            3, 2, 1, 0, 4, 0,  # items 13-18
+        ]
+        resp = self._post_ocir(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 31
+        assert body["positive_screen"] is True
+        assert body["subscales"] == {
+            "hoarding": 9,
+            "checking": 6,
+            "ordering": 3,
+            "neutralizing": 0,
+            "washing": 12,
+            "obsessing": 1,
+        }
+
+    def test_subscales_persist_to_history(self, client: TestClient) -> None:
+        """OCI-R subscales round-trip through the repository so the
+        clinician-UI subtype-profile view reads the stored subscales
+        map directly."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Washing-dominant profile (classic ERP-for-contamination
+        # presentation).  items 5, 11, 17 at 4 (washing items); all
+        # other items at 0.  hoarding=0, checking=0, ordering=0,
+        # neutralizing=0, washing=12, obsessing=0.  total=12 → negative.
+        items = [0] * 18
+        items[4] = 4   # item 5 = washing
+        items[10] = 4  # item 11 = washing
+        items[16] = 4  # item 17 = washing
+
+        body = {
+            "instrument": "ocir",
+            "items": items,
+            "user_id": "user-ocir-subscales-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        response_body = resp.json()
+        assert response_body["total"] == 12
+        assert response_body["positive_screen"] is False
+        assert response_body["subscales"] == {
+            "hoarding": 0,
+            "checking": 0,
+            "ordering": 0,
+            "neutralizing": 0,
+            "washing": 12,
+            "obsessing": 0,
+        }
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-ocir-subscales-1", limit=10)
+        assert len(records) == 1
+        assert records[0].subscales == {
+            "hoarding": 0,
+            "checking": 0,
+            "ordering": 0,
+            "neutralizing": 0,
+            "washing": 12,
+            "obsessing": 0,
+        }
 
 
 class TestPhq15Routing:
@@ -2451,6 +2633,73 @@ class TestBis11Routing:
         body = resp.json()
         assert body["instrument"] == "bis11"
         assert body["severity"] == "normal"
+
+    def test_subscales_surface_three_patton_factors(
+        self, client: TestClient
+    ) -> None:
+        """Sprint-40 contract: BIS-11 dispatch emits the three Patton
+        1995 second-order subscales (attentional / motor /
+        non_planning) on the response envelope's ``subscales`` map,
+        **computed on scored (post-reversal) values** — not on the
+        raw caller input.
+
+        Uniform 2 across all 30 items (the same body the
+        ``test_ignores_mdq_only_fields`` test uses).  Reverse-coded
+        items (1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30) flip 2 → 3
+        via the 5 − v formula; regular items stay at 2.
+
+        attentional (items 5,6,9,11,20,24,26,28): 2+2+3+2+3+2+2+2 = 18
+        motor (items 2,3,4,16,17,19,21,22,23,25,30): 10×2 + 3 = 23
+        non_planning (items 1,7,8,10,12,13,14,15,18,27,29):
+          reversed: 1,7,8,10,12,13,15,29 = 8 items × 3 = 24
+          regular: 14, 18, 27 = 3 items × 2 = 6
+          sum = 30
+        Total = 18 + 23 + 30 = 71 → 'normal' band.
+        """
+        resp = self._post_bis11(client, items=[2] * 30)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 71
+        assert body["severity"] == "normal"
+        assert body["subscales"] == {
+            "attentional": 18,
+            "motor": 23,
+            "non_planning": 30,
+        }
+
+    def test_subscales_persist_to_history(self, client: TestClient) -> None:
+        """BIS-11 subscales round-trip through the repository so the
+        intervention layer's per-factor read-out (attentional-dominant
+        → attention-training; motor-dominant → response-delay drills;
+        non_planning-dominant → implementation-intention scripting)
+        works against the stored record, not just the live dispatch
+        response."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "bis11",
+            "items": [2] * 30,
+            "user_id": "user-bis11-subscales-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        expected = {
+            "attentional": 18,
+            "motor": 23,
+            "non_planning": 30,
+        }
+        assert resp.json()["subscales"] == expected
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-bis11-subscales-1", limit=10)
+        assert len(records) == 1
+        assert records[0].subscales == expected
 
 
 class TestCravingVasRouting:

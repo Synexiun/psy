@@ -150,9 +150,11 @@ class OcirResult:
       subscale totals (each 0-12).  Clinically meaningful for
       intervention choice (ERP for washing-dominant, CBT-H for
       hoarding-dominant, thought-action-fusion work for obsessing-
-      dominant).  Not currently surfaced on the wire envelope —
-      a future sprint will add subscale surfacing across the
-      cluster/subscale instruments (PCL-5 + OCI-R) together.
+      dominant).  Surfaced on the router's AssessmentResult envelope
+      via the ``subscales`` map (Sprint 40); wire keys are the
+      un-prefixed forms (``hoarding`` / ``checking`` / ``ordering`` /
+      ``neutralizing`` / ``washing`` / ``obsessing``) per
+      ``OCIR_SUBSCALES``.
     - ``items``: verbatim input tuple, pinned for auditability.
 
     Safety posture: ``requires_t3`` is deliberately absent.  OCI-R

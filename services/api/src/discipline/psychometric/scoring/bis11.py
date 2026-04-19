@@ -194,9 +194,10 @@ class Bis11Result:
       attention training; motor-dominant profiles respond to
       DBT distress-tolerance and stimulus-control planning; non-
       planning-dominant profiles respond to implementation-intention
-      and goal-setting work.  Not surfaced on the wire envelope yet —
-      cross-cutting subscale-exposure sprint is planned alongside
-      PCL-5 / OCI-R.
+      and goal-setting work.  Surfaced on the router's AssessmentResult
+      envelope via the ``subscales`` map (Sprint 40); wire keys are
+      the un-prefixed forms (``attentional`` / ``motor`` /
+      ``non_planning``) per ``BIS11_SUBSCALES``.
     - ``raw_items``: verbatim caller input, pre-reversal.  Pinned so
       an auditor can verify the reversal was applied correctly
       without re-running the scorer.
