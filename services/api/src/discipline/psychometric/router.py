@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS.
+GAD-2, OASIS, K10, SDS, K6.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -215,6 +215,26 @@ Safety routing:
   No safety routing: SDS has no suicidality item — a high SDS is a
   psychological-dependence work-up signal, not a crisis signal.  See
   ``scoring/sds.py``.
+  K6 (Kessler 2003) is the 6-item short form of K10 — same 1-5
+  Likert coding as K10 (ITEM_MIN = 1 is load-bearing), total 6-30,
+  cutoff ≥ 13 for probable serious mental illness (SMI) per Kessler
+  2003 (validated against the 12-month DSM-IV SMI criterion, AUC
+  0.87).  The **daily-EMA partner to K10** — same unidimensional
+  psychological-distress construct, six items ≈ 30s on a phone
+  instead of ten items ≈ 50s.  Mirrors the PHQ-9 → PHQ-2 and
+  GAD-7 → GAD-2 companion-pairing pattern.  The router maps K6 onto
+  the cutoff-only wire envelope (severity = "positive_screen" /
+  "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5
+  / AUDIT-C / SDS — *not* the K10 banded envelope.  Kessler 2003
+  published only the ≥ 13 SMI cutoff; back-calculating K10-style
+  bands onto K6 totals is unvalidated and explicitly not done here.
+  If banded-severity tracking is the clinical need, the answer is
+  K10, not K6 with invented bands.  No subscale exposure: K6 items
+  were selected for their loading on the K10 dominant factor, so
+  the scale is unidimensional by design.  No safety routing: K6's
+  hopelessness / depressed / worthless items (2 / 4 / 6) are affect
+  probes, not intent probes — same posture as K10.  See
+  ``scoring/k6.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -275,6 +295,10 @@ from .scoring.isi import InvalidResponseError as IsiInvalid, score_isi
 from .scoring.k10 import (
     InvalidResponseError as K10Invalid,
     score_k10,
+)
+from .scoring.k6 import (
+    InvalidResponseError as K6Invalid,
+    score_k6,
 )
 from .scoring.mdq import (
     ImpairmentLevel,
@@ -362,6 +386,7 @@ Instrument = Literal[
     "oasis",
     "k10",
     "sds",
+    "k6",
 ]
 
 
@@ -394,6 +419,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "oasis": 5,
     "k10": 10,
     "sds": 5,
+    "k6": 6,
 }
 
 
@@ -517,10 +543,10 @@ class AssessmentResult(BaseModel):
       (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
-      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / SDS /
-      WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ /
-      PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS / Readiness Ruler /
-      DTCQ-8) emit ``subscales=None``.
+      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
+      SDS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
+      MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
+      Readiness Ruler / DTCQ-8) emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -1184,6 +1210,35 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=s.positive_screen,
             instrument_version=s.instrument_version,
         )
+    if payload.instrument == "k6":
+        # Kessler 2003 K6 short form — 6-item 1-5 Likert
+        # psychological-distress screen, total 6-30, cutoff ≥ 13 for
+        # probable serious mental illness (SMI).  Cutoff envelope
+        # (severity = "positive_screen" / "negative_screen") uniform
+        # with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 / AUDIT-C / SDS —
+        # NOT the K10 banded envelope, because Kessler 2003 published
+        # only the binary SMI gate.  Hand-rolling K10-style bands onto
+        # K6 totals would violate CLAUDE.md's "Don't hand-roll severity
+        # thresholds" rule.  ITEM_MIN = 1 (same as K10) — a 0-indexed
+        # client would shift totals by 6 and potentially collapse a
+        # positive SMI screen.  No subscales: K6 items were selected
+        # for their loading on the K10 dominant factor; the scale is
+        # unidimensional by design.  No T3: K6's hopelessness /
+        # depressed / worthless items (2 / 4 / 6) are affect probes,
+        # not intent probes — same posture as K10.  See
+        # ``scoring/k6.py``.
+        k6 = score_k6(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="k6",
+            total=k6.total,
+            severity=(
+                "positive_screen" if k6.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=k6.positive_screen,
+            instrument_version=k6.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1327,6 +1382,7 @@ async def submit_assessment(
         OasisInvalid,
         K10Invalid,
         SdsInvalid,
+        K6Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

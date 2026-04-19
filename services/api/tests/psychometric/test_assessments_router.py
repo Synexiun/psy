@@ -5470,6 +5470,348 @@ class TestSdsRouting:
         assert body["total"] == 3
 
 
+class TestK6Routing:
+    """K6 (Kessler 2003) router dispatch.
+
+    Wire contract invariants:
+    - Cutoff envelope (``severity`` = "positive_screen" /
+      "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS /
+      PC-PTSD-5 / AUDIT-C / SDS — NOT the K10 banded envelope.
+      Kessler 2003 published only the ≥ 13 SMI cutoff.
+    - ``requires_t3`` is always False — K6 has no safety item.
+    - ``subscales=None`` — Kessler 2003 validates unidimensional total;
+      K6 items are selected for loading on the K10 dominant factor.
+    - Items are 1-5 (ITEM_MIN=1, same as K10) — a 0 is out of range,
+      not a silent "none of the time".
+    """
+
+    def test_minimum_total_is_negative(self, client: TestClient) -> None:
+        """Min total=6 (every item at 1) — well below cutoff 13."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [1] * 6,
+                "user_id": "user-k6-min",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "k6"
+        assert body["total"] == 6
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_total_twelve_is_negative(self, client: TestClient) -> None:
+        """Total=12 — one below cutoff.  Pins the boundary."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 2, 2],
+                "user_id": "user-k6-twelve",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "negative_screen"
+
+    def test_total_thirteen_is_positive(self, client: TestClient) -> None:
+        """Total=13 — at cutoff.  Kessler 2003 SMI gate flips here."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 2, 3],
+                "user_id": "user-k6-thirteen",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 13
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_total_fourteen_is_positive(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 3, 3],
+                "user_id": "user-k6-fourteen",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 14
+        assert body["severity"] == "positive_screen"
+
+    def test_maximum_total_is_positive(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [5] * 6,
+                "user_id": "user-k6-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 30
+        assert body["severity"] == "positive_screen"
+
+    def test_single_high_item_cannot_reach_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """One maxed item (5) + five minimum items (1 each) = 10 —
+        below cutoff.  A positive K6 requires multi-item distress."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [5, 1, 1, 1, 1, 1],
+                "user_id": "user-k6-single-high",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "negative_screen"
+
+    def test_positive_does_not_fire_t3(self, client: TestClient) -> None:
+        """Max total + K6 MUST NOT fire T3 — K6 has no safety item."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [5] * 6,
+                "user_id": "user-k6-t3-check",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 2, 3],
+                "user_id": "user-k6-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["subscales"] is None
+
+    def test_rejects_zero_item_not_silently_accepted(
+        self, client: TestClient
+    ) -> None:
+        """LOAD-BEARING — ITEM_MIN=1 (like K10).  A 0-indexed submission
+        would shift totals by 6 and potentially collapse a positive
+        SMI screen.  Must 422, not silently accept."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [0, 2, 2, 2, 2, 2],
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_five_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [1, 1, 1, 1, 1],
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_seven_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [1, 1, 1, 1, 1, 1, 1],
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_ten_items_k10_misroute(
+        self, client: TestClient
+    ) -> None:
+        """10 items is K10 territory — must 422, not silently score
+        as K6."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [1] * 10,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_out_of_range_six(self, client: TestClient) -> None:
+        """Items are 1-5.  A 6 is out of range."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [6, 1, 1, 1, 1, 1],
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [-1, 1, 1, 1, 1, 1],
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submitted K6 records land in the repository with positive
+        screen flag intact, so the clinician-UI history view reads
+        the cutoff envelope correctly."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [3, 3, 3, 3, 3, 3],
+                "user_id": "user-k6-persist",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-k6-persist", limit=5)
+        assert len(records) == 1
+        r = records[0]
+        assert r.instrument == "k6"
+        assert r.total == 18
+        assert r.severity == "positive_screen"
+        assert r.positive_screen is True
+
+    def test_history_projection_surfaces_cutoff_envelope(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 2, 3],
+                "user_id": "user-k6-history",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-k6-history"},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "k6"
+        assert entry["total"] == 13
+        assert entry["severity"] == "positive_screen"
+
+    def test_k6_and_k10_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """K6 and K10 share ITEM_MIN=1 coding but use different
+        envelopes (K6 cutoff, K10 banded).  Co-landing on the same
+        user's timeline must preserve distinct envelopes — no bleed
+        between "positive_screen" and the K10 band strings.  This is
+        the daily-EMA-plus-weekly-full companion pattern, mirroring
+        PHQ-2/PHQ-9 and GAD-2/GAD-7."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        user = "user-k6-k10-coexist"
+        r1 = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 2, 3],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert r1.status_code == 201
+        r2 = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert r2.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert by_instrument["k6"].severity == "positive_screen"
+        assert by_instrument["k6"].positive_screen is True
+        assert by_instrument["k10"].severity == "very_high"
+        # K10 is banded; positive_screen doesn't apply.
+        assert by_instrument["k10"].positive_screen is None
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """MDQ's Parts 2/3 fields in a K6 submission must be ignored
+        (not 422'd, not routed through MDQ scorer)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k6",
+                "items": [2, 2, 2, 2, 2, 3],
+                "concurrent_symptoms": True,
+                "functional_impairment": "moderate",
+                "user_id": "user-k6-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "k6"
+        assert body["total"] == 13
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
