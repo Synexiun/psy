@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS, K6, DUDIT.
+GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -266,6 +266,48 @@ Safety routing:
   hurt") spans physical / mental / social / legal consequences
   (not intent) — acute ideation screening remains PHQ-9 item 9 /
   C-SSRS.  See ``scoring/dudit.py``.
+  ASRS-6 (Kessler 2005) is the 6-item WHO Adult ADHD Self-Report Scale
+  short screener — the brief derivative of the full 18-item ASRS-v1.1
+  Symptom Checklist, selected for peak discriminative value vs DSM-IV
+  adult-ADHD diagnosis.  Closes the ADHD-screening gap in the platform:
+  adult ADHD co-occurs with depression / anxiety / impulsivity /
+  substance use at rates well above base (Kessler 2006, Wilens 2013),
+  and a patient with undetected adult ADHD presenting with co-occurring
+  distress is a common missed-diagnosis pattern that the existing
+  PHQ-9 / GAD-7 / BIS-11 / AUDIT-C / DUDIT coverage doesn't surface
+  on its own.  **First instrument with weighted-threshold scoring**
+  — where PHQ-9 / GAD-7 / K10 / etc. sum raw Likert responses against
+  a total cutoff, ASRS-6 applies a per-item firing threshold
+  (inattentive items 1-3 fire at Likert ≥ 2; hyperactive items 4-6
+  fire at Likert ≥ 3 per Kessler 2005 Figure 1) and counts the number
+  of fired items against a count cutoff (≥ 4 of 6).  The scorer
+  surfaces both ``total`` (for trajectory tracking) and
+  ``positive_count`` (for the screen decision) — a caller using
+  ``total`` to interpret the screen would under-detect in exactly the
+  symptom pattern the weighted-threshold rule was designed to catch
+  (sum=12 is possible with only one fired item).  The router maps onto
+  the cutoff-only wire envelope (severity = "positive_screen" /
+  "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 /
+  AUDIT-C / SDS / K6 / DUDIT.  ``cutoff_used`` echoes the count cutoff
+  (= 4) so a clinician-UI renders "positive at ≥ 4 of 6 items".
+  ``triggering_items`` reuses the existing C-SSRS wire slot — 1-indexed
+  item numbers that met their per-item firing threshold — so a
+  clinician-UI can render "these symptoms drove the screen" as an
+  audit trail of the decision, not just the aggregate count.  **No
+  subscale exposure**: the inattentive (items 1-3) / hyperactive-
+  impulsive (items 4-6) factor split is implicit in the asymmetric
+  thresholds but Kessler 2005 validates the screener at the
+  unidimensional count-of-fires level, not at the subscale level.
+  Clinicians needing the factor split should administer the full
+  18-item ASRS Symptom Checklist, not back-calculate from the 6-item
+  screener.  **No banded severity**: Kessler 2005 published only the
+  binary decision gate; secondary sources presenting ordinal bands are
+  not calibrated against a published clinical criterion and the
+  package refuses to ship them per CLAUDE.md's "don't hand-roll
+  severity thresholds" rule.  No safety routing: ASRS-6 has no
+  suicidality item — items 5 (fidget) and 6 (driven by a motor)
+  probe hyperactivity, not intent — acute ideation screening remains
+  PHQ-9 item 9 / C-SSRS.  See ``scoring/asrs6.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -291,6 +333,11 @@ from discipline.shared.logging import LogStream, get_stream_logger
 
 from .repository import AssessmentRecord, get_assessment_repository
 from .safety_items import evaluate_phq9
+from .scoring.asrs6 import (
+    ASRS6_POSITIVE_CUTOFF,
+    InvalidResponseError as Asrs6Invalid,
+    score_asrs6,
+)
 from .scoring.audit import (
     InvalidResponseError as AuditInvalid,
     score_audit,
@@ -423,6 +470,7 @@ Instrument = Literal[
     "sds",
     "k6",
     "dudit",
+    "asrs6",
 ]
 
 
@@ -457,6 +505,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "sds": 5,
     "k6": 6,
     "dudit": 11,
+    "asrs6": 6,
 }
 
 
@@ -569,14 +618,19 @@ class AssessmentResult(BaseModel):
 
     Instrument-specific optional fields:
     - ``index`` — WHO-5 only; the WHO-5 Index (0–100).
-    - ``cutoff_used`` — AUDIT-C / SDS / DUDIT; the cutoff that was
-      applied (AUDIT-C 3 or 4, SDS 3-5 by substance, DUDIT 2 or 6 by sex).
+    - ``cutoff_used`` — AUDIT-C / SDS / DUDIT / ASRS-6; the cutoff that was
+      applied (AUDIT-C 3 or 4, SDS 3-5 by substance, DUDIT 2 or 6 by sex,
+      ASRS-6 4 of 6 fired items).
     - ``positive_screen`` — AUDIT-C / SDS / DUDIT / K6 / PHQ-2 / GAD-2 /
-      OASIS / PC-PTSD-5 / MDQ; whether the cutoff gate is met.
+      OASIS / PC-PTSD-5 / MDQ / ASRS-6; whether the cutoff gate is met.
     - ``t3_reason`` — PHQ-9 / C-SSRS when ``requires_t3`` is True;
       a short machine-readable reason code for logging/display.
-    - ``triggering_items`` — C-SSRS only; 1-indexed item numbers that
-      drove the risk band.  Empty tuple when no items fired.
+    - ``triggering_items`` — C-SSRS / ASRS-6; 1-indexed item numbers that
+      drove the screen decision.  For C-SSRS these are the positive
+      items that forced the risk band; for ASRS-6 these are the items
+      whose Likert response met their per-item firing threshold
+      (inattentive ≥ 2, hyperactive ≥ 3 per Kessler 2005 Figure 1).
+      Empty tuple when no items fired.
     - ``subscales`` — multi-subscale instruments; a map of
       subscale-name → subscale-total.  Populated for URICA (four
       stages of change: precontemplation / contemplation / action /
@@ -591,7 +645,7 @@ class AssessmentResult(BaseModel):
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
-      SDS / DUDIT / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
+      SDS / DUDIT / ASRS-6 / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
       Readiness Ruler / DTCQ-8) emit ``subscales=None``.
 
@@ -1313,6 +1367,44 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=du.positive_screen,
             instrument_version=du.instrument_version,
         )
+    if payload.instrument == "asrs6":
+        # Kessler 2005 6-item WHO Adult ADHD Self-Report Scale screener.
+        # NOVEL weighted-threshold wire shape: items 1-3 (inattentive)
+        # fire at Likert ≥ 2, items 4-6 (hyperactive/impulsive) fire at
+        # Likert ≥ 3, and the screen decision is the count of fired
+        # items (≥ 4 of 6 is positive).  The scorer's raw-Likert-sum
+        # ``total`` (0-24) is surfaced for trajectory tracking but MUST
+        # NOT be used as the screen input — a ``total`` of 12 can occur
+        # with only one fired item.  ``cutoff_used`` echoes the count
+        # cutoff (= 4, a constant) so the clinician-UI renders
+        # "positive at ≥ 4 of 6 items"; callers rendering the cutoff
+        # don't need to import ASRS6_POSITIVE_CUTOFF.
+        # ``triggering_items`` reuses the existing C-SSRS wire slot —
+        # 1-indexed item numbers that met their per-item firing
+        # threshold — so the clinician-UI can render "these symptoms
+        # met their threshold" as an audit trail of the decision.
+        # Cutoff envelope uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 /
+        # MDQ / AUDIT-C / SDS / K6 / DUDIT.  No subscales (Kessler 2005
+        # validates unidimensionally at count-of-fires; the inattentive
+        # / hyperactive split is implicit in the thresholds, not a
+        # surfaced subscale — full 18-item ASRS Symptom Checklist is
+        # the factor-level instrument).  No T3 (ASRS-6 has no safety
+        # item — items 5 and 6 probe hyperactivity, not suicidality).
+        # See ``scoring/asrs6.py``.
+        ar = score_asrs6(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="asrs6",
+            total=ar.total,
+            severity=(
+                "positive_screen" if ar.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            cutoff_used=ASRS6_POSITIVE_CUTOFF,
+            positive_screen=ar.positive_screen,
+            triggering_items=list(ar.triggering_items),
+            instrument_version=ar.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1458,6 +1550,7 @@ async def submit_assessment(
         SdsInvalid,
         K6Invalid,
         DuditInvalid,
+        Asrs6Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

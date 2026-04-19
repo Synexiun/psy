@@ -6329,6 +6329,409 @@ class TestDuditRouting:
         assert body["positive_screen"] is True
 
 
+class TestAsrs6Routing:
+    """ASRS-6 (Kessler 2005) router dispatch.
+
+    Wire contract invariants:
+    - Cutoff envelope (``severity`` = "positive_screen" /
+      "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS /
+      PC-PTSD-5 / AUDIT-C / SDS / K6 / DUDIT.
+    - ``cutoff_used`` echoes the count cutoff (= 4) so the
+      clinician-UI renders "positive at ≥ 4 of 6 items".
+    - ``triggering_items`` reuses the C-SSRS wire slot — 1-indexed
+      item numbers that met their firing threshold.
+    - ``requires_t3`` is always False — ASRS-6 has no safety item.
+    - ``subscales=None`` — Kessler 2005 validates unidimensional.
+    - NOVEL weighted-threshold firing: inattentive items 1-3 fire
+      at Likert ≥ 2, hyperactive items 4-6 fire at Likert ≥ 3.  A
+      caller must not use ``total`` to interpret the screen — the
+      count of fired items is the actionable signal.
+    """
+
+    def test_all_zero_is_negative(self, client: TestClient) -> None:
+        """Never-never-never across all six items — zero fires."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [0, 0, 0, 0, 0, 0],
+                "user_id": "user-asrs6-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "asrs6"
+        assert body["total"] == 0
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 4
+        assert body["requires_t3"] is False
+        assert body["triggering_items"] == []
+
+    def test_three_fires_is_negative(self, client: TestClient) -> None:
+        """Three inattentive items at Likert 2 — three fires, one
+        below the count cutoff of 4."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 0, 0, 0],
+                "user_id": "user-asrs6-three",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["triggering_items"] == [1, 2, 3]
+
+    def test_four_fires_is_positive_at_cutoff_boundary(
+        self, client: TestClient
+    ) -> None:
+        """Four fires — three inattentive + one hyperactive at
+        Likert 3 — crosses the cutoff exactly."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 3, 0, 0],
+                "user_id": "user-asrs6-four",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 4
+        assert body["triggering_items"] == [1, 2, 3, 4]
+
+    def test_maxed_positive(self, client: TestClient) -> None:
+        """Very Often on every item — all six fire."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [4, 4, 4, 4, 4, 4],
+                "user_id": "user-asrs6-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 24
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["triggering_items"] == [1, 2, 3, 4, 5, 6]
+
+    def test_weighted_threshold_inattentive_at_two_fires(
+        self, client: TestClient
+    ) -> None:
+        """Pin the asymmetric firing rule at the wire surface: an
+        inattentive item at Likert 2 fires; a hyperactive item at
+        Likert 2 does not.  Load-bearing — the entire clinical
+        value of ASRS-6's wire shape over a sum-threshold is this
+        asymmetry."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 2, 2, 2],
+                "user_id": "user-asrs6-weighted",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # Sum=12 would look impressive on a sum-threshold instrument.
+        assert body["total"] == 12
+        # Only 3 items fire (inattentive 1/2/3 at Likert 2); hyper-
+        # active 4/5/6 do not fire at Likert 2.
+        assert body["triggering_items"] == [1, 2, 3]
+        assert body["positive_screen"] is False
+
+    def test_count_vs_sum_divergence_high_sum_low_count(
+        self, client: TestClient
+    ) -> None:
+        """A caller reading ``total`` as the screen would mis-call
+        this case.  Sum=12 with only one inattentive fire + zero
+        hyperactive fires."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                # item 1 at Likert 4 fires (inattentive, threshold 2)
+                # item 2 at Likert 2 fires (inattentive, threshold 2)
+                # item 3 at Likert 1 (below inattentive 2)
+                # item 4 at Likert 2 (below hyperactive 3)
+                # item 5 at Likert 2 (below hyperactive 3)
+                # item 6 at Likert 1 (below hyperactive 3)
+                "items": [4, 2, 1, 2, 2, 1],
+                "user_id": "user-asrs6-divergence",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 12
+        assert body["triggering_items"] == [1, 2]
+        assert body["positive_screen"] is False
+
+    def test_triggering_items_one_indexed_and_sorted(
+        self, client: TestClient
+    ) -> None:
+        """triggering_items reuses the C-SSRS wire slot — 1-indexed,
+        ascending, audit-trail ready."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 0, 2, 0, 3, 0],
+                "user_id": "user-asrs6-trigger",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["triggering_items"] == [1, 3, 5]
+
+    def test_rejects_wrong_item_count(self, client: TestClient) -> None:
+        """ASRS-6 requires exactly 6 items."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [0, 0, 0, 0, 0],
+                "user_id": "user-asrs6-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Likert envelope is [0, 4] — a 5 is out-of-range."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [5, 0, 0, 0, 0, 0],
+                "user_id": "user-asrs6-range",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [-1, 0, 0, 0, 0, 0],
+                "user_id": "user-asrs6-negative",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_never_fires_t3(self, client: TestClient) -> None:
+        """All max — no safety flag.  Items 5/6 probe hyperactivity,
+        not suicidality.  Acute ideation screening is PHQ-9 item 9 /
+        C-SSRS, not ASRS-6."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [4, 4, 4, 4, 4, 4],
+                "user_id": "user-asrs6-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_subscales_is_none(self, client: TestClient) -> None:
+        """Kessler 2005 validates count-of-fires unidimensionally.
+        The inattentive/hyperactive split is implicit in the
+        thresholds, not a wire-exposed subscale."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [3, 3, 3, 3, 3, 3],
+                "user_id": "user-asrs6-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_instrument_version_surfaces(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [0, 0, 0, 0, 0, 0],
+                "user_id": "user-asrs6-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument_version"] == "asrs6-1.0.0"
+
+    def test_persists_to_repository(self, client: TestClient) -> None:
+        """A submission with user_id persists to the history
+        repository with the weighted-threshold fields preserved."""
+        user = "user-asrs6-persist"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 3, 3, 0],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "asrs6"
+        assert rec.total == 12
+        assert rec.positive_screen is True
+        assert rec.cutoff_used == 4
+        assert tuple(rec.triggering_items) == (1, 2, 3, 4, 5)
+
+    def test_history_projects_triggering_items(
+        self, client: TestClient
+    ) -> None:
+        """GET /history surfaces triggering_items on the wire so the
+        clinician-UI can render the audit trail without re-scoring."""
+        user = "user-asrs6-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 0, 2, 0, 3, 3],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "asrs6"
+        assert entry["triggering_items"] == [1, 3, 5, 6]
+        assert entry["positive_screen"] is True
+        assert entry["cutoff_used"] == 4
+
+    def test_asrs6_and_dudit_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """ASRS-6 (weighted-threshold wire shape) and DUDIT (sex-keyed
+        cutoff wire shape) are two genuinely different envelope
+        shapes.  Pin that they coexist on the same user timeline
+        without cross-contamination of cutoff_used, triggering_items,
+        or sex values."""
+        user = "user-asrs6-dudit-both"
+        # DUDIT male, total 6 — positive at male cutoff 6.
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        # ASRS-6 — five fires, positive.
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 3, 3, 0],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert set(by_instrument) == {"dudit", "asrs6"}
+        # Independent cutoff surfaces — DUDIT carries sex-keyed 6,
+        # ASRS-6 carries count-cutoff 4.  Neither bleeds.
+        assert by_instrument["dudit"].cutoff_used == 6
+        assert by_instrument["asrs6"].cutoff_used == 4
+        # triggering_items populated only for ASRS-6 — DUDIT has no
+        # per-item firing concept.
+        assert tuple(by_instrument["asrs6"].triggering_items) == (
+            1, 2, 3, 4, 5,
+        )
+        assert not by_instrument["dudit"].triggering_items
+        # Sex is DUDIT-only; ASRS-6 record carries no sex.
+        assert by_instrument["dudit"].sex == "male"
+        assert by_instrument["asrs6"].sex is None
+
+    def test_ignores_sex_field(self, client: TestClient) -> None:
+        """ASRS-6 is not sex-keyed — submitting a ``sex`` field must
+        be ignored without perturbing the screen decision."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 3, 0, 0],
+                "sex": "female",
+                "user_id": "user-asrs6-sex-ignored",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 4  # count cutoff, not a sex cutoff
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """concurrent_symptoms / functional_impairment are MDQ-only —
+        submitting them with an ASRS-6 request must not perturb
+        scoring."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "asrs6",
+                "items": [2, 2, 2, 3, 0, 0],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-asrs6-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "asrs6"
+        assert body["positive_screen"] is True
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
