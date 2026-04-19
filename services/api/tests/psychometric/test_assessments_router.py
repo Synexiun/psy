@@ -7603,6 +7603,759 @@ class TestWsasRouting:
         assert body["severity"] == "severe"
 
 
+class TestDers16Routing:
+    """DERS-16 (Bjureberg 2016) router dispatch.
+
+    Wire contract invariants:
+    - Continuous envelope (``severity`` = "continuous" literal) uniform
+      with Craving VAS / PACS / Readiness Ruler / DTCQ-8.  No banded
+      classification because Bjureberg 2016 published no cross-
+      calibrated cutpoints; the trajectory layer extracts clinical
+      signal via RCI-style change detection on total + subscales.
+    - No ``cutoff_used`` / ``positive_screen`` — continuous
+      instrument, not cutoff shape (unlike AAQ-II / ASRS-6 /
+      AUDIT-C / SDS / DUDIT / K6 / PHQ-2 / GAD-2 / OASIS /
+      PC-PTSD-5 / MDQ), not banded shape (unlike PHQ-9 / GAD-7 /
+      ISI / DAST-10 / PCL-5 / OCI-R / BIS-11 / PHQ-15 / K10 /
+      DUDIT / WSAS).
+    - ``requires_t3`` is always False — DERS-16 has no safety item.
+    - **``subscales`` IS populated** with a 5-key dict
+      (``nonacceptance`` / ``goals`` / ``impulse`` / ``strategies`` /
+      ``clarity``) per Bjureberg 2016 Table 2.  DERS-16 is the FIRST
+      5-subscale instrument in the package (OCI-R has 6, PCL-5 has
+      4, BIS-11 and URICA have 3, the rest are unidimensional).
+    - ``triggering_items`` is None — DERS-16 has no firing-item
+      concept (unlike C-SSRS / ASRS-6).
+    - NOVEL 1-5 Likert envelope on a 16-item instrument — floor 1
+      (not 0, unlike PHQ-9 / GAD-7 / OCI-R), ceiling 5 (not 4 /
+      not 7 / not 8).  0 rejects (below floor).  6 rejects (above
+      ceiling).  1 and 5 both accept.  Count must be exactly 16.
+    - Three-way process-target triangle: DERS-16 on the same user
+      timeline as AAQ-II (ACT target) and PHQ-9 (CBT target) must
+      persist all three axes cleanly so the contextual bandit can
+      route process-level decisions by profile dominance.
+    """
+
+    def test_all_floor_is_continuous(self, client: TestClient) -> None:
+        """Every item at 1 ("Almost never") — total 16, the healthy-
+        baseline case.  ``severity`` is the "continuous" sentinel
+        regardless of total, because DERS-16 does not classify."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-ders16-floor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "ders16"
+        assert body["total"] == 16
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_all_ceiling_is_continuous(self, client: TestClient) -> None:
+        """Every item at 5 ("Almost always") — total 80.  Even at the
+        maximum, ``severity`` stays the "continuous" sentinel — Bjureberg
+        2016 published no severe-band threshold and the scorer does not
+        hand-roll one."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5],
+                "user_id": "user-ders16-ceiling",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 80
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_moderate_pattern_is_continuous(self, client: TestClient) -> None:
+        """Every item at 3 ("About half the time") — total 48, uniform
+        moderate dysregulation.  Continuous sentinel pins that DERS-16
+        never drifts into banded classification regardless of level."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+                "user_id": "user-ders16-moderate",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 48
+        assert body["severity"] == "continuous"
+
+    def test_no_cutoff_used_on_wire(self, client: TestClient) -> None:
+        """DERS-16 is continuous, not cutoff, not banded.  Unlike WSAS
+        (banded) or AAQ-II (cutoff), the wire envelope carries no
+        ``cutoff_used`` and no ``positive_screen`` — clients rendering
+        DERS-16 must not look for either."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+                "user_id": "user-ders16-no-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_subscales_populated_on_wire(self, client: TestClient) -> None:
+        """DERS-16 is the first 5-subscale instrument — the ``subscales``
+        dict MUST appear on the wire.  A regression where the router
+        forgot to map the scorer's subscale_* fields to the envelope's
+        ``subscales`` dict would surface here as a None subscales value."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3],
+                "user_id": "user-ders16-subscales-present",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("subscales") is not None
+        assert isinstance(body["subscales"], dict)
+
+    def test_subscale_keys_exact(self, client: TestClient) -> None:
+        """The 5 subscale keys must match Bjureberg 2016 Table 2
+        verbatim: nonacceptance / goals / impulse / strategies / clarity.
+        A refactor that used camelCase or rearranged keys would break
+        clinician-UI renderers that key off these exact strings."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+                "user_id": "user-ders16-subscale-keys",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        subscales = response.json()["subscales"]
+        assert set(subscales.keys()) == {
+            "nonacceptance",
+            "goals",
+            "impulse",
+            "strategies",
+            "clarity",
+        }
+
+    def test_nonacceptance_subscale_items_nine_ten_thirteen(
+        self, client: TestClient
+    ) -> None:
+        """Endorse only items 9, 10, 13 at ceiling → nonacceptance = 15,
+        other subscales at their respective floors.  Pins the 1-indexed
+        subscale mapping on the wire (not just in the scorer)."""
+        items = [1] * 16
+        for pos_1 in (9, 10, 13):
+            items[pos_1 - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-nonacceptance",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        subscales = response.json()["subscales"]
+        assert subscales["nonacceptance"] == 15  # 3 × 5
+        assert subscales["goals"] == 3  # 3 items at floor 1
+        assert subscales["impulse"] == 3
+        assert subscales["strategies"] == 5  # 5 items at floor 1
+        assert subscales["clarity"] == 2  # 2 items at floor 1
+
+    def test_goals_subscale_items_three_seven_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Endorse only items 3, 7, 15 → goals = 15, others at floor.
+        Goals subscale routes DBT wise-mind / mindfulness-of-current-
+        activity skill-module emphasis."""
+        items = [1] * 16
+        for pos_1 in (3, 7, 15):
+            items[pos_1 - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-goals",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        subscales = response.json()["subscales"]
+        assert subscales["goals"] == 15
+        assert subscales["nonacceptance"] == 3
+        assert subscales["impulse"] == 3
+        assert subscales["strategies"] == 5
+        assert subscales["clarity"] == 2
+
+    def test_impulse_subscale_items_four_eight_eleven(
+        self, client: TestClient
+    ) -> None:
+        """Endorse only items 4, 8, 11 → impulse = 15, others at floor.
+        Impulse subscale is the strongest BPD-pattern signal — routes
+        DBT distress-tolerance (TIP / STOP / self-soothe)."""
+        items = [1] * 16
+        for pos_1 in (4, 8, 11):
+            items[pos_1 - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-impulse",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        subscales = response.json()["subscales"]
+        assert subscales["impulse"] == 15
+        assert subscales["nonacceptance"] == 3
+        assert subscales["goals"] == 3
+        assert subscales["strategies"] == 5
+        assert subscales["clarity"] == 2
+
+    def test_strategies_subscale_items_five_six_twelve_fourteen_sixteen(
+        self, client: TestClient
+    ) -> None:
+        """Endorse only items 5, 6, 12, 14, 16 → strategies = 25 (the
+        WIDEST subscale range, 5 × 5), others at floor.  Strategies
+        subscale is the depressive-rumination / regulation-hopelessness
+        signal — routes DBT cope-ahead / opposite-action."""
+        items = [1] * 16
+        for pos_1 in (5, 6, 12, 14, 16):
+            items[pos_1 - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-strategies",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        subscales = response.json()["subscales"]
+        assert subscales["strategies"] == 25  # 5 × 5
+        assert subscales["nonacceptance"] == 3
+        assert subscales["goals"] == 3
+        assert subscales["impulse"] == 3
+        assert subscales["clarity"] == 2
+
+    def test_clarity_subscale_items_one_two(
+        self, client: TestClient
+    ) -> None:
+        """Endorse only items 1, 2 → clarity = 10 (the NARROWEST
+        subscale range, 2 × 5), others at floor.  Clarity subscale is
+        the alexithymic-pattern signal — routes DBT observe/describe
+        mindfulness skills."""
+        items = [5, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-clarity",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        subscales = response.json()["subscales"]
+        assert subscales["clarity"] == 10  # 2 × 5
+        assert subscales["nonacceptance"] == 3
+        assert subscales["goals"] == 3
+        assert subscales["impulse"] == 3
+        assert subscales["strategies"] == 5
+
+    def test_subscales_sum_equals_total(self, client: TestClient) -> None:
+        """Invariant on the wire: the 5 subscale totals sum to the
+        instrument total.  A refactor that double-counted an item
+        or rotated subscale rows would break this here."""
+        items = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-sum-invariant",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        subscales = body["subscales"]
+        assert (
+            subscales["nonacceptance"]
+            + subscales["goals"]
+            + subscales["impulse"]
+            + subscales["strategies"]
+            + subscales["clarity"]
+        ) == body["total"]
+
+    def test_rejects_wrong_item_count(self, client: TestClient) -> None:
+        """DERS-16 requires exactly 16 items."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 15,  # 15 items
+                "user_id": "user-ders16-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_zero_item(self, client: TestClient) -> None:
+        """NOVEL 1-5 envelope: 0 is below the Likert floor — distinct
+        from PHQ-9 / GAD-7 / OCI-R / K10 where 0 is valid.  A client
+        that submitted a 0-4 payload from a PHQ-9-like UI must reject."""
+        items = [1] * 16
+        items[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_six_item(self, client: TestClient) -> None:
+        """NOVEL 1-5 envelope: 6 is above the Likert ceiling — distinct
+        from AAQ-II where 6 is valid (1-7 range).  A client that
+        submitted AAQ-II-like items on a DERS-16 dispatch must reject."""
+        items = [3] * 16
+        items[0] = 6
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-six",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_accepts_one_and_five(self, client: TestClient) -> None:
+        """NOVEL 1-5 envelope: 1 ("Almost never", floor) and 5
+        ("Almost always", ceiling) are both valid.  Pin both
+        extremes explicitly rather than inheriting."""
+        items = [1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-ones-fives",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 48  # 8 × 1 + 8 × 5
+
+    def test_never_fires_t3(self, client: TestClient) -> None:
+        """Every item at ceiling — no safety flag.  DERS-16's items
+        probe regulatory-process difficulty; items 4/8 ("out of
+        control") and item 14 ("feel very bad about myself") do NOT
+        probe acute intent.  Acute ideation stays on PHQ-9 item 9 /
+        C-SSRS."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [5] * 16,
+                "user_id": "user-ders16-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_impulse_max_does_not_fire_t3(self, client: TestClient) -> None:
+        """Even with the impulse subscale maxed (items 4, 8, 11 all
+        at 5 — the strongest BPD-pattern signal), no T3 fires.  A
+        renderer that tried to key off impulse > threshold to
+        escalate to T3 would over-fire and desensitize the safety
+        queue; this test pins the boundary at the router."""
+        items = [1] * 16
+        for pos_1 in (4, 8, 11):
+            items[pos_1 - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": "user-ders16-impulse-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        """DERS-16 has no per-item firing concept (unlike C-SSRS /
+        ASRS-6).  No triggering_items on the envelope."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [5] * 16,
+                "user_id": "user-ders16-triggering",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert not body.get("triggering_items")
+
+    def test_instrument_version_surfaces(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [1] * 16,
+                "user_id": "user-ders16-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument_version"] == "ders16-1.0.0"
+
+    def test_persists_to_repository(self, client: TestClient) -> None:
+        """A submission with user_id persists to the history repository
+        with subscales preserved so the intervention layer can read the
+        profile, not just the aggregate."""
+        user = "user-ders16-persist"
+        items = [1] * 16
+        for pos_1 in (4, 8, 11):  # impulse-dominant
+            items[pos_1 - 1] = 5
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": items,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "ders16"
+        assert rec.severity == "continuous"
+        assert rec.subscales is not None
+        assert rec.subscales["impulse"] == 15
+        assert rec.subscales["nonacceptance"] == 3
+
+    def test_history_projects_ders16(self, client: TestClient) -> None:
+        """GET /history surfaces the DERS-16 result with the full
+        5-key subscale dict preserved — the clinician-UI reads the
+        profile off this path."""
+        user = "user-ders16-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "ders16"
+        assert entry["total"] == 48
+        assert entry["severity"] == "continuous"
+        assert entry["subscales"] is not None
+        assert set(entry["subscales"].keys()) == {
+            "nonacceptance",
+            "goals",
+            "impulse",
+            "strategies",
+            "clarity",
+        }
+
+    def test_ders16_and_phq9_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """DERS-16 (DBT process target) and PHQ-9 (CBT-aligned
+        symptom severity) cover ORTHOGONAL dimensions.  The canonical
+        scenario: PHQ-9=6 (mild depression) with DERS-16=70 (severe
+        emotion dysregulation) — e.g. a BPD-pattern patient whose
+        symptom severity looks mild on a symptom measure but whose
+        regulatory-process capacity is profoundly impaired.  Both
+        records must persist so the bandit can route DBT skill
+        modules on the process signal rather than defaulting to
+        PHQ-9-driven behavioral activation alone."""
+        user = "user-ders16-phq9-both"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [4, 4, 5, 5, 4, 4, 5, 5, 4, 4, 5, 4, 4, 4, 5, 4],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [1, 1, 1, 1, 1, 0, 1, 0, 0],  # mild, total 6
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert set(by_instrument) == {"ders16", "phq9"}
+        # DERS-16: continuous, subscales populated.
+        assert by_instrument["ders16"].severity == "continuous"
+        assert by_instrument["ders16"].subscales is not None
+        assert by_instrument["ders16"].cutoff_used is None
+        # PHQ-9: banded, subscales None.
+        assert by_instrument["phq9"].total == 6
+        assert by_instrument["phq9"].severity == "mild"
+        assert by_instrument["phq9"].subscales is None
+
+    def test_ders16_and_aaq2_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """DERS-16 (DBT process target: regulatory capacity) and AAQ-II
+        (ACT process target: psychological inflexibility) are both
+        process-level instruments but cover DIFFERENT process
+        constructs.  AAQ-II measures the RELATIONSHIP to internal
+        experience (avoidance / fusion); DERS-16 measures the
+        REGULATORY CAPACITY for internal experience (acceptance /
+        impulse control / strategy access / clarity).  Both signals
+        matter independently — a patient high on both triggers
+        DBT+ACT integrative skill training; a patient high on
+        AAQ-II but low on DERS-16 triggers pure ACT defusion work.
+        Pinning both records coexist is pinning the two-process-
+        target readout the bandit consumes."""
+        user = "user-ders16-aaq2-both"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [5, 5, 5, 5, 5, 5, 5],  # total 35, > 24 positive
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        # DERS-16: continuous, subscales populated (DBT process axis).
+        assert by_instrument["ders16"].severity == "continuous"
+        assert by_instrument["ders16"].subscales is not None
+        # AAQ-II: cutoff envelope (ACT process axis).
+        assert by_instrument["aaq2"].cutoff_used == 24
+        assert by_instrument["aaq2"].positive_screen is True
+
+    def test_three_way_process_target_triangle(
+        self, client: TestClient
+    ) -> None:
+        """DERS-16 (DBT target) + AAQ-II (ACT target) + PHQ-9 (CBT
+        target) — the three-way process-target triangle.  Submitted
+        together on one timeline they give the bandit the axes it
+        needs to route process-level decisions by dominance rather
+        than defaulting to CBT.  This test pins that all three
+        records round-trip cleanly with distinct envelope shapes
+        (continuous / cutoff / banded) on the same user."""
+        user = "user-ders16-triangle"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [4, 4, 4, 4, 4, 4, 4],  # total 28, positive
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [2, 2, 2, 2, 2, 2, 2, 2, 0],  # total 16, mod-severe
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 3
+        by_instrument = {r.instrument: r for r in records}
+        assert set(by_instrument) == {"ders16", "aaq2", "phq9"}
+        # Each carries its distinct envelope shape.
+        assert by_instrument["ders16"].severity == "continuous"
+        assert by_instrument["ders16"].subscales is not None
+        assert by_instrument["aaq2"].cutoff_used == 24
+        assert by_instrument["aaq2"].subscales is None
+        assert by_instrument["phq9"].severity == "moderately_severe"
+        assert by_instrument["phq9"].cutoff_used is None
+        assert by_instrument["phq9"].subscales is None
+
+    def test_ders16_and_wsas_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """DERS-16 (emotion dysregulation — internal regulatory
+        process) and WSAS (functional impairment — external
+        behavioral outcome) cover orthogonal dimensions.  Both must
+        persist cleanly so the intervention layer can distinguish
+        'dysregulated but still functioning' from 'regulated but
+        behaviorally shut down'."""
+        user = "user-ders16-wsas-both"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [4] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [5, 5, 5, 5, 5],  # total 25, severe
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        # DERS-16 continuous with subscales.
+        assert by_instrument["ders16"].severity == "continuous"
+        assert by_instrument["ders16"].subscales is not None
+        # WSAS banded, no subscales.
+        assert by_instrument["wsas"].severity == "severe"
+        assert by_instrument["wsas"].subscales is None
+        assert by_instrument["wsas"].cutoff_used is None
+
+    def test_ignores_sex_field(self, client: TestClient) -> None:
+        """DERS-16 is not sex-keyed.  Bjureberg 2016 published a
+        single set of psychometric properties regardless of
+        demographic axis."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "sex": "female",
+                "user_id": "user-ders16-sex-ignored",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 48
+        assert body["severity"] == "continuous"
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """concurrent_symptoms / functional_impairment are MDQ-only
+        (Hirschfeld 2000 Part 2 / Part 3).  They must not perturb
+        DERS-16 scoring."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [5] * 16,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-ders16-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "ders16"
+        assert body["total"] == 80
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

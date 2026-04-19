@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS.
+GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -397,6 +397,58 @@ Safety routing:
   signal for intensive behavioral-activation / committed-action
   work but is not itself a crisis gate — acute ideation screening
   remains PHQ-9 item 9 / C-SSRS.  See ``scoring/wsas.py``.
+  DERS-16 (Bjureberg 2016) is the 16-item short form of the
+  Difficulties in Emotion Regulation Scale (Gratz & Roemer 2004) —
+  the validated measure of **emotion dysregulation**, the
+  Dialectical Behavior Therapy (DBT) target construct.  Closes the
+  DBT-alignment gap at the assessment layer: where AAQ-II measures
+  the ACT target (psychological inflexibility) and PHQ-9 / GAD-7
+  measure CBT-aligned symptom severity, DERS-16 measures the
+  regulatory-process dimension that DBT interventions
+  (distress-tolerance, emotion regulation skills, wise-mind,
+  radical acceptance) directly address.  Together with AAQ-II and
+  PHQ-9 / GAD-7, DERS-16 completes the **three-way process-target
+  triangle** so the contextual bandit can route process-level
+  decisions to the therapeutic frame whose target construct the
+  patient's profile loads most heavily on — rather than defaulting
+  to CBT because CBT is the instrument default.  16 items each on
+  a 1-5 Likert ("Almost never" to "Almost always"), all worded in
+  the dysregulation direction (Bjureberg 2016 pruned the six
+  awareness-subscale items from DERS-36 that required reverse-
+  keying).  Total 16-80.  Five CFA-validated subscales per
+  Bjureberg 2016 Table 2 — ``nonacceptance`` (items 9, 10, 13;
+  range 3-15), ``goals`` (items 3, 7, 15; range 3-15), ``impulse``
+  (items 4, 8, 11; range 3-15), ``strategies`` (items 5, 6, 12,
+  14, 16; range 5-25, the widest subscale), and ``clarity`` (items
+  1, 2; range 2-10, the narrowest).  **First 5-subscale
+  instrument** — prior multi-subscale ceiling was OCI-R's 6 and
+  PCL-5's 4.  Subscale dict is surfaced on the envelope's
+  ``subscales`` field because the intervention layer reads the
+  5-tuple profile (not just the aggregate) to pick DBT skill
+  modules: impulse-dominant → distress-tolerance (TIP / STOP /
+  self-soothe), strategies-dominant → cope-ahead / opposite-
+  action, clarity-dominant → observe / describe mindfulness,
+  nonacceptance-dominant → self-compassion / non-judgmental
+  stance, goals-dominant → wise-mind / mindfulness-of-current-
+  activity.  **Severity bands deliberately absent.**  Bjureberg
+  2016 did NOT publish banded thresholds; downstream literature
+  (Fowler 2014 PTSD samples, Hallion 2018 mixed-anxiety samples)
+  proposes cutoffs that are not cross-calibrated against a shared
+  clinical criterion and vary by sample.  Per CLAUDE.md's "don't
+  hand-roll severity thresholds" rule, DERS-16 ships as a
+  **continuous dimensional measure** uniform with Craving VAS /
+  PACS — the envelope carries ``severity="continuous"`` as the
+  sentinel and the trajectory layer extracts the clinical signal
+  via RCI-style change detection (Jacobson & Truax 1991) rather
+  than banded classification.  ``cutoff_used`` / ``positive_screen``
+  are NOT set (continuous instrument, no cutoff shape).  No T3:
+  DERS-16 has no direct suicidality item — items 4 and 8 ("out of
+  control") probe impulse-control loss but not acute intent; item
+  14 ("feel very bad about myself") probes self-critical affect
+  but not suicidality.  A high DERS-16 total / impulse subscale
+  is a strong signal for DBT-variant intervention tools but is
+  not itself a crisis gate — acute ideation screening remains
+  PHQ-9 item 9 / C-SSRS.  See ``scoring/ders16.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -453,6 +505,10 @@ from .scoring.cssrs import (
     score_cssrs_screen,
 )
 from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
+from .scoring.ders16 import (
+    InvalidResponseError as Ders16Invalid,
+    score_ders16,
+)
 from .scoring.dtcq8 import (
     InvalidResponseError as Dtcq8Invalid,
     score_dtcq8,
@@ -570,6 +626,7 @@ Instrument = Literal[
     "asrs6",
     "aaq2",
     "wsas",
+    "ders16",
 ]
 
 
@@ -607,6 +664,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "asrs6": 6,
     "aaq2": 7,
     "wsas": 5,
+    "ders16": 16,
 }
 
 
@@ -738,12 +796,16 @@ class AssessmentResult(BaseModel):
       maintenance), PCL-5 (four DSM-5 clusters: intrusion / avoidance
       / negative_mood / hyperarousal), OCI-R (six OCD subtypes:
       hoarding / checking / ordering / neutralizing / washing /
-      obsessing), and BIS-11 (three Patton 1995 second-order factors:
-      attentional / motor / non_planning).  Each subscale is a
+      obsessing), BIS-11 (three Patton 1995 second-order factors:
+      attentional / motor / non_planning), and DERS-16 (five
+      Bjureberg 2016 emotion-dysregulation subscales: nonacceptance
+      / goals / impulse / strategies / clarity).  Each subscale is a
       non-negative integer total on the scorer's native subscale
-      scale.  Keys match the scorer-module constants
-      (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
-      ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
+      scale (note asymmetric ranges: DERS-16 strategies 5-25,
+      clarity 2-10, others 3-15).  Keys match the scorer-module
+      constants (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` /
+      ``OCIR_SUBSCALES`` / ``BIS11_SUBSCALES`` /
+      ``DERS16_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
       SDS / DUDIT / ASRS-6 / AAQ-II / WSAS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
@@ -757,13 +819,16 @@ class AssessmentResult(BaseModel):
     trajectory tracking independently of band changes.
 
     For PACS (Flannery 1999), Craving VAS (Sayette 2000), Readiness
-    Ruler (Rollnick 1999 / Heather 2008), and DTCQ-8 (Sklar & Turner
-    1999), ``severity`` is the literal sentinel ``"continuous"``.
-    None of these instruments publishes severity bands; the trajectory
-    layer extracts the clinical signal from ``total`` directly —
-    week-over-week Δ for PACS, within-episode Δ + EMA trajectory for
-    VAS, week-over-week Δ for the Ruler, week-over-week Δ on the
-    coping-self-efficacy mean for DTCQ-8.  Direction semantics differ:
+    Ruler (Rollnick 1999 / Heather 2008), DTCQ-8 (Sklar & Turner
+    1999), and DERS-16 (Bjureberg 2016), ``severity`` is the literal
+    sentinel ``"continuous"``.  None of these instruments publishes
+    severity bands; the trajectory layer extracts the clinical signal
+    from ``total`` directly — week-over-week Δ for PACS, within-episode
+    Δ + EMA trajectory for VAS, week-over-week Δ for the Ruler,
+    week-over-week Δ on the coping-self-efficacy mean for DTCQ-8,
+    and RCI-style change detection (Jacobson & Truax 1991) for
+    DERS-16 with subscale-level trajectory tracking to pick DBT
+    skill-module emphasis.  Direction semantics differ:
     VAS and PACS are higher-is-worse (craving rising = deterioration);
     the Ruler and DTCQ-8 are higher-is-better (motivation / coping-
     confidence rising = improvement, same direction as WHO-5).
@@ -1582,6 +1647,67 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=ws.instrument_version,
         )
+    if payload.instrument == "ders16":
+        # Bjureberg 2016 Difficulties in Emotion Regulation Scale —
+        # 16-item short form of DERS-36 (Gratz & Roemer 2004); the
+        # validated measure of emotion dysregulation, the DBT target
+        # construct.  Closes the DBT-alignment gap at the platform
+        # assessment layer: AAQ-II measures the ACT target, PHQ-9 /
+        # GAD-7 measure CBT-aligned symptom severity, and DERS-16
+        # measures the regulatory-process dimension that DBT
+        # interventions (distress-tolerance, emotion regulation,
+        # wise-mind, radical acceptance) directly address.  Together
+        # with AAQ-II and PHQ-9 / GAD-7, DERS-16 completes the
+        # three-way process-target triangle so the contextual bandit
+        # can route process-level decisions to the therapeutic frame
+        # whose target the patient's profile loads most heavily on.
+        # 16 items, 1-5 Likert (Almost never → Almost always); total
+        # 16-80.  All items worded in the dysregulation direction
+        # (Bjureberg 2016 pruned DERS-36's awareness-subscale
+        # reverse-keyed items), so no reverse-coding logic needed.
+        # **First 5-subscale instrument** — Bjureberg 2016 Table 2:
+        # nonacceptance (items 9, 10, 13; 3-15), goals (items 3, 7,
+        # 15; 3-15), impulse (items 4, 8, 11; 3-15), strategies
+        # (items 5, 6, 12, 14, 16; 5-25 — widest), clarity (items 1,
+        # 2; 2-10 — narrowest).  Subscale dict surfaced on the
+        # envelope's ``subscales`` field because the intervention
+        # layer reads the 5-tuple profile to pick DBT skill modules:
+        # impulse-dominant → distress-tolerance (TIP/STOP/self-
+        # soothe), strategies-dominant → cope-ahead / opposite-
+        # action, clarity-dominant → observe/describe mindfulness,
+        # nonacceptance-dominant → self-compassion, goals-dominant
+        # → wise-mind / mindfulness-of-current-activity.
+        # **No severity bands** — Bjureberg 2016 did NOT publish
+        # banded thresholds, and downstream sample-specific cutoffs
+        # are not cross-calibrated.  Per CLAUDE.md "don't hand-roll
+        # severity thresholds", DERS-16 ships as a continuous
+        # dimensional measure uniform with Craving VAS / PACS — the
+        # envelope carries ``severity="continuous"`` as the sentinel;
+        # trajectory layer extracts the clinical signal via RCI-style
+        # change detection (Jacobson & Truax 1991) on both the total
+        # and each subscale rather than banded classification.
+        # ``cutoff_used`` / ``positive_screen`` NOT set (continuous,
+        # not cutoff).  No T3 — items 4/8 ("out of control") probe
+        # impulse-control loss but not acute intent; item 14 ("feel
+        # very bad about myself") probes self-critical affect but
+        # not suicidality.  Acute ideation screening stays on PHQ-9
+        # item 9 / C-SSRS.  See ``scoring/ders16.py``.
+        dr = score_ders16(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="ders16",
+            total=dr.total,
+            severity="continuous",
+            requires_t3=False,
+            subscales={
+                "nonacceptance": dr.subscale_nonacceptance,
+                "goals": dr.subscale_goals,
+                "impulse": dr.subscale_impulse,
+                "strategies": dr.subscale_strategies,
+                "clarity": dr.subscale_clarity,
+            },
+            instrument_version=dr.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1730,6 +1856,7 @@ async def submit_assessment(
         Asrs6Invalid,
         Aaq2Invalid,
         WsasInvalid,
+        Ders16Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
