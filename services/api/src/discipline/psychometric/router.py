@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS.
+GAD-2, OASIS, K10.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -170,6 +170,26 @@ Safety routing:
   No safety routing: OASIS has no item probing suicidality (none of
   the 5 items probes acute-harm intent); anxiety-impairment screens
   never fire T3.  See ``scoring/oasis.py``.
+  K10 (Kessler 2002 / Andrews & Slade 2001) is the 10-item Kessler
+  Psychological Distress Scale — a cross-cutting general-distress
+  measure, neither depression- nor anxiety-specific.  The
+  instrument's items span depressive (hopeless / sad / worthless),
+  anxiety (nervous / restless), and arousal (tired / effort)
+  dimensions and Kessler 2002 validates a *unidimensional* total
+  score.  Bands per Andrews & Slade 2001 (10-19 low / 20-24 moderate
+  / 25-29 high / 30-50 very_high) are the canonical population-
+  survey reference and are echoed on the wire via the banded
+  envelope (uniform with PHQ-9 / GAD-7 / PSS-10 / etc.).  **First
+  instrument with ``ITEM_MIN = 1``** — Kessler's original coding is
+  1-5 (where 1 = "None of the time"), and the Andrews & Slade bands
+  are calibrated against this coding; a client that submits 0-indexed
+  items shifts every total by 10 and drops a band.  The router
+  enforces the 1-5 range at the validator.  No subscale exposure:
+  Kessler 2002's factor analysis supports the unidimensional total;
+  splitting items into depression / anxiety subscales is
+  unvalidated.  No safety routing: K10's hopelessness items
+  (4 / 9 / 10) are affect probes, not intent probes — T3 remains
+  reserved for PHQ-9 item 9 / C-SSRS.  See ``scoring/k10.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -227,6 +247,10 @@ from .scoring.gad2 import (
 )
 from .scoring.gad7 import InvalidResponseError as Gad7Invalid, score_gad7
 from .scoring.isi import InvalidResponseError as IsiInvalid, score_isi
+from .scoring.k10 import (
+    InvalidResponseError as K10Invalid,
+    score_k10,
+)
 from .scoring.mdq import (
     ImpairmentLevel,
     InvalidResponseError as MdqInvalid,
@@ -306,6 +330,7 @@ Instrument = Literal[
     "phq2",
     "gad2",
     "oasis",
+    "k10",
 ]
 
 
@@ -336,6 +361,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "phq2": 2,
     "gad2": 2,
     "oasis": 5,
+    "k10": 10,
 }
 
 
@@ -443,7 +469,7 @@ class AssessmentResult(BaseModel):
       (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
-      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / WHO-5 /
+      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / WHO-5 /
       AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 /
       ISI / PHQ-15 / PACS / Craving VAS / Readiness Ruler / DTCQ-8)
       emit ``subscales=None``.
@@ -1053,6 +1079,32 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=oa.positive_screen,
             instrument_version=oa.instrument_version,
         )
+    if payload.instrument == "k10":
+        # Kessler 2002 / Andrews & Slade 2001 — 10-item 1-5 Likert
+        # cross-cutting psychological-distress screener.  Total 10-50.
+        # Banded envelope per Andrews & Slade 2001:
+        #   10-19 low / 20-24 moderate / 25-29 high / 30-50 very_high.
+        # Wire uses the banded severity envelope uniform with PHQ-9 /
+        # GAD-7 / PSS-10 — severity is the band string, not a screen
+        # sentinel.  **First banded instrument with ITEM_MIN=1** — the
+        # scorer enforces the 1-5 range; clients that mistakenly send
+        # 0-indexed items hit the out-of-range validator.  No subscale
+        # exposure (Kessler 2002 validates the unidimensional total;
+        # splitting depression / anxiety subscales is unvalidated).
+        # No safety routing: K10's hopelessness items (4 = hopeless,
+        # 9 = so sad, 10 = worthless) are *affect* probes, not *intent*
+        # probes — a "very high" K10 is a strong signal to work up the
+        # patient with safety-gated instruments (PHQ-9 item 9 / C-SSRS),
+        # not an excuse to skip them.  See ``scoring/k10.py``.
+        k = score_k10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="k10",
+            total=k.total,
+            severity=k.severity,
+            requires_t3=False,
+            instrument_version=k.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1194,6 +1246,7 @@ async def submit_assessment(
         Phq2Invalid,
         Gad2Invalid,
         OasisInvalid,
+        K10Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

@@ -4657,6 +4657,302 @@ class TestOasisRouting:
         assert by_instrument["gad7"].total == 15
 
 
+class TestK10Routing:
+    """K10 (Kessler 2002 / Andrews & Slade 2001) router dispatch.
+
+    Wire contract invariants:
+    - Banded envelope (``severity`` is one of "low"/"moderate"/"high"/
+      "very_high") uniform with PHQ-9 / GAD-7 / PSS-10.
+    - ``requires_t3`` is always False — K10 has no safety item.
+    - ``subscales=None`` — Kessler 2002 validates the unidimensional
+      total; no depression / anxiety subscales are exposed on the wire.
+    - Items are 1-5 (ITEM_MIN=1) — a 0 is out of range, not a silent
+      "none of the time".
+    """
+
+    def test_minimum_total_is_low_band(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [1] * 10,
+                "user_id": "user-k10-min",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "k10"
+        assert body["total"] == 10
+        assert body["severity"] == "low"
+        assert body["requires_t3"] is False
+
+    def test_band_boundary_twenty_is_moderate(
+        self, client: TestClient
+    ) -> None:
+        """Andrews & Slade 2001 boundary — total=20 → moderate.  A
+        ``> 20`` comparator bug would misclassify this as "low"."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [2] * 10,
+                "user_id": "user-k10-mod-boundary",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "moderate"
+
+    def test_band_boundary_twenty_five_is_high(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [2, 2, 2, 2, 2, 3, 3, 3, 3, 3],
+                "user_id": "user-k10-high-boundary",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 25
+        assert body["severity"] == "high"
+
+    def test_band_boundary_thirty_is_very_high(
+        self, client: TestClient
+    ) -> None:
+        """Population percentile ≈ 97 — the top 3% of distress.
+        Pins the very_high cutoff boundary on the wire."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 10,
+                "user_id": "user-k10-vh-boundary",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 30
+        assert body["severity"] == "very_high"
+
+    def test_maximum_total_is_very_high(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [5] * 10,
+                "user_id": "user-k10-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 50
+        assert body["severity"] == "very_high"
+        assert body["requires_t3"] is False
+
+    def test_very_high_does_not_fire_t3(self, client: TestClient) -> None:
+        """Even at total=50 ("all of the time" on every item, including
+        hopeless / worthless / sad), K10 does not fire T3.  The T3
+        pathway is reserved for explicit suicidality (PHQ-9 item 9 /
+        C-SSRS) per Docs/Whitepapers/04_Safety_Framework.md §T3.  Pins
+        the safety-posture invariant for the maximally-distressed
+        K10 profile."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [5] * 10,
+                "user_id": "user-k10-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+        assert body.get("triggering_items") is None
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        """K10 emits ``subscales=None`` — Kessler 2002's factor
+        analysis validates the unidimensional total, and the wire
+        contract does not split depression / anxiety subscales."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 10,
+                "user_id": "user-k10-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_rejects_zero_item_not_silently_accepted(
+        self, client: TestClient
+    ) -> None:
+        """A 0 is NOT "none of the time" on K10 — Kessler's coding is
+        1-5.  A client sending 0-indexed items would shift every total
+        by 10 (and drop a band); the router must reject, not coerce.
+        This pins the load-bearing 1-indexed semantic."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [0, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-k10-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_nine_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 9,
+                "user_id": "user-k10-bad-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_eleven_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 11,
+                "user_id": "user-k10-bad-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_six_items_k6_misroute(
+        self, client: TestClient
+    ) -> None:
+        """K6 is the 6-item K10 short form — a 6-item k10 submission
+        is a mis-route."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 6,
+                "user_id": "user-k10-k6-misroute",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_out_of_range_six(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 6],
+                "user_id": "user-k10-bad-range",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, -1],
+                "user_id": "user-k10-bad-range",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_persists_very_high_in_history(
+        self, client: TestClient
+    ) -> None:
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [4] * 10,
+                "user_id": "user-k10-history",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-k10-history", limit=5)
+        assert len(records) == 1
+        r = records[0]
+        assert r.instrument == "k10"
+        assert r.total == 40
+        assert r.severity == "very_high"
+        assert r.requires_t3 is False
+
+    def test_history_projection_surfaces_banded_severity(
+        self, client: TestClient
+    ) -> None:
+        """The history GET endpoint returns the banded severity string
+        without re-scoring — pins the projection contract for banded-
+        envelope instruments."""
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3, 3, 3, 3, 3, 2, 2, 2, 2, 2],
+                "user_id": "user-k10-projection",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-k10-projection"},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        assert items[0]["instrument"] == "k10"
+        assert items[0]["total"] == 25
+        assert items[0]["severity"] == "high"
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """Defensive — extra MDQ-only fields on a K10 payload don't
+        break dispatch (the K10 branch runs before the MDQ
+        fallthrough)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "k10",
+                "items": [3] * 10,
+                "user_id": "user-k10-defensive",
+                "concurrent_symptoms": True,
+                "functional_impairment": "moderate",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 30
+        assert body["severity"] == "very_high"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
