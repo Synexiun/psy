@@ -1,7 +1,8 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16.
+GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
+CD-RISC-10.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -449,6 +450,50 @@ Safety routing:
   is a strong signal for DBT-variant intervention tools but is
   not itself a crisis gate — acute ideation screening remains
   PHQ-9 item 9 / C-SSRS.  See ``scoring/ders16.py``.
+  CD-RISC-10 (Campbell-Sills & Stein 2007) is the 10-item
+  unidimensional short form of the original 25-item Connor-Davidson
+  Resilience Scale (Connor & Davidson 2003) — the validated measure
+  of trait resilience, the product's **core construct**.  The
+  platform ships a monotonically-increasing resilience streak
+  (CLAUDE.md Rule #3), a recovery-pathway framing, and compassion-
+  first messaging that all presuppose a measurable resilience
+  dimension; CD-RISC-10 closes that gap at the assessment layer.
+  Gives the trajectory layer a construct-aligned score so the
+  bandit can answer "is the cumulative intervention arc moving
+  this patient's resilience?", "is resilience decoupling from
+  symptom severity (PHQ-9 flat while CD-RISC-10 rising — the
+  expected recovery signature)?", and "below-population resilience
+  at intake → heavier scaffold?".  10 items on a 0-4 Likert ("not
+  true at all" → "true nearly all the time"), all positively
+  worded (Campbell-Sills & Stein 2007 pruned the 15 cross-loading
+  items from CD-RISC-25); total 0-40.  **Higher-is-better
+  directionality** — uniform with WHO-5 / DTCQ-8 / Readiness
+  Ruler, opposite from PHQ-9 / GAD-7 / DERS-16 / PCL-5 / OCI-R /
+  K10 / WSAS.  A falling CD-RISC-10 score is a DETERIORATION, not
+  an improvement; clinician-UI layers that reuse higher-is-worse
+  visual language from symptom measures would misread this
+  instrument.  **Severity bands deliberately absent.**
+  Campbell-Sills & Stein 2007 reported general-population mean
+  31.8 ± 5.4 (N=764) but NO banded thresholds; Connor 2003
+  cutpoints apply to the 25-item scale and do not translate
+  linearly to the 10-item form.  Per CLAUDE.md "don't hand-roll
+  severity thresholds", CD-RISC-10 ships as a continuous
+  dimensional measure uniform with Craving VAS / PACS / DERS-16 /
+  DTCQ-8 — the envelope carries ``severity="continuous"`` as the
+  sentinel.  The clinician-UI layer may surface a "below general-
+  population mean" flag (score < 31) as contextual information —
+  that flag is NOT a classification and NOT a gate.  No subscales
+  (Campbell-Sills & Stein 2007 CFA — unidimensional; CD-RISC-25's
+  five-factor split was explicitly rejected for the 10-item form).
+  ``cutoff_used`` / ``positive_screen`` NOT set.  No T3 —
+  CD-RISC-10 items probe adaptability, coping, humor, post-stress
+  growth, bounce-back, goal persistence, focus, failure-tolerance,
+  self-strength, distress-tolerance; none reference suicidality.
+  Item 10 ("can handle unpleasant or painful feelings") probes
+  distress-tolerance capacity (the INVERSE of what a crisis item
+  probes) — a floor on item 10 is a DBT-distress-tolerance
+  scaffolding signal, not a crisis gate.  Acute ideation screening
+  remains PHQ-9 item 9 / C-SSRS.  See ``scoring/cdrisc10.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -486,6 +531,10 @@ from .scoring.asrs6 import (
 from .scoring.audit import (
     InvalidResponseError as AuditInvalid,
     score_audit,
+)
+from .scoring.cdrisc10 import (
+    InvalidResponseError as Cdrisc10Invalid,
+    score_cdrisc10,
 )
 from .scoring.bis11 import (
     InvalidResponseError as Bis11Invalid,
@@ -627,6 +676,7 @@ Instrument = Literal[
     "aaq2",
     "wsas",
     "ders16",
+    "cdrisc10",
 ]
 
 
@@ -665,6 +715,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "aaq2": 7,
     "wsas": 5,
     "ders16": 16,
+    "cdrisc10": 10,
 }
 
 
@@ -810,7 +861,7 @@ class AssessmentResult(BaseModel):
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
       SDS / DUDIT / ASRS-6 / AAQ-II / WSAS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
-      Readiness Ruler / DTCQ-8) emit ``subscales=None``.
+      Readiness Ruler / DTCQ-8 / CD-RISC-10) emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -820,15 +871,22 @@ class AssessmentResult(BaseModel):
 
     For PACS (Flannery 1999), Craving VAS (Sayette 2000), Readiness
     Ruler (Rollnick 1999 / Heather 2008), DTCQ-8 (Sklar & Turner
-    1999), and DERS-16 (Bjureberg 2016), ``severity`` is the literal
-    sentinel ``"continuous"``.  None of these instruments publishes
-    severity bands; the trajectory layer extracts the clinical signal
-    from ``total`` directly — week-over-week Δ for PACS, within-episode
-    Δ + EMA trajectory for VAS, week-over-week Δ for the Ruler,
-    week-over-week Δ on the coping-self-efficacy mean for DTCQ-8,
-    and RCI-style change detection (Jacobson & Truax 1991) for
-    DERS-16 with subscale-level trajectory tracking to pick DBT
-    skill-module emphasis.  Direction semantics differ:
+    1999), DERS-16 (Bjureberg 2016), and CD-RISC-10 (Campbell-Sills &
+    Stein 2007), ``severity`` is the literal sentinel ``"continuous"``.
+    None of these instruments publishes severity bands; the trajectory
+    layer extracts the clinical signal from ``total`` directly —
+    week-over-week Δ for PACS, within-episode Δ + EMA trajectory for
+    VAS, week-over-week Δ for the Ruler, week-over-week Δ on the
+    coping-self-efficacy mean for DTCQ-8, RCI-style change detection
+    (Jacobson & Truax 1991) on total+subscales for DERS-16, and
+    RCI-style change on the total for CD-RISC-10 with the "below
+    general-population mean (< 31)" flag surfaced as contextual UI
+    only (not a classification, not a gate).  Direction semantics
+    differ: VAS / PACS / DERS-16 are higher-is-worse; the Ruler /
+    DTCQ-8 / CD-RISC-10 are higher-is-better (same direction as
+    WHO-5).  Clients rendering these results must not attempt to
+    classify status from ``severity`` — show ``total`` and the
+    trajectory chart instead.  Direction semantics differ:
     VAS and PACS are higher-is-worse (craving rising = deterioration);
     the Ruler and DTCQ-8 are higher-is-better (motivation / coping-
     confidence rising = improvement, same direction as WHO-5).
@@ -1708,6 +1766,69 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=dr.instrument_version,
         )
+    if payload.instrument == "cdrisc10":
+        # Campbell-Sills & Stein 2007 Connor-Davidson Resilience Scale
+        # 10-item short form — the validated unidimensional refinement
+        # of Connor & Davidson 2003's 25-item CD-RISC.  Measures trait
+        # resilience: the capacity to adapt, recover, and maintain
+        # function under stress, adversity, illness, and trauma.
+        # **Closes the platform-core resilience construct gap** —
+        # every product-layer affordance (resilience streak per
+        # CLAUDE.md Rule #3, recovery-pathway framing, relapse-as-
+        # data framing, compassion-first messaging) presupposes a
+        # measurable resilience dimension.  Until CD-RISC-10 the
+        # assessment layer had no validated resilience measure; with
+        # it, the trajectory layer can answer "is the platform's
+        # intervention arc moving this patient's resilience?", detect
+        # the resilience-decoupling signal (CD-RISC-10 rises while
+        # PHQ-9 stays flat — the early-recovery leading indicator
+        # Connor & Davidson 2003 documented), and surface patients
+        # with below-population resilience at intake for heavier
+        # scaffolding.  Completes the cross-construct trajectory
+        # stack: process measures (AAQ-II / DERS-16) fall, symptom
+        # measures (PHQ-9 / GAD-7 / PCL-5 / K10) fall, functional
+        # measures (WSAS) recover, and resilience measures (CD-RISC-
+        # 10) RISE — the full recovery signature.
+        # 10 items, 0-4 Likert (not true at all → true nearly all
+        # the time); total 0-40.  All items worded in the RESILIENCE
+        # direction — **higher is better**, same directionality as
+        # WHO-5 / DTCQ-8 / Readiness Ruler, **opposite** of PHQ-9 /
+        # GAD-7 / DERS-16 / PCL-5 / OCI-R / K10 / WSAS.  Clients
+        # rendering the total must NOT reuse higher-is-worse visual
+        # language — a falling CD-RISC-10 is a DETERIORATION.
+        # **No severity bands** — Campbell-Sills & Stein 2007
+        # published general-population norms (mean 31.8 ± 5.4 in
+        # U.S. adult sample N=764) but NOT banded clinical
+        # thresholds.  Connor & Davidson 2003's 25-item cutpoints
+        # do not translate linearly; downstream 10-item tertiles
+        # are sample-specific and not cross-calibrated.  Per
+        # CLAUDE.md "don't hand-roll severity thresholds", CD-RISC-
+        # 10 ships as a continuous dimensional measure uniform with
+        # Craving VAS / PACS / DERS-16; envelope carries
+        # ``severity="continuous"``.  The clinician-UI layer may
+        # surface a "below general-population mean" flag (score
+        # < 31) as context — that flag is NOT a classification and
+        # NOT a gate.  Unidimensional per Campbell-Sills & Stein
+        # 2007 CFA (CFI .95, RMSEA .06) — the 25-item's five-factor
+        # structure was explicitly rejected for the 10-item form,
+        # so ``subscales`` is NOT emitted (distinct from DERS-16's
+        # 5-subscale surface).  No T3 — the 10 items probe
+        # resilience-capacity constructs (adaptability, coping,
+        # humor, bounce-back, goal persistence, focus under
+        # pressure, failure-tolerance, self-strength, distress-
+        # tolerance); none probe suicidality, self-harm, or crisis
+        # behavior.  Acute ideation screening stays on PHQ-9 item 9
+        # / C-SSRS.  ``cutoff_used`` / ``positive_screen`` NOT set
+        # (continuous, not cutoff).  See ``scoring/cdrisc10.py``.
+        cd = score_cdrisc10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="cdrisc10",
+            total=cd.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=cd.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1857,6 +1978,7 @@ async def submit_assessment(
         Aaq2Invalid,
         WsasInvalid,
         Ders16Invalid,
+        Cdrisc10Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

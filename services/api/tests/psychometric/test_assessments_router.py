@@ -8356,6 +8356,474 @@ class TestDers16Routing:
         assert body["severity"] == "continuous"
 
 
+class TestCdrisc10Routing:
+    """CD-RISC-10 (Campbell-Sills & Stein 2007) router dispatch.
+
+    Wire contract invariants:
+    - Continuous envelope (``severity`` = "continuous" literal) uniform
+      with Craving VAS / PACS / DERS-16.  No banded classification
+      because Campbell-Sills & Stein 2007 published no cross-calibrated
+      cutpoints (general-pop mean 31.8 ± 5.4 is a norm, not a threshold);
+      trajectory layer extracts clinical signal via RCI-style change
+      detection (Jacobson & Truax 1991).
+    - **Higher-is-better direction** — same as WHO-5 / DTCQ-8 /
+      Readiness Ruler, OPPOSITE of PHQ-9 / GAD-7 / DERS-16 / PCL-5 /
+      OCI-R / K10 / WSAS.  The trajectory layer and clinician UI must
+      treat a falling total as a DETERIORATION.
+    - No ``cutoff_used`` / ``positive_screen`` — continuous
+      instrument, not cutoff shape.
+    - ``requires_t3`` is always False — CD-RISC-10 has no safety item
+      (all 10 items probe resilience capacity, not crisis).
+    - ``subscales`` is None — Campbell-Sills & Stein 2007 CFA
+      validates the unidimensional structure; the 25-item's five-
+      factor split was explicitly rejected for the 10-item form.
+      (Distinct from DERS-16's 5-subscale surface.)
+    - ``triggering_items`` is None — CD-RISC-10 has no firing-item
+      concept.
+    - NOVEL 0-4 Likert envelope on a 10-item instrument — floor 0
+      ("not true at all"), ceiling 4 ("true nearly all the time").
+      -1 rejects (below floor).  5 rejects (above ceiling).
+      Count must be exactly 10.
+    - Cross-instrument coexistence: CD-RISC-10 + PHQ-9 on the same
+      timeline (resilience-decoupling signal), CD-RISC-10 + DERS-16
+      (resilience complement to dysregulation), CD-RISC-10 + WHO-5
+      (direction-matched higher-is-better pair).
+    """
+
+    def test_all_floor_is_continuous(self, client: TestClient) -> None:
+        """Every item at 0 ("not true at all") — total 0, the
+        low-resilience floor.  ``severity`` is the "continuous"
+        sentinel regardless of total — no "severe" band even at
+        the floor because CD-RISC-10 does not classify."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "user_id": "user-cdrisc10-floor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "cdrisc10"
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_all_ceiling_is_continuous(self, client: TestClient) -> None:
+        """Every item at 4 ("true nearly all the time") — total 40,
+        the high-resilience ceiling.  Even at the max, severity stays
+        "continuous" — Campbell-Sills & Stein 2007 published no
+        "resilient" band.  Higher-is-better means the max is the
+        best state, not the worst (opposite of DERS-16)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+                "user_id": "user-cdrisc10-ceiling",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 40
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_general_population_mean_is_continuous(
+        self, client: TestClient
+    ) -> None:
+        """A score near Campbell-Sills & Stein 2007's U.S. general-
+        population mean (31.8).  Even at population-typical
+        resilience, severity is the "continuous" sentinel — the
+        < 31 "below general-population mean" flag is a clinician-UI
+        concern, not a router classification."""
+        items = [4, 4, 4, 3, 3, 3, 3, 3, 3, 2]  # sum = 32
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": items,
+                "user_id": "user-cdrisc10-mean",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 32
+        assert body["severity"] == "continuous"
+
+    def test_cutoff_used_not_populated(self, client: TestClient) -> None:
+        """``cutoff_used`` is None because CD-RISC-10 has no cutoff
+        (continuous, not cutoff shape)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [2] * 10,
+                "user_id": "user-cdrisc10-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_subscales_is_none(self, client: TestClient) -> None:
+        """``subscales`` is None — CD-RISC-10 is unidimensional per
+        Campbell-Sills & Stein 2007 CFA.  This is the negative
+        assertion distinguishing it from DERS-16 (5 subscales),
+        OCI-R (6), PCL-5 (4), BIS-11 / URICA (3)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": "user-cdrisc10-nosubs",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        """``triggering_items`` is None — CD-RISC-10 has no
+        firing-item concept (unlike C-SSRS / ASRS-6)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "user_id": "user-cdrisc10-notrig",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_item_10_floor_does_not_trigger_t3(
+        self, client: TestClient
+    ) -> None:
+        """Item 10 ("Can handle unpleasant or painful feelings like
+        sadness, fear, and anger.") at 0 ("not true at all") is the
+        distress-tolerance floor — low capacity to sit with negative
+        affect.  This is a DBT target, not a crisis signal.
+        ``requires_t3`` must remain False.  Acute ideation screening
+        stays on PHQ-9 item 9 / C-SSRS."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [2, 2, 2, 2, 2, 2, 2, 2, 2, 0],
+                "user_id": "user-cdrisc10-distress-floor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        """``instrument_version`` matches the scorer module's
+        pinned version string."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [2] * 10,
+                "user_id": "user-cdrisc10-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["instrument_version"] == "cdrisc10-1.0.0"
+
+    def test_too_few_items_rejects(self, client: TestClient) -> None:
+        """9 items fails — exactly 10 required."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [2] * 9,
+                "user_id": "user-cdrisc10-few",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_too_many_items_rejects(self, client: TestClient) -> None:
+        """11 items fails — 10 required, not 16 (DERS-16 misroute)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [2] * 11,
+                "user_id": "user-cdrisc10-many",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_negative_item_rejects(self, client: TestClient) -> None:
+        """-1 fails — floor is 0, not -1."""
+        bad = [0, 0, 0, 0, 0, 0, 0, 0, 0, -1]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": bad,
+                "user_id": "user-cdrisc10-neg",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_five_rejects(self, client: TestClient) -> None:
+        """5 fails — ceiling is 4 (0-4 Likert), not 5 (DERS-16 / WHO-5
+        misroute).  Guards against locale copy-paste bugs that
+        interpret CD-RISC-10 as a 1-5 scale like DERS-16."""
+        bad = [4, 4, 4, 4, 4, 4, 4, 4, 4, 5]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": bad,
+                "user_id": "user-cdrisc10-five",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_zero_accepts(self, client: TestClient) -> None:
+        """0 accepts — floor is 0 on this envelope (unlike DERS-16 1-5)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [0] * 10,
+                "user_id": "user-cdrisc10-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_four_accepts(self, client: TestClient) -> None:
+        """4 accepts — ceiling is 4 on this envelope."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [4] * 10,
+                "user_id": "user-cdrisc10-four",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_persists_to_repository(self, client: TestClient) -> None:
+        """POST persists to the AssessmentRepository; the repository's
+        ``history_for`` returns the record with continuous severity."""
+        user = "user-cdrisc10-persist"
+        post = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert post.status_code == 201
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "cdrisc10"
+        assert rec.total == 30
+        assert rec.severity == "continuous"
+        assert rec.subscales is None
+
+    def test_history_projects_cdrisc10(self, client: TestClient) -> None:
+        """GET /history surfaces the CD-RISC-10 result with the
+        continuous severity sentinel and no subscales field.  The
+        clinician-UI reads resilience off this path."""
+        user = "user-cdrisc10-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "cdrisc10"
+        assert entry["total"] == 30
+        assert entry["severity"] == "continuous"
+
+    def test_coexists_with_phq9_resilience_decoupling(
+        self, client: TestClient
+    ) -> None:
+        """CD-RISC-10 + PHQ-9 on the same timeline — the resilience-
+        decoupling signal (CD-RISC-10 rises while PHQ-9 stays flat)
+        is the early-recovery leading indicator.  Both axes must
+        persist cleanly and retain their distinct envelope shapes
+        (CD-RISC-10 continuous/higher-better, PHQ-9 banded/
+        higher-worse)."""
+        user = "user-cdrisc10-decoupling"
+        phq = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [2, 2, 2, 2, 2, 2, 2, 2, 0],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert phq.status_code == 201
+        assert phq.json()["severity"] in {
+            "minimal",
+            "mild",
+            "moderate",
+            "moderately_severe",
+            "severe",
+        }
+
+        cd = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert cd.status_code == 201
+        assert cd.json()["severity"] == "continuous"
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "phq9" in instruments
+        assert "cdrisc10" in instruments
+
+    def test_coexists_with_ders16_process_plus_resilience(
+        self, client: TestClient
+    ) -> None:
+        """CD-RISC-10 + DERS-16 on the same timeline.  DERS-16
+        measures dysregulation (process impairment, higher-worse)
+        and CD-RISC-10 measures resilience (recovery capacity,
+        higher-better) — the two are complements, not redundant.
+        Both persist with their distinct directional semantics."""
+        user = "user-cdrisc10-ders16"
+        de = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert de.status_code == 201
+        assert de.json()["severity"] == "continuous"
+        assert de.json().get("subscales") is not None
+
+        cd = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [2] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert cd.status_code == 201
+        assert cd.json()["severity"] == "continuous"
+        assert cd.json().get("subscales") is None
+
+    def test_coexists_with_who5_direction_matched_pair(
+        self, client: TestClient
+    ) -> None:
+        """CD-RISC-10 + WHO-5 on the same timeline — both
+        higher-is-better.  CD-RISC-10 is a trait-resilience measure
+        (dimensional, continuous); WHO-5 is a state-wellbeing
+        measure (banded via index).  Both axes persist and retain
+        their distinct envelope shapes (CD-RISC-10 "continuous"
+        sentinel, WHO-5 banded)."""
+        user = "user-cdrisc10-who5"
+        who = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "who5",
+                "items": [3, 3, 3, 3, 3],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert who.status_code == 201
+
+        cd = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert cd.status_code == 201
+        assert cd.json()["severity"] == "continuous"
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "who5" in instruments
+        assert "cdrisc10" in instruments
+
+    def test_ignores_mdq_and_sex_fields(self, client: TestClient) -> None:
+        """MDQ / AUDIT-C-specific fields at the request body are
+        silently ignored for non-MDQ / non-AUDIT-C instruments.
+        CD-RISC-10 scoring does not touch ``sex`` /
+        ``concurrent_symptoms`` / ``functional_impairment``."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [4] * 10,
+                "sex": "female",
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-cdrisc10-ignores",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "cdrisc10"
+        assert body["total"] == 40
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
