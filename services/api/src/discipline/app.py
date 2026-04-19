@@ -22,6 +22,7 @@ from discipline.shared.tracing import configure_tracing
 
 # Routers are imported from each module.
 # Modules are added incrementally as features land.
+from discipline.admin.router import router as admin_router
 from discipline.identity.router import router as identity_router
 from discipline.intervention.router import router as intervention_router
 from discipline.clinical.router import router as clinical_router
@@ -162,6 +163,7 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router, prefix="/v1")
     app.include_router(reports_router, prefix="/v1")
     app.include_router(content_router, prefix="/v1")
+    app.include_router(admin_router, prefix="/v1")
 
     return app
 
