@@ -2266,6 +2266,193 @@ class TestPacsRouting:
         assert body["severity"] == "continuous"
 
 
+class TestBis11Routing:
+    """BIS-11 (Barratt Impulsiveness Scale, Patton 1995) over the wire.
+
+    BIS-11 is the package's first **non-zero-based Likert** (1-4, not
+    0-4) and its largest instrument (30 items — which raised the
+    Pydantic envelope's ``max_length`` from 20 to 30 when it shipped).
+    It also ships 11 reverse-coded items (positively-worded) handled
+    inside the scorer.
+
+    These tests pin (1) the dispatch branch picks ``score_bis11``,
+    (2) the wire envelope carries ``severity`` = low/normal/high
+    (Stanford 2009 tri-band), (3) the post-reversal total is what
+    lands in ``total`` and ``severity`` (not the raw-response sum),
+    (4) ``requires_t3`` is always False, (5) zero-valued items are
+    rejected (regression guard against 0-4-Likert copy-paste bugs),
+    (6) 29/31-item counts are rejected at the router boundary.
+    """
+
+    def _post_bis11(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "bis11", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_high_band(self, client: TestClient) -> None:
+        """Ceiling profile (all non-reverse items at 4, reverse items
+        at 1 — both scoring to 4 post-reversal).  Total 120 → 'high'."""
+        items = [4] * 30
+        # Reverse-coded positions (1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30)
+        # need to be at raw 1 to score 4 after reversal.
+        for pos in (1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30):
+            items[pos - 1] = 1
+        resp = self._post_bis11(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "bis11"
+        assert body["total"] == 120
+        assert body["severity"] == "high"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "bis11-1.0.0"
+
+    def test_all_raw_twos_is_normal_upper_edge(
+        self, client: TestClient
+    ) -> None:
+        """All raw 2s → scored total 71 (Stanford 2009 normal upper edge).
+        This is the banding fence post — a regression that shifted the
+        'normal' upper from 71 to 70 would fail this test."""
+        resp = self._post_bis11(client, items=[2] * 30)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 71
+        assert body["severity"] == "normal"
+
+    def test_low_band_via_response_bias_profile(
+        self, client: TestClient
+    ) -> None:
+        """Stanford 2009 flags the ≤ 51 band as possible social-
+        desirability response bias.  This test pins that the
+        floor (total 30) maps to 'low' — regression guard against
+        an over-eager banding refactor that might rename this band
+        to 'acceptable' or 'ideal'."""
+        items = [1] * 30
+        for pos in (1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30):
+            items[pos - 1] = 4
+        resp = self._post_bis11(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 30
+        assert body["severity"] == "low"
+
+    def test_reverse_coding_applied_at_dispatch(
+        self, client: TestClient
+    ) -> None:
+        """All raw 1s → the 11 reverse-coded positions score to 4, the
+        other 19 stay at 1.  Total = (11 × 4) + (19 × 1) = 63 → 'normal'.
+        This fails loudly if a refactor silently drops reverse-coding
+        (which would produce total 30 → 'low' instead)."""
+        resp = self._post_bis11(client, items=[1] * 30)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 63
+        assert body["severity"] == "normal"
+
+    def test_max_severity_does_not_fire_t3(
+        self, client: TestClient
+    ) -> None:
+        """Critical clinical-safety contract: BIS-11 total 120 (ceiling
+        impulsivity) does NOT fire T3.  High trait impulsivity routes
+        to DBT / mindfulness-based attention / implementation-intention
+        work at the intervention layer, not to the safety stream.
+        Letting BIS-11 fire T3 would cross the personality-trait /
+        psychiatric-crisis boundary and desensitize the safety queue."""
+        items = [4] * 30
+        for pos in (1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30):
+            items[pos - 1] = 1
+        resp = self._post_bis11(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_twenty_nine_items(self, client: TestClient) -> None:
+        resp = self._post_bis11(client, items=[2] * 29)
+        assert resp.status_code == 422
+
+    def test_rejects_thirty_one_items(self, client: TestClient) -> None:
+        resp = self._post_bis11(client, items=[2] * 31)
+        # Envelope max is 30, so 31 is a Pydantic-422 rather than a
+        # per-instrument 422 — either way the caller sees 422.
+        assert resp.status_code == 422
+
+    def test_rejects_zero_item_value(self, client: TestClient) -> None:
+        """Raw value 0 → 422.  BIS-11 is 1-4, not 0-based like the rest
+        of the package.  This is the regression guard against a client
+        that reused a 0-based Likert UI and forgot to shift the scale."""
+        items = [2] * 30
+        items[0] = 0
+        resp = self._post_bis11(client, items=items)
+        assert resp.status_code == 422
+
+    def test_rejects_item_value_five(self, client: TestClient) -> None:
+        items = [2] * 30
+        items[5] = 5
+        resp = self._post_bis11(client, items=items)
+        assert resp.status_code == 422
+
+    def test_persists_high_band_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id shows in per-user history with
+        severity band captured.  Trajectory analysis reads the stored
+        total — which must be the post-reversal sum, not the raw-
+        response sum (a regression that stored raw would make the
+        trajectory meaningless)."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        items = [4] * 30
+        for pos in (1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30):
+            items[pos - 1] = 1
+        body = {
+            "instrument": "bis11",
+            "items": items,
+            "user_id": "user-bis11-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-bis11-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "bis11"
+        assert stored.total == 120
+        assert stored.severity == "high"
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """instrument=bis11 + MDQ fields → BIS-11 dispatch runs; extras
+        ignored.  Defensive pin across the dispatcher-ordering contract."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "bis11",
+                "items": [2] * 30,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "bis11"
+        assert body["severity"] == "normal"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

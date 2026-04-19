@@ -1,6 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS.
+PACS, BIS-11.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -36,8 +36,8 @@ Safety routing:
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
-  PCL-5, OCI-R, PHQ-15, PACS have no safety items — ``requires_t3`` is
-  always False for these instruments.  WHO-5 ``depression_screen``
+  PCL-5, OCI-R, PHQ-15, PACS, BIS-11 have no safety items —
+  ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -62,7 +62,13 @@ Safety routing:
   It is *the* platform-core instrument since craving is the
   60-180s urge-to-action construct the product intervenes on, but
   it carries no crisis item and no validated severity bands.
-  See ``scoring/pacs.py``.
+  See ``scoring/pacs.py``.  BIS-11 (Patton 1995) is the trait-
+  level impulsivity measure — the dispositional substrate that
+  PACS's state-level craving rides on.  BIS-11 has no safety
+  item; high impulsivity routes to DBT distress-tolerance /
+  mindfulness attention training / implementation-intention work
+  at the intervention-selection layer, not to T3.  See
+  ``scoring/bis11.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -91,6 +97,10 @@ from .safety_items import evaluate_phq9
 from .scoring.audit import (
     InvalidResponseError as AuditInvalid,
     score_audit,
+)
+from .scoring.bis11 import (
+    InvalidResponseError as Bis11Invalid,
+    score_bis11,
 )
 from .scoring.audit_c import (
     InvalidResponseError as AuditCInvalid,
@@ -159,6 +169,7 @@ Instrument = Literal[
     "ocir",
     "phq15",
     "pacs",
+    "bis11",
 ]
 
 
@@ -181,6 +192,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "ocir": 18,
     "phq15": 15,
     "pacs": 5,
+    "bis11": 30,
 }
 
 
@@ -190,10 +202,13 @@ class AssessmentRequest(BaseModel):
     Per-instrument item-count is validated at the route layer (after
     Pydantic) so the error message can be specific to the instrument
     ("PHQ-9 requires exactly 9 items, got N").  The Pydantic
-    ``min_length=3, max_length=20`` bound is the broadest envelope
-    covering every supported instrument (AUDIT-C=3 through PCL-5=20);
+    ``min_length=3, max_length=30`` bound is the broadest envelope
+    covering every supported instrument (AUDIT-C=3 through BIS-11=30);
     a tighter check needs to know the instrument value, which
-    Pydantic field validators can't see in a clean way.
+    Pydantic field validators can't see in a clean way.  BIS-11
+    raised the ceiling from 20 to 30 when it shipped — callers on
+    older instruments see no change since the per-instrument count
+    check at ``_validate_item_count`` is the tight constraint.
 
     ``sex`` is AUDIT-C-only; ignored by other instruments.  Defaulting
     to ``None`` (rather than ``"unspecified"``) lets the router echo
@@ -215,7 +230,7 @@ class AssessmentRequest(BaseModel):
     """
 
     instrument: Instrument
-    items: list[int] = Field(min_length=3, max_length=20)
+    items: list[int] = Field(min_length=3, max_length=30)
     sex: Sex | None = Field(
         default=None,
         description="AUDIT-C only; ignored by other instruments.",
@@ -514,6 +529,30 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=phq15.instrument_version,
         )
+    if payload.instrument == "bis11":
+        # Patton 1995 — 30-item 1-4 Likert Barratt Impulsiveness Scale,
+        # total 30-120.  Banded-severity envelope (low/normal/high) per
+        # Stanford 2009 norms.  **First non-zero-based Likert in the
+        # dispatch table** — the 1-4 range is pinned at the scorer and
+        # enforced via InvalidResponseError → 422.  11 reverse-coded
+        # items (positively-worded: "I plan tasks carefully") are
+        # handled inside the scorer; callers submit raw 1-4 responses
+        # and the stored record's ``total`` reflects the post-reversal
+        # sum, not the raw-response sum.  No safety routing: BIS-11 is
+        # a trait inventory with no suicidality / acute-harm item.
+        # Three Patton 1995 subscales (attentional / motor / non_planning)
+        # are computed by the scorer but not surfaced on the wire yet —
+        # a future cross-cutting sprint will add subscale surfacing
+        # across PCL-5 / OCI-R / BIS-11 together.
+        bis = score_bis11(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="bis11",
+            total=bis.total,
+            severity=bis.severity,
+            requires_t3=False,
+            instrument_version=bis.instrument_version,
+        )
     if payload.instrument == "pacs":
         # Flannery 1999 — 5-item 0-6 Likert Penn Alcohol Craving Scale,
         # total 0-30.  **Continuous-severity envelope** (new in Sprint 34)
@@ -671,6 +710,7 @@ async def submit_assessment(
         OcirInvalid,
         Phq15Invalid,
         PacsInvalid,
+        Bis11Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
