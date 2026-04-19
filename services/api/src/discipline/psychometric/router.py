@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND.
+MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +45,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1604,6 +1604,11 @@ from .scoring.ftnd import (
     InvalidResponseError as FtndInvalid,
     score_ftnd,
 )
+from .scoring.brief_cope import (
+    BRIEF_COPE_SUBSCALES,
+    InvalidResponseError as BriefCopeInvalid,
+    score_brief_cope,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1688,6 +1693,7 @@ Instrument = Literal[
     "hads",
     "dass21",
     "ftnd",
+    "brief_cope",
 ]
 
 
@@ -1754,6 +1760,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "hads": 14,
     "dass21": 21,
     "ftnd": 6,
+    "brief_cope": 28,
 }
 
 
@@ -5540,6 +5547,165 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=f.instrument_version,
         )
+    if payload.instrument == "brief_cope":
+        # Brief COPE — 28-item coping-strategies inventory
+        # (Carver 1997 International Journal of Behavioral
+        # Medicine 4:92-100).  Abbreviated version of the 60-item
+        # COPE inventory (Carver, Scheier & Weintraub 1989 J Pers
+        # Soc Psychol 56:267-283) retaining 14 two-item subscales
+        # with CFA-validated factor structure.  The de facto
+        # standard coping-strategies instrument in behavioral-
+        # medicine research (> 20,000 Google Scholar citations).
+        #
+        # Construct placement in the platform's psychometric
+        # roster:
+        #
+        # - Symptom-screening instruments (PHQ-9 / GAD-7 / HADS /
+        #   DASS-21 / PCL-5 / OCI-R / ISI / C-SSRS / CORE-10)
+        #   measure DISTRESS OUTCOMES.
+        # - Regulatory-construct instruments (DERS-16 / AAQ-II /
+        #   MAAS / TAS-20 / FFMQ-15) measure EMOTION-REGULATION
+        #   CAPACITY.
+        # - Resilience instruments (CD-RISC-10 / BRS / LOT-R)
+        #   measure TRAIT-LEVEL ADAPTIVE CAPACITY.
+        # - Self-concept instruments (RSES / GSE) measure
+        #   EVALUATIVE SELF-ATTITUDE.
+        # - Social-support instruments (MSPSS / UCLA-3) measure
+        #   PERCEIVED SUPPORT AVAILABILITY.
+        # - Substance-dependence instruments (AUDIT / DUDIT /
+        #   DAST-10 / FTND / PGSI / CIUS / PACS / Craving VAS)
+        #   measure USE SEVERITY or CRAVING INTENSITY.
+        # - Brief COPE measures HOW A USER ACTUALLY RESPONDS to
+        #   stressors — the behavioral / cognitive repertoire
+        #   they deploy.  This is the INTERVENTION-MATCHING
+        #   LAYER that the other instruments cannot directly
+        #   probe.
+        #
+        # Why Brief COPE is load-bearing for Discipline OS:
+        #
+        # The platform's urge → intervention pipeline requires a
+        # per-user model of which coping strategies are ALREADY
+        # in the user's repertoire.  Absent this signal, the
+        # intervention-matching bandit is fitting blind.  Brief
+        # COPE provides the direct measurement:
+        #
+        # 1. **Adaptive coping (active_coping, planning,
+        #    positive_reframing, acceptance, emotional and
+        #    instrumental support)** — high scores → reinforce
+        #    existing repertoire (Marlatt 1985 Relapse Prevention
+        #    ch 5).
+        # 2. **Avoidant coping (denial, behavioral_disengagement,
+        #    substance_use, self_distraction)** — high scores →
+        #    elevated relapse risk; route to DBT distress-
+        #    tolerance skills (Linehan 2015) or MBRP urge-surfing
+        #    (Bowen 2014).
+        # 3. **SUBSTANCE_USE coping subscale is SPECIFICALLY
+        #    CLINICALLY LOAD-BEARING** for the platform's
+        #    addiction focus.  A user with an elevated substance-
+        #    use coping score is using substances as their stress
+        #    response — INDEPENDENT of whether they meet
+        #    diagnostic thresholds on AUDIT / DUDIT / FTND / PGSI.
+        #    The AUDIT/DUDIT/FTND family measures consumption
+        #    severity; Brief COPE substance_use measures the
+        #    COPING-FUNCTION ROLE — a sub-threshold AUDIT with
+        #    high Brief COPE substance_use is the EARLY-
+        #    INTERVENTION WINDOW that Whitepaper 04 §T1
+        #    prevention tier targets.
+        # 4. **Self_blame** — Holahan 1987 J Pers Soc Psychol
+        #    52:946-955 documented self-blame as the strongest
+        #    maladaptive-coping predictor of depression and
+        #    poor adjustment outcomes.  Routes to CBT cognitive
+        #    restructuring (Beck 2011) and self-compassion
+        #    interventions (Neff 2003).
+        #
+        # Envelope shape:
+        #
+        # - ``total``: sum of all 28 items, 28-112.  NOT
+        #   CLINICALLY MEANINGFUL per Carver 1997 §Discussion,
+        #   populated only for FHIR / analytics envelope
+        #   consistency.  Downstream interpretation MUST read
+        #   ``subscales`` not ``total``.
+        # - ``severity``: always ``"continuous"``.  Same pattern
+        #   as RSES — no published clinical bands.  Carver 1997
+        #   §Discussion explicitly argued against collapsing
+        #   coping strategies into a single quality score.
+        # - ``subscales``: **14-entry dict** — the first
+        #   instrument in the roster with > 3 subscales.  Keys
+        #   are the canonical Carver 1997 subscale names in
+        #   snake_case (self_distraction, active_coping, denial,
+        #   substance_use, use_emotional_support,
+        #   use_instrumental_support, behavioral_disengagement,
+        #   venting, positive_reframing, planning, humor,
+        #   acceptance, religion, self_blame).  Each value is
+        #   the 2-item sum for that subscale, range 2-8.
+        #   Clients rendering Brief COPE MUST display all 14
+        #   subscales — collapsing loses the clinical signal.
+        # - ``requires_t3``: always False — no item probes
+        #   ideation.
+        # - No ``positive_screen`` — Brief COPE is not a screen.
+        # - No ``cutoff_used`` — no cutoff.
+        # - No ``index`` / ``scaled_score`` — no transformation.
+        # - No ``triggering_items`` — no per-item acuity routing.
+        #
+        # Subscale-envelope extension:
+        #
+        # DASS-21 was the prior upper bound of 3 subscales.
+        # Brief COPE's 14 subscales is a 4.6× extension but
+        # requires no data-model change — the ``subscales``
+        # envelope field is a ``dict[str, int]`` with no arity
+        # constraint.  The cardinality change is a CLIENT-
+        # RENDERING concern: clinician dashboards and user-
+        # facing surfaces need to display 14 subscales compactly
+        # and interpretably.  The i18n catalog carries the 14
+        # subscale-display strings per locale.
+        #
+        # Direction note:
+        #
+        # Higher = MORE endorsement of that coping strategy.
+        # Whether high is ADAPTIVE or MALADAPTIVE is subscale-
+        # specific (active_coping high = adaptive; substance_use
+        # high = maladaptive; self_distraction high = context-
+        # dependent).  The scorer / router DO NOT label subscales
+        # as adaptive or maladaptive — that interpretation happens
+        # at the intervention-matching layer based on current user
+        # context.  This preserves Carver 1997's stance that no
+        # coping strategy is universally adaptive.
+        #
+        # Clinical pairings the scorer output supports:
+        #
+        # - Brief COPE substance_use high + AUDIT positive /
+        #   DUDIT positive / FTND positive — substance is
+        #   coping mechanism AND reaching dependence threshold;
+        #   primary addiction intervention.
+        # - Brief COPE substance_use high + AUDIT / DUDIT / FTND
+        #   negative — substance coping sub-threshold; T1
+        #   prevention window (Whitepaper 04 §T1).
+        # - Brief COPE self_blame high + PHQ-9 high — Holahan
+        #   1987 attribution-depression pattern; CBT
+        #   restructuring + self-compassion work (Neff 2003 /
+        #   Gilbert 2010 CFT).
+        # - Brief COPE active_coping + planning high, substance
+        #   use / self_blame / denial low — ADAPTIVE profile;
+        #   reinforce existing repertoire per Marlatt 1985.
+        # - Brief COPE religion high with PHQ-9 elevated —
+        #   religious coping substituting for symptom
+        #   processing; supportive but monitor for avoidance
+        #   substitution (Pargament 1998).
+        # - Brief COPE trajectory — shift from avoidant (denial,
+        #   substance_use, behavioral_disengagement) to
+        #   adaptive (active_coping, planning, acceptance) is a
+        #   treatment-progress signal; RCI methodology applies
+        #   at the subscale level.
+        b = score_brief_cope(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="brief_cope",
+            total=b.total,
+            severity=b.severity,
+            requires_t3=False,
+            subscales=b.subscales,
+            instrument_version=b.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5717,6 +5883,7 @@ async def submit_assessment(
         HadsInvalid,
         Dass21Invalid,
         FtndInvalid,
+        BriefCopeInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

@@ -25510,3 +25510,709 @@ class TestFtndRouting:
         assert body["total"] == 4
         assert body["positive_screen"] is True
         assert body["cutoff_used"] == 4
+
+
+# =============================================================================
+# Brief COPE — Carver 1997 International Journal of Behavioral Medicine 4:92-100
+# =============================================================================
+
+
+# Brief COPE subscale positions (Carver 1997 Appendix A) — 1-indexed.
+# Duplicated at test-file scope so the router-test construction logic
+# stays readable without reaching into the scoring module; the scorer
+# and router tests separately verify the positions match the source.
+_BRIEF_COPE_POSITIONS: dict[str, tuple[int, int]] = {
+    "self_distraction": (1, 19),
+    "active_coping": (2, 7),
+    "denial": (3, 8),
+    "substance_use": (4, 11),
+    "use_emotional_support": (5, 15),
+    "use_instrumental_support": (10, 23),
+    "behavioral_disengagement": (6, 16),
+    "venting": (9, 21),
+    "positive_reframing": (12, 17),
+    "planning": (14, 25),
+    "humor": (18, 28),
+    "acceptance": (20, 24),
+    "religion": (22, 27),
+    "self_blame": (13, 26),
+}
+
+
+def _brief_cope_items(**subscale_targets: int) -> list[int]:
+    """Build a 28-item 1-4 vector with specified subscales elevated.
+
+    Baseline is all 1s (minimum endorsement).  Each keyword argument
+    names a subscale and sets the 2-item sum for that subscale to the
+    given target (2-8).  Distributes target across the two positions
+    preferring an even split, bounded by the 1-4 item range.
+
+    Mirrors _items_for in test_brief_cope_scoring.py; redefined here
+    to keep the router-test file self-contained per the file's
+    established pattern (TestFtndRouting, TestDass21Routing, etc. do
+    not import scorer-test helpers).
+    """
+    items = [1] * 28
+    for name, target in subscale_targets.items():
+        assert 2 <= target <= 8, (
+            f"Subscale {name} target {target} out of 2-8"
+        )
+        i1, i2 = _BRIEF_COPE_POSITIONS[name]
+        v1 = min(4, (target + 1) // 2)
+        v2 = target - v1
+        assert 1 <= v1 <= 4 and 1 <= v2 <= 4
+        items[i1 - 1] = v1
+        items[i2 - 1] = v2
+    return items
+
+
+class TestBriefCopeRouting:
+    """End-to-end routing tests for the Brief COPE dispatcher branch.
+
+    Carver 1997 *You want to measure coping but your protocol's too
+    long: Consider the Brief COPE* (International Journal of
+    Behavioral Medicine 4:92-100) — 28 items, 1-4 Likert, fourteen
+    two-item subscales.  Abbreviated version of the 60-item COPE
+    (Carver, Scheier & Weintraub 1989 J Pers Soc Psychol 56:267-283).
+    The de facto standard coping-strategies instrument in behavioral-
+    medicine research.
+
+    Envelope shape:
+
+    - ``total``: sum of all 28 items, 28-112.  Not clinically
+      meaningful per Carver 1997 §Discussion; populated only for
+      FHIR / analytics-envelope consistency.  Downstream MUST read
+      ``subscales`` not ``total``.
+    - ``severity``: always ``"continuous"`` (same pattern as RSES —
+      no published bands, Carver 1997 argued against collapsing to
+      a single coping-quality score).
+    - ``subscales``: **14-entry dict** — the first instrument in
+      the platform roster with > 3 subscales (DASS-21 was 3).
+      Keys: self_distraction, active_coping, denial, substance_use,
+      use_emotional_support, use_instrumental_support,
+      behavioral_disengagement, venting, positive_reframing,
+      planning, humor, acceptance, religion, self_blame.  Each
+      value 2-8.
+    - ``requires_t3``: always False — no item probes ideation.
+    - **NO** ``positive_screen`` (not a screen), ``cutoff_used``
+      (no cutoff), ``index`` / ``scaled_score`` (no transformation),
+      ``triggering_items`` (no per-item acuity routing).
+
+    Clinical role in the platform's urge → intervention pipeline:
+
+    - Measures HOW a user actually responds to stressors — the
+      intervention-matching dimension that symptom screens,
+      regulatory-construct scales, and substance-dependence scales
+      cannot directly probe.
+    - ``substance_use`` subscale is clinically load-bearing for the
+      platform's addiction focus: detects coping-function substance
+      use INDEPENDENT of consumption-severity thresholds on AUDIT /
+      DUDIT / FTND.  A sub-threshold AUDIT with elevated
+      substance_use coping is the T1 prevention window (Whitepaper
+      04).
+    - ``self_blame`` subscale is the strongest maladaptive
+      predictor per Holahan 1987 (J Pers Soc Psychol 52:946-955);
+      routes to CBT cognitive restructuring (Beck 2011) and self-
+      compassion work (Neff 2003 / Gilbert 2010 CFT).
+    - Adaptive vs. maladaptive labelling is DELIBERATELY NOT done
+      at the scorer or router — Carver 1997 §Discussion stressed
+      that no coping strategy is universally adaptive.  The
+      intervention-matching bandit decides based on context.
+
+    Direction: Higher = MORE endorsement of that coping strategy
+    (not inherently good or bad).
+
+    No reverse-keying (all 28 items worded to make higher = more
+    endorsement; Carver 1997 specifically simplified scoring this
+    way by dropping three of the original COPE's reverse-keyed
+    subscales).  No safety items.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Happy path ------------------------------------------------
+
+    def test_all_ones_floor_total_twenty_eight(
+        self, client: TestClient
+    ) -> None:
+        """Minimum endorsement — all 28 items at 1.  Total 28,
+        every subscale at 2.  Clinically: user reports deploying
+        no coping strategies.  Not a crisis marker on its own but
+        a signal that the user lacks a repertoire to draw on."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-floor"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "brief_cope"
+        assert body["total"] == 28
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        subscales = body["subscales"]
+        assert len(subscales) == 14
+        for value in subscales.values():
+            assert value == 2
+
+    def test_all_fours_ceiling_total_one_twelve(
+        self, client: TestClient
+    ) -> None:
+        """Maximum endorsement — all 28 items at 4.  Total 112,
+        every subscale at 8.  Clinically implausible (a user
+        reports using every coping strategy maximally) but valid
+        input; confirms no upper-range overflow."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [4] * 28},
+            headers=self._headers("bc-ceiling"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 112
+        assert body["severity"] == "continuous"
+        subscales = body["subscales"]
+        for value in subscales.values():
+            assert value == 8
+
+    def test_instrument_version_pinned(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-version"),
+        ).json()
+        assert body["instrument_version"] == "brief_cope-1.0.0"
+
+    def test_requires_t3_always_false_at_min(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-t3-min"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_requires_t3_always_false_at_max(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [4] * 28},
+            headers=self._headers("bc-t3-max"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    # -- Severity is always "continuous" ---------------------------
+
+    @pytest.mark.parametrize("items,label", [
+        ([1] * 28, "all-ones"),
+        ([4] * 28, "all-fours"),
+        ([2] * 28, "all-twos"),
+        ([3] * 28, "all-threes"),
+        ([1, 2, 3, 4] * 7, "repeated-pattern"),
+    ])
+    def test_severity_always_continuous(
+        self, client: TestClient, items: list[int], label: str
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers(f"bc-cont-{label}"),
+        ).json()
+        assert body["severity"] == "continuous"
+
+    # -- Subscale partition — 14 subscales each isolate ------------
+
+    @pytest.mark.parametrize("subscale", list(_BRIEF_COPE_POSITIONS.keys()))
+    def test_subscale_isolates(
+        self, client: TestClient, subscale: str
+    ) -> None:
+        """Elevate exactly one subscale to its maximum (8); every
+        other subscale stays at its floor (2).  Confirms the router
+        passes the 14-subscale partition through intact and that
+        each subscale's two positions are disjoint from every other
+        subscale's positions (canonical Carver 1997 Table 1
+        partition)."""
+        items = _brief_cope_items(**{subscale: 8})
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers(f"bc-iso-{subscale}"),
+        ).json()
+        subscales = body["subscales"]
+        assert subscales[subscale] == 8
+        for name in _BRIEF_COPE_POSITIONS:
+            if name != subscale:
+                assert subscales[name] == 2, (
+                    f"Subscale {name!r} contaminated by elevating "
+                    f"{subscale!r}"
+                )
+
+    def test_subscale_dict_has_all_fourteen_carver_1997_keys(
+        self, client: TestClient
+    ) -> None:
+        """Regression guard: dispatcher returns the canonical
+        14-key dict.  Key set is Carver 1997 Table 1 verbatim."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-keys"),
+        ).json()
+        subscales = body["subscales"]
+        assert set(subscales.keys()) == {
+            "self_distraction",
+            "active_coping",
+            "denial",
+            "substance_use",
+            "use_emotional_support",
+            "use_instrumental_support",
+            "behavioral_disengagement",
+            "venting",
+            "positive_reframing",
+            "planning",
+            "humor",
+            "acceptance",
+            "religion",
+            "self_blame",
+        }
+
+    # -- Item-count validation (422 not 201) -----------------------
+
+    def test_rejects_twenty_seven_items(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 27},
+            headers=self._headers("bc-short"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_twenty_nine_items(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 29},
+            headers=self._headers("bc-long"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_empty_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": []},
+            headers=self._headers("bc-empty"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_message_names_brief_cope(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 10},
+            headers=self._headers("bc-msg"),
+        )
+        assert response.status_code == 422
+        body = response.json()
+        message = str(body)
+        assert "28" in message or "brief_cope" in message.lower()
+
+    # -- Item-range validation -------------------------------------
+
+    def test_rejects_item_below_one(self, client: TestClient) -> None:
+        items = [1] * 28
+        items[0] = 0  # 0 is below the 1-4 range.
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-low"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_above_four(self, client: TestClient) -> None:
+        items = [1] * 28
+        items[13] = 5  # 5 is above the 1-4 range.
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-high"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        items = [1] * 28
+        items[27] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_range_message_names_position(
+        self, client: TestClient
+    ) -> None:
+        """Scorer's InvalidResponseError names the 1-indexed
+        position.  Router surfaces the message in the 422 body."""
+        items = [1] * 28
+        items[4] = 7
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-pos-msg"),
+        )
+        assert response.status_code == 422
+        body = response.json()
+        assert "5" in str(body)
+
+    # -- Pydantic type coercion ------------------------------------
+
+    def test_rejects_string_items(self, client: TestClient) -> None:
+        items: list[Any] = [1] * 28
+        items[0] = "three"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-str"),
+        )
+        assert response.status_code == 422
+
+    def test_numeric_string_coerces_via_pydantic_lax_mode(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic ``list[int]`` coerces ``"3"`` → 3 BEFORE the
+        scorer sees it — same pattern as FTND / DASS-21 / TAS-20.
+        Within 1-4 → accepted."""
+        items: list[Any] = [1] * 28
+        items[0] = "3"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-numstr"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 28 + 2  # 1→3 at position 0
+
+    def test_rejects_float_with_decimal(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic rejects 3.5 as non-whole — same rejection
+        pattern as every other integer-item instrument."""
+        items: list[Any] = [1] * 28
+        items[0] = 3.5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-frac"),
+        )
+        assert response.status_code == 422
+
+    def test_accepts_whole_float(self, client: TestClient) -> None:
+        """Pydantic accepts 3.0 as integer 3."""
+        items: list[Any] = [1] * 28
+        items[0] = 3.0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-whole-float"),
+        )
+        assert response.status_code == 201
+
+    def test_true_coerced_to_one_is_valid(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``true`` → 1 BEFORE the scorer sees
+        it.  1 is the minimum valid Brief COPE item; True passes
+        the range check."""
+        items: list[Any] = [1] * 28
+        items[0] = True
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-true"),
+        )
+        assert response.status_code == 201
+
+    def test_false_coerced_to_zero_is_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``false`` → 0, which is BELOW
+        Brief COPE's 1-4 range.  Range check rejects with 422 —
+        same pattern as SWLS / UCLA-3 / FNE-B / STAI-6 (all 1-
+        based scales)."""
+        items: list[Any] = [1] * 28
+        items[0] = False
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Envelope shape (deliberately-absent fields) ---------------
+
+    def test_no_positive_screen_field(self, client: TestClient) -> None:
+        """Brief COPE is NOT a screen; ``positive_screen`` is
+        absent from the envelope.  Compare with AUDIT / DUDIT /
+        FTND where it IS present."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-no-screen"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        """No Brief COPE cutoff exists."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_no_index_field(self, client: TestClient) -> None:
+        """No index transformation (WHO-5 / STAI-6 pattern
+        rejected for Brief COPE)."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-no-index"),
+        ).json()
+        assert body.get("index") is None
+
+    def test_no_triggering_items_field(self, client: TestClient) -> None:
+        """No per-item acuity routing — no item probes
+        ideation."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-no-trig"),
+        ).json()
+        assert body.get("triggering_items") is None
+
+    def test_assessment_id_is_uuid(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-uuid"),
+        ).json()
+        uuid.UUID(body["assessment_id"])  # raises on malformed
+
+    # -- Clinical vignettes ----------------------------------------
+
+    def test_vignette_adaptive_profile(
+        self, client: TestClient
+    ) -> None:
+        """Marlatt 1985 Relapse Prevention ch 5 ADAPTIVE profile —
+        high active_coping, planning, positive_reframing,
+        acceptance, emotional + instrumental support; low
+        substance_use, denial, self_blame, behavioral
+        disengagement.  Intervention-matching layer should
+        REINFORCE existing repertoire."""
+        items = _brief_cope_items(
+            active_coping=8,
+            planning=8,
+            positive_reframing=7,
+            acceptance=7,
+            use_emotional_support=6,
+            use_instrumental_support=6,
+        )
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-adaptive"),
+        ).json()
+        subscales = body["subscales"]
+        assert subscales["active_coping"] == 8
+        assert subscales["planning"] == 8
+        assert subscales["positive_reframing"] == 7
+        assert subscales["substance_use"] == 2
+        assert subscales["self_blame"] == 2
+        assert subscales["denial"] == 2
+
+    def test_vignette_avoidant_profile(
+        self, client: TestClient
+    ) -> None:
+        """Avoidant profile — high denial, behavioral
+        disengagement, self_distraction, substance_use.  Routes
+        to Linehan 2015 DBT distress-tolerance skills or
+        Bowen 2014 MBRP urge-surfing content."""
+        items = _brief_cope_items(
+            denial=8,
+            behavioral_disengagement=8,
+            self_distraction=7,
+            substance_use=6,
+        )
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-avoidant"),
+        ).json()
+        subscales = body["subscales"]
+        assert subscales["denial"] == 8
+        assert subscales["behavioral_disengagement"] == 8
+        assert subscales["substance_use"] == 6
+        assert subscales["active_coping"] == 2
+        assert subscales["planning"] == 2
+
+    def test_vignette_substance_use_coping_subthreshold_audit(
+        self, client: TestClient
+    ) -> None:
+        """**Clinically load-bearing platform signal** — user's
+        substance_use COPING score is maximal (8) while their
+        AUDIT / DUDIT / FTND consumption-severity screens are
+        sub-threshold.  This is the T1 prevention window
+        (Whitepaper 04).  The Brief COPE substance_use subscale
+        detects the coping-function role INDEPENDENT of
+        consumption severity — AUDIT/DUDIT measure WHAT a user
+        drinks/uses; Brief COPE substance_use measures WHY."""
+        items = _brief_cope_items(substance_use=8)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-sub-t1"),
+        ).json()
+        assert body["subscales"]["substance_use"] == 8
+        # No positive_screen — Brief COPE is not a diagnostic
+        # screen; elevation is a coping-profile signal that pairs
+        # with other instruments downstream.
+        assert body.get("positive_screen") is None
+
+    def test_vignette_self_blame_holahan_1987(
+        self, client: TestClient
+    ) -> None:
+        """Holahan 1987 J Pers Soc Psychol 52:946-955 documented
+        self-blame as the strongest maladaptive-coping predictor
+        of depression.  Paired in production with an elevated
+        PHQ-9, this profile routes to CBT cognitive
+        restructuring (Beck 2011) + self-compassion work (Neff
+        2003 / Gilbert 2010 CFT)."""
+        items = _brief_cope_items(self_blame=8)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-selfblame"),
+        ).json()
+        assert body["subscales"]["self_blame"] == 8
+        for name in _BRIEF_COPE_POSITIONS:
+            if name != "self_blame":
+                assert body["subscales"][name] == 2
+
+    def test_vignette_religious_coping(
+        self, client: TestClient
+    ) -> None:
+        """Pargament 1998 J Sci Study Relig 37:710-724 —
+        religious coping is adaptive for most users but can
+        become avoidant if substituting for symptom processing.
+        The scorer does not label direction; it surfaces the
+        signal for the intervention-matching layer to
+        contextualize against PHQ-9 / active_coping /
+        behavioral_disengagement."""
+        items = _brief_cope_items(religion=8)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-religion"),
+        ).json()
+        assert body["subscales"]["religion"] == 8
+
+    def test_vignette_humor_coping(self, client: TestClient) -> None:
+        """Humor is broadly adaptive but context-dependent — can
+        mask distress when paired with low emotional support and
+        high denial.  Scorer does not contextualize; surfaces
+        the value for downstream interpretation."""
+        items = _brief_cope_items(humor=8)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-humor"),
+        ).json()
+        assert body["subscales"]["humor"] == 8
+
+    def test_vignette_mixed_realistic_profile(
+        self, client: TestClient
+    ) -> None:
+        """Realistic mixed profile — moderate active_coping
+        (4) and planning (4), moderate self_distraction (4) and
+        venting (4), mild self_blame (4).  The typical outpatient
+        profile where the intervention-matching layer must make
+        a contextual call rather than route to a dominant
+        archetype."""
+        items = _brief_cope_items(
+            active_coping=4,
+            planning=4,
+            self_distraction=4,
+            venting=4,
+            self_blame=4,
+        )
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-mixed"),
+        ).json()
+        subscales = body["subscales"]
+        assert subscales["active_coping"] == 4
+        assert subscales["planning"] == 4
+        assert subscales["self_distraction"] == 4
+        assert subscales["venting"] == 4
+        assert subscales["self_blame"] == 4
+        # Floors unchanged.
+        assert subscales["substance_use"] == 2
+        assert subscales["religion"] == 2
+
+    def test_vignette_trajectory_subscale_rci_applicable(
+        self, client: TestClient
+    ) -> None:
+        """Carver 1997 §Discussion supports per-subscale
+        longitudinal analysis.  Jacobson-Truax RCI (Whitepaper
+        01 §Methodology) is applied at the SUBSCALE level for
+        Brief COPE in the trajectory-analytics layer.  This test
+        verifies the subscale dict is STABLE across repeated
+        identical submissions — RCI assumes deterministic scoring
+        of identical input."""
+        items = _brief_cope_items(active_coping=6, planning=6)
+        first = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-rci-1"),
+        ).json()
+        second = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-rci-2"),
+        ).json()
+        assert first["subscales"] == second["subscales"]
+        assert first["total"] == second["total"]
+
+    def test_vignette_carver_1997_direction_higher_equals_more(
+        self, client: TestClient
+    ) -> None:
+        """Carver 1997 scoring convention: higher raw = MORE
+        endorsement of that coping strategy.  No reverse-keying.
+        Confirms an elevated subscale at 8 is indeed the MAXIMUM
+        for that subscale (not a flipped floor).  Guards against
+        accidental introduction of reverse-keying in future
+        edits."""
+        items = _brief_cope_items(acceptance=8)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": items},
+            headers=self._headers("bc-dir-high"),
+        ).json()
+        assert body["subscales"]["acceptance"] == 8
+        # Baseline (1) produces floor (2).
+        body_low = client.post(
+            "/v1/assessments",
+            json={"instrument": "brief_cope", "items": [1] * 28},
+            headers=self._headers("bc-dir-low"),
+        ).json()
+        assert body_low["subscales"]["acceptance"] == 2
+        assert body["subscales"]["acceptance"] > body_low["subscales"]["acceptance"]
