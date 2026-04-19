@@ -5,7 +5,8 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS.
+MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
+IGDS9-SF.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1613,6 +1614,10 @@ from .scoring.wemwbs import (
     InvalidResponseError as WemwbsInvalid,
     score_wemwbs,
 )
+from .scoring.igds9sf import (
+    InvalidResponseError as Igds9SfInvalid,
+    score_igds9sf,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1699,6 +1704,7 @@ Instrument = Literal[
     "ftnd",
     "brief_cope",
     "wemwbs",
+    "igds9sf",
 ]
 
 
@@ -1767,6 +1773,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "ftnd": 6,
     "brief_cope": 28,
     "wemwbs": 14,
+    "igds9sf": 9,
 }
 
 
@@ -1965,6 +1972,7 @@ class AssessmentResult(BaseModel):
     positive_screen: bool | None = None
     triggering_items: list[int] | None = None
     subscales: dict[str, int] | None = None
+    endorsed_item_count: int | None = None
     instrument_version: str | None = None
 
 
@@ -5806,6 +5814,127 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=w.instrument_version,
         )
+    if payload.instrument == "igds9sf":
+        # IGDS9-SF — Pontes & Griffiths 2015 Internet Gaming Disorder
+        # Scale Short Form (Computers in Human Behavior 45:137-143).
+        # 9 items, 1-5 frequency Likert, total **9-45**, positively
+        # worded throughout (no reverse-keying), unidimensional per
+        # Pontes 2015 CFA (CFI = 0.98) reconfirmed by Pontes 2019
+        # cross-national re-analysis n = 6,773.  HIGHER = MORE
+        # GAMING-DISORDER SEVERITY — same direction as PHQ-9 /
+        # GAD-7 / AUDIT / DUDIT / FTND / PSS-10 / DASS-21.
+        #
+        # Construct placement — IGDS9-SF fills the platform's
+        # BEHAVIORAL-ADDICTION (gaming) dimension gap.  Existing
+        # substance-dependence instruments cover specific drugs
+        # (AUDIT/AUDIT-C alcohol, DUDIT/DAST-10 drugs, FTND
+        # nicotine); PGSI covers gambling; CIUS covers general
+        # problematic internet use.  None directly captures GAMING
+        # DISORDER — which is:
+        #
+        # 1. **Formally recognized** — ICD-11 (WHO 2019) classifies
+        #    Gaming Disorder (code 6C51) as a mental, behavioural or
+        #    neurodevelopmental disorder.  DSM-5 Section III lists
+        #    Internet Gaming Disorder as a condition for further
+        #    study.  IGDS9-SF maps 1:1 to the 9 DSM-5 Section III
+        #    criteria (preoccupation, withdrawal, tolerance, control
+        #    loss, loss of interest, continuation despite problems,
+        #    deception, escape, jeopardized relationships).
+        # 2. **Increasingly prevalent** — Stevens 2021 Aus NZ J
+        #    Psychiatry 55:553-568 meta-analysis: worldwide
+        #    prevalence 3.05% (2.0-4.6% CI), highest in adolescents;
+        #    2.5× higher in men than women.  King 2020 Clin Psychol
+        #    Rev 77:101831 systematic review positions IGDS9-SF as
+        #    the psychometrically strongest brief instrument.
+        # 3. **Distinct from substance addictions** — behavioral-
+        #    reinforcement patterns (variable-ratio reward schedules,
+        #    social integration, achievement mechanics) map to
+        #    different intervention content than substance
+        #    dependence.  Griffiths 2016 Psychol Addict Behav
+        #    30:343-353 behavioral-addiction framework.
+        # 4. **Functional-impairment pathway** — gaming-disorder
+        #    cases frequently present with depression (PHQ-9
+        #    elevated), anxiety (GAD-7 elevated), academic/
+        #    occupational impairment (WSAS elevated), and social
+        #    withdrawal (UCLA-3 high loneliness) as secondary
+        #    manifestations.  Without a direct gaming-behavior
+        #    metric the intervention-matching engine cannot
+        #    differentiate PRIMARY gaming disorder from generalized
+        #    behavioral avoidance.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: sum of all 9 items, 9-45.
+        # - ``severity``: always ``"continuous"``.  Pontes 2015
+        #   published only the 5-item DSM-5-aligned positive-screen
+        #   criterion; no total-based severity bands.  Király 2017
+        #   Addict Behav 64:253-260 proposed a total ≥ 21 research
+        #   cutoff but Pontes 2019 cross-national re-analysis
+        #   reconfirmed the 5-item criterion as primary; total-based
+        #   cutoffs are not the published diagnostic threshold.
+        #   Same ``continuous`` pattern as RSES / WEMWBS for
+        #   instruments without published clinical bands.
+        # - ``positive_screen``: Pontes 2015 DSM-5-aligned boolean
+        #   — True iff ≥ 5 of 9 items endorsed at "Often" (4) or
+        #   "Very Often" (5).  Primary diagnostic signal.
+        # - ``cutoff_used``: 5 (items-endorsed threshold).  Client
+        #   renders "positive at ≥ 5 items endorsed ≥ Often".
+        # - ``endorsed_item_count``: how many items were endorsed
+        #   at ≥ 4.  Surfaced so clinicians can see the margin
+        #   above / below the 5-item threshold; supports FHIR
+        #   Observation export alongside total.
+        # - ``requires_t3``: always False — no item probes
+        #   ideation.  A positive IGDS9-SF is a REFERRAL signal
+        #   for behavioral-addiction intervention (Griffiths 2018
+        #   Addict Behav Rep 7:125-129 CBT-IA protocol), not a
+        #   crisis signal.
+        # - No ``subscales`` — unidimensional per Pontes 2015 CFA
+        #   (reconfirmed Pontes 2019).  Multi-factor structures
+        #   (e.g. Monacis 2016 three-factor) are culture-specific;
+        #   platform treats IGDS9-SF as unidimensional.
+        # - No ``index`` / ``scaled_score`` — no transformation.
+        # - No ``triggering_items`` — no per-item acuity routing.
+        #
+        # Direction: Higher = MORE gaming-disorder severity.  No
+        # reverse-keying (all 9 items positively worded).
+        #
+        # Clinical pairing patterns (informational — scorer just
+        # reports; intervention layer does the routing):
+        #
+        # - IGDS9-SF positive + AUDIT/DUDIT positive — substance +
+        #   behavioral poly-addiction; elevates DBT distress-
+        #   tolerance + MBRP urge-surfing content (Bowen 2014).
+        # - IGDS9-SF positive + PHQ-9 elevated + UCLA-3 elevated —
+        #   escape-motivated gaming (criterion 8); depression-
+        #   directed CBT primary per Király 2015 Psychol Addict
+        #   Behav 29:87-96.
+        # - IGDS9-SF positive + Brief COPE substance_use low +
+        #   Brief COPE self_distraction high — gaming as coping-
+        #   mechanism substitution; behavioral-activation content
+        #   builds alternative coping repertoire (Marlatt 1985
+        #   Relapse Prevention).
+        # - IGDS9-SF positive + WSAS elevated — functional
+        #   impairment established; flags for clinician review.
+        # - IGDS9-SF rising across sessions + interventions active
+        #   — urge-trajectory signal even if below the 5-item
+        #   diagnostic threshold; triggers T1 prevention tier
+        #   (Whitepaper 04 §T1).
+        #
+        # T3 posture — IGDS9-SF measures gaming behavior, not
+        # suicidality.  Acute-risk screening stays on C-SSRS /
+        # PHQ-9 item 9 / CORE-10 item 6.
+        i = score_igds9sf(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="igds9sf",
+            total=i.total,
+            severity=i.severity,
+            requires_t3=False,
+            positive_screen=i.positive_screen,
+            cutoff_used=i.cutoff_used,
+            endorsed_item_count=i.endorsed_item_count,
+            instrument_version=i.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5985,6 +6114,7 @@ async def submit_assessment(
         FtndInvalid,
         BriefCopeInvalid,
         WemwbsInvalid,
+        Igds9SfInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
@@ -6205,6 +6335,7 @@ class AssessmentHistoryItem(BaseModel):
     positive_screen: bool | None = None
     triggering_items: list[int] | None = None
     subscales: dict[str, int] | None = None
+    endorsed_item_count: int | None = None
     instrument_version: str | None = None
 
 

@@ -26807,3 +26807,609 @@ class TestWemwbsRouting:
         # Above population mean (50.7) but below flourishing
         # ceiling (70) — the maintenance-phase target zone.
         assert body["severity"] == "continuous"
+
+
+class TestIgds9SfRouting:
+    """End-to-end routing tests for the IGDS9-SF dispatcher branch.
+
+    Internet Gaming Disorder Scale Short Form (Pontes & Griffiths
+    2015 *Measuring DSM-5 internet gaming disorder: Development and
+    validation of a short psychometric scale*, Computers in Human
+    Behavior 45:137-143).  9-item 1-5 Likert self-report; total
+    **9-45**; HIGHER = MORE GAMING-DISORDER SEVERITY.
+    Unidimensional per Pontes 2015 CFA (reconfirmed Pontes 2019
+    cross-national sample n = 6,773 across 5 countries).  Items map
+    1:1 to DSM-5 Section III proposed IGD criteria.
+
+    Envelope shape:
+
+    - ``total``: 9-45 sum of the 9 items.
+    - ``severity``: always ``"continuous"`` — Pontes 2015 published
+      only the 5-item DSM-5-aligned diagnostic criterion; no
+      total-based severity bands.  Király 2017 ≥ 21 research cutoff
+      is not the primary published scheme.  Same ``continuous``
+      pattern as RSES / WEMWBS / Brief COPE.
+    - ``positive_screen``: Pontes 2015 DSM-5-aligned boolean —
+      True iff ≥ 5 of 9 items endorsed at "Often" (4) or "Very
+      Often" (5).  Primary diagnostic signal.
+    - ``cutoff_used``: 5 (items-endorsed threshold).  Client
+      renders "positive at ≥ 5 items endorsed ≥ Often".
+    - ``endorsed_item_count``: number of items endorsed at ≥ 4.
+      Surfaced so clinicians see the margin above / below the
+      5-item threshold.  NEW envelope field introduced with
+      IGDS9-SF (added to ``AssessmentResult`` alongside
+      ``subscales``).
+    - ``requires_t3``: always False — no item probes ideation.
+    - **NO** ``subscales`` (unidimensional), ``index`` (no
+      transformation), ``triggering_items`` (no per-item acuity
+      routing).
+
+    Clinical role — fills the BEHAVIORAL-ADDICTION (gaming)
+    dimension gap.  Existing substance-dependence / gambling /
+    general-problematic-internet instruments (AUDIT / DUDIT /
+    DAST-10 / FTND / PGSI / CIUS) do not directly capture ICD-11
+    Gaming Disorder (code 6C51) or DSM-5 Section III Internet
+    Gaming Disorder.  Intervention-matching uses:
+
+    - IGDS9-SF + substance-screen positive → poly-addiction track.
+    - IGDS9-SF + PHQ-9 elevated + UCLA-3 elevated → escape-
+      motivated gaming per Király 2015; depression-primary CBT.
+    - IGDS9-SF + Brief COPE self-distraction high → behavioral-
+      activation / alternative-coping-repertoire content.
+
+    Direction: Higher = MORE gaming-disorder severity.  Same
+    direction as PHQ-9 / GAD-7 / AUDIT / DUDIT / FTND / PSS-10 /
+    DASS-21; opposite of WHO-5 / BRS / LOT-R / RSES / MAAS /
+    CD-RISC-10 / WEMWBS.
+
+    No safety items.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Happy path ------------------------------------------------
+
+    def test_floor_all_ones_total_nine(self, client: TestClient) -> None:
+        """Minimum endorsement — all 9 items at 1 ('Never').
+        Total = 9 = 9 × 1.  Clinically: no gaming-disorder signal.
+        endorsed_item_count = 0; positive_screen = False."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [1] * 9},
+            headers=self._headers("igds9sf-floor"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "igds9sf"
+        assert body["total"] == 9
+        assert body["severity"] == "continuous"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 5
+        assert body["endorsed_item_count"] == 0
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "igds9sf-1.0.0"
+
+    def test_ceiling_all_fives_total_forty_five(
+        self, client: TestClient
+    ) -> None:
+        """Maximum endorsement — all 9 items at 5 ('Very Often').
+        Total = 45 = 9 × 5.  ICD-11 Gaming Disorder full profile;
+        positive_screen clearly True; endorsed_item_count = 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [5] * 9},
+            headers=self._headers("igds9sf-ceiling"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 45
+        assert body["severity"] == "continuous"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 5
+        assert body["endorsed_item_count"] == 9
+        assert body["requires_t3"] is False
+
+    def test_midpoint_all_threes_total_twenty_seven(
+        self, client: TestClient
+    ) -> None:
+        """Midpoint endorsement — all 9 items at 3 ('Sometimes').
+        Total = 27.  Critical boundary case: total 27 sits well
+        above Király 2017's ≥ 21 research-convention cutoff, but
+        the scorer does NOT use a total cutoff.  positive_screen =
+        False because 3 < endorsement threshold (4).  This is the
+        key clinical distinction between 'high frequency of mild
+        endorsement' and 'meaningful endorsement on multiple
+        items'."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [3] * 9},
+            headers=self._headers("igds9sf-midpoint"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 27
+        assert body["severity"] == "continuous"
+        assert body["positive_screen"] is False
+        assert body["endorsed_item_count"] == 0
+
+    # -- Severity always continuous --------------------------------
+
+    @pytest.mark.parametrize("items,expected_total", [
+        ([1] * 9, 9),
+        ([2] * 9, 18),
+        ([3] * 9, 27),
+        ([4] * 9, 36),
+        ([5] * 9, 45),
+    ])
+    def test_severity_always_continuous(
+        self,
+        client: TestClient,
+        items: list[int],
+        expected_total: int,
+    ) -> None:
+        """At every total from floor to ceiling, severity is the
+        literal ``"continuous"`` sentinel — the trajectory layer
+        reads raw total + positive_screen; the scorer does not
+        reparameterize severity."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers(f"igds9sf-cont-{expected_total}"),
+        ).json()
+        assert body["total"] == expected_total
+        assert body["severity"] == "continuous"
+
+    def test_kiraly_2017_research_cutoff_not_applied(
+        self, client: TestClient
+    ) -> None:
+        """Király 2017 Addict Behav 64:253-260 proposed total ≥ 21
+        as a research-convention cutoff.  The scorer does NOT
+        apply it — a user at total 23 with all items at ~2-3 has
+        zero items at ≥ 4; positive_screen remains False even
+        though total clears Király's research threshold.
+        Confirms the design decision to surface Pontes 2015's
+        5-item criterion, not a total cutoff."""
+        # 7 twos + 2 threes + 1 three = check sum: 2*7 + 3*2 = 20.
+        # Make it 21: 7*2 + 3 + 4-no-that-endorses.  Use 6*2 + 3*3 = 21.
+        items = [2, 2, 2, 2, 2, 2, 3, 3, 3]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-kiraly"),
+        ).json()
+        assert body["total"] == 21
+        assert body["endorsed_item_count"] == 0
+        assert body["positive_screen"] is False
+        assert body["severity"] == "continuous"
+
+    # -- Positive-screen boundary tests ---------------------------
+
+    def test_exactly_five_endorsed_at_often_triggers_positive(
+        self, client: TestClient
+    ) -> None:
+        """Canonical DSM-5 Section III boundary — exactly 5 items
+        at 'Often' (4) → positive_screen True.  Pontes 2015
+        operationalization of the DSM-5 '5 or more of 9 criteria
+        endorsed in 12 months' rule."""
+        items = [4, 4, 4, 4, 4, 1, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-exact-5"),
+        ).json()
+        assert body["total"] == 24
+        assert body["endorsed_item_count"] == 5
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 5
+
+    def test_four_endorsed_below_boundary_does_not_trigger(
+        self, client: TestClient
+    ) -> None:
+        """Just below boundary: 4 items at 'Often' →
+        positive_screen False.  Proves the threshold is ≥ 5, not
+        ≥ 4 — DSM-5 Section III requires FIVE or more criteria."""
+        items = [4, 4, 4, 4, 1, 1, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-four"),
+        ).json()
+        assert body["endorsed_item_count"] == 4
+        assert body["positive_screen"] is False
+
+    def test_five_at_very_often_triggers_positive(
+        self, client: TestClient
+    ) -> None:
+        """5 items at 'Very Often' (5) — also triggers positive_
+        screen because 5 ≥ 4 counts as endorsed."""
+        items = [5, 5, 5, 5, 5, 1, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-5-very-often"),
+        ).json()
+        assert body["endorsed_item_count"] == 5
+        assert body["positive_screen"] is True
+
+    def test_mixed_four_and_five_at_threshold(
+        self, client: TestClient
+    ) -> None:
+        """Mix of 'Often' (4) and 'Very Often' (5) totaling 5
+        endorsements → positive_screen True."""
+        items = [4, 5, 4, 5, 4, 1, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-mixed-45"),
+        ).json()
+        assert body["endorsed_item_count"] == 5
+        assert body["positive_screen"] is True
+
+    def test_six_endorsed_clearly_positive(
+        self, client: TestClient
+    ) -> None:
+        """6 items endorsed — above boundary; positive_screen
+        clearly True."""
+        items = [4, 4, 4, 4, 4, 4, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-six"),
+        ).json()
+        assert body["endorsed_item_count"] == 6
+        assert body["positive_screen"] is True
+
+    def test_three_below_threshold_does_not_endorse(
+        self, client: TestClient
+    ) -> None:
+        """Value of 3 ('Sometimes') does NOT count as endorsed
+        per Pontes 2015 (endorsement threshold is 4).  Even 9
+        items at 'Sometimes' → endorsed_item_count = 0."""
+        items = [3] * 9
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-all-three"),
+        ).json()
+        assert body["endorsed_item_count"] == 0
+        assert body["positive_screen"] is False
+
+    # -- Item-count validation -------------------------------------
+
+    def test_rejects_ten_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [3] * 10},
+            headers=self._headers("igds9sf-too-many"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_eight_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [3] * 8},
+            headers=self._headers("igds9sf-too-few"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_empty_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": []},
+            headers=self._headers("igds9sf-empty"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-range validation -------------------------------------
+
+    def test_rejects_value_zero(self, client: TestClient) -> None:
+        items = [3] * 9
+        items[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-zero"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_value_six(self, client: TestClient) -> None:
+        items = [3] * 9
+        items[4] = 6
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-six-val"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_one(self, client: TestClient) -> None:
+        items = [3] * 9
+        items[8] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-neg"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic bool→int coercion at the wire layer --------------
+
+    def test_json_true_coerces_to_one(self, client: TestClient) -> None:
+        """At the wire layer Pydantic ``list[int]`` lax-mode
+        coerces JSON ``true`` → 1.  The scorer never sees a bool;
+        this is distinct from the scorer-level bool-rejection
+        behavior (which tests a direct Python invocation).
+        Coerced 1s land in the valid 1-5 range, so this request
+        succeeds with total reflecting the coercion."""
+        # 9 JSON trues → coerced to 9 ones → total 9.
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [True] * 9},
+            headers=self._headers("igds9sf-json-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 9  # 9 × 1
+
+    def test_json_false_coerces_to_zero_below_range(
+        self, client: TestClient
+    ) -> None:
+        """At the wire layer Pydantic ``list[int]`` lax-mode
+        coerces JSON ``false`` → 0.  Coerced 0 is below the 1-5
+        range; the scorer rejects with InvalidResponseError →
+        422."""
+        items: list = [3] * 9
+        items[0] = False
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-json-false"),
+        )
+        assert response.status_code == 422
+
+    def test_json_numeric_string_coerces(self, client: TestClient) -> None:
+        """Pydantic lax-mode: JSON ``"3"`` → int 3.  Valid."""
+        items: list = [3] * 9
+        items[0] = "3"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-json-str"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 27
+
+    # -- Envelope shape --------------------------------------------
+
+    def test_envelope_shape(self, client: TestClient) -> None:
+        """IGDS9-SF envelope carries: total, severity,
+        positive_screen, cutoff_used, endorsed_item_count,
+        requires_t3, assessment_id, instrument, instrument_version.
+        Does NOT carry: subscales, index, triggering_items,
+        t3_reason."""
+        items = [4, 4, 4, 4, 4, 1, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-envelope"),
+        ).json()
+        # Present:
+        assert body["instrument"] == "igds9sf"
+        assert "total" in body
+        assert body["severity"] == "continuous"
+        assert "positive_screen" in body
+        assert "cutoff_used" in body
+        assert "endorsed_item_count" in body
+        assert body["requires_t3"] is False
+        assert "assessment_id" in body
+        assert body["instrument_version"] == "igds9sf-1.0.0"
+        # Absent / None:
+        assert body.get("subscales") is None
+        assert body.get("index") is None
+        assert body.get("triggering_items") is None
+        assert body.get("t3_reason") is None
+
+    def test_assessment_id_is_non_empty(self, client: TestClient) -> None:
+        """assessment_id is a UUID string — non-empty, different on
+        each call."""
+        body1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [3] * 9},
+            headers=self._headers("igds9sf-id-1"),
+        ).json()
+        body2 = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [3] * 9},
+            headers=self._headers("igds9sf-id-2"),
+        ).json()
+        assert isinstance(body1["assessment_id"], str)
+        assert body1["assessment_id"]
+        assert body1["assessment_id"] != body2["assessment_id"]
+
+    # -- Clinical vignettes ----------------------------------------
+
+    def test_vignette_dsm5_section_iii_threshold(
+        self, client: TestClient
+    ) -> None:
+        """Canonical DSM-5 Section III IGD presumptive-diagnostic
+        profile — user endorses the first 5 DSM-5 criteria
+        (preoccupation, withdrawal, tolerance, unsuccessful
+        control, loss of interest in other activities) at 'Often'
+        or higher.  Meets the 5-item criterion exactly."""
+        # Items 1-5 at 4; items 6-9 at 2.
+        items = [4, 4, 4, 4, 4, 2, 2, 2, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-vignette-dsm5"),
+        ).json()
+        assert body["endorsed_item_count"] == 5
+        assert body["positive_screen"] is True
+        assert body["severity"] == "continuous"
+
+    def test_vignette_icd11_gaming_disorder_full_profile(
+        self, client: TestClient
+    ) -> None:
+        """ICD-11 Gaming Disorder (6C51) full-severity profile —
+        all 9 DSM-5 criteria endorsed at 'Very Often'.  Consistent
+        with the ICD-11 impaired-control + prioritization +
+        continuation-despite-consequences triad.  Clinician-UI
+        flags this for referral to behavioral-addiction specialty
+        care regardless of other instruments."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [5] * 9},
+            headers=self._headers("igds9sf-vignette-icd11"),
+        ).json()
+        assert body["total"] == 45
+        assert body["endorsed_item_count"] == 9
+        assert body["positive_screen"] is True
+
+    def test_vignette_escape_motivated_kiraly_2015(
+        self, client: TestClient
+    ) -> None:
+        """Király 2015 Psychol Addict Behav 29:87-96 escape-
+        motivated gaming profile — user endorses items 1-5 and 8
+        (escape/mood modification) at 'Often'; items 6, 7, 9 at
+        'Sometimes'.  Paired with elevated PHQ-9 / UCLA-3 in the
+        intervention-matching layer, routes to depression-primary
+        CBT with gaming-cessation as secondary goal.  Scorer just
+        reports the objective criterion."""
+        # Items 1-5 at 4, item 6 at 3, item 7 at 3, item 8 at 4,
+        # item 9 at 3.
+        items = [4, 4, 4, 4, 4, 3, 3, 4, 3]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-vignette-escape"),
+        ).json()
+        assert body["endorsed_item_count"] == 6
+        assert body["positive_screen"] is True
+
+    def test_vignette_subthreshold_t1_prevention(
+        self, client: TestClient
+    ) -> None:
+        """Sub-threshold gaming concern — user endorses 3 items
+        at 'Often', rest at 'Rarely'/'Sometimes'.  positive_screen
+        False, but the trajectory layer flags rising total across
+        sessions; this is the T1 prevention window (Whitepaper 04
+        §T1).  Platform escalates to T1 interventions on the
+        trajectory, NOT on absolute positive_screen."""
+        # 3 items at 4, 6 items at 2.
+        items = [4, 4, 4, 2, 2, 2, 2, 2, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-vignette-subthr"),
+        ).json()
+        assert body["endorsed_item_count"] == 3
+        assert body["positive_screen"] is False
+        assert body["total"] == 24
+
+    def test_vignette_poly_addiction_profile(
+        self, client: TestClient
+    ) -> None:
+        """IGDS9-SF positive + substance-addiction positive
+        profile: user endorses 7 of 9 criteria at 'Often'/'Very
+        Often'.  Clinical pairing patterns with AUDIT/DUDIT
+        positive route to behavioral-addiction intervention track
+        (Bowen 2014 MBRP).  Scorer just surfaces positive_screen
+        and total; intervention layer does the routing."""
+        items = [4, 5, 4, 5, 4, 3, 5, 4, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-vignette-poly"),
+        ).json()
+        assert body["endorsed_item_count"] == 7
+        assert body["positive_screen"] is True
+
+    def test_vignette_functional_impairment_item_9(
+        self, client: TestClient
+    ) -> None:
+        """Item 9 (jeopardized relationships / opportunities) is
+        the functional-impairment criterion.  A user endorsing
+        item 9 at 'Very Often' with other items mid-range signals
+        established functional impairment; clinician-UI surfaces
+        this for review even though positive_screen may be at
+        threshold."""
+        # Items 1, 6, 7, 8 at 4; items 2, 3, 4, 5 at 3; item 9 at 5.
+        items = [4, 3, 3, 3, 3, 4, 4, 4, 5]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-vignette-impair"),
+        ).json()
+        assert body["endorsed_item_count"] == 5
+        assert body["positive_screen"] is True
+
+    def test_vignette_adolescent_typical_recreational_profile(
+        self, client: TestClient
+    ) -> None:
+        """Typical adolescent recreational gamer — regular
+        gaming but without impairment.  Items 1 (preoccupation)
+        and 3 (tolerance) at 'Often'; everything else low.
+        Confirms the 5-item criterion correctly distinguishes
+        recreational from pathological gaming.  Pontes 2015
+        n = 1,060 validation sample was specifically designed to
+        test this boundary."""
+        items = [4, 2, 4, 1, 1, 1, 1, 2, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-vignette-recreational"),
+        ).json()
+        assert body["endorsed_item_count"] == 2
+        assert body["positive_screen"] is False
+
+    def test_rci_determinism_identical_input_yields_identical_output(
+        self, client: TestClient
+    ) -> None:
+        """Jacobson-Truax RCI assumes deterministic scoring.
+        Identical body → identical total, severity,
+        positive_screen, cutoff_used, endorsed_item_count,
+        instrument_version (assessment_id differs by design)."""
+        items = [4, 3, 5, 2, 4, 3, 5, 2, 4]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": items},
+            headers=self._headers("igds9sf-rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
+        assert a["positive_screen"] == b["positive_screen"]
+        assert a["cutoff_used"] == b["cutoff_used"]
+        assert a["endorsed_item_count"] == b["endorsed_item_count"]
+        assert a["instrument_version"] == b["instrument_version"]
+
+    def test_direction_higher_equals_more_severity(
+        self, client: TestClient
+    ) -> None:
+        """Direction guarantee over the HTTP surface: total 45 >
+        total 9; higher number = more gaming-disorder severity.
+        Same direction as PHQ-9 / GAD-7 / AUDIT / DUDIT / FTND /
+        PSS-10 / DASS-21; OPPOSITE of WHO-5 / BRS / LOT-R / RSES /
+        MAAS / CD-RISC-10 / WEMWBS.  positive_screen direction:
+        high endorsement → True."""
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [5] * 9},
+            headers=self._headers("igds9sf-dir-high"),
+        ).json()
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "igds9sf", "items": [1] * 9},
+            headers=self._headers("igds9sf-dir-low"),
+        ).json()
+        assert high["total"] > low["total"]
+        assert high["total"] == 45
+        assert low["total"] == 9
+        assert high["positive_screen"] is True
+        assert low["positive_screen"] is False
