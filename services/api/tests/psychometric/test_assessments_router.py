@@ -8824,6 +8824,529 @@ class TestCdrisc10Routing:
         assert body["severity"] == "continuous"
 
 
+class TestPswqRouting:
+    """PSWQ (Meyer 1990) router dispatch.
+
+    Wire contract invariants:
+    - Continuous envelope (``severity`` = "continuous" literal)
+      uniform with Craving VAS / PACS / DERS-16 / CD-RISC-10.  No
+      banded classification because Meyer 1990 published no cross-
+      calibrated cutpoints; downstream tertile / GAD-cut proposals
+      (Behar 2003, Startup & Erickson 2006, Fresco 2003) are
+      sample-specific.  Trajectory layer extracts clinical signal via
+      RCI-style change detection (Jacobson & Truax 1991).
+    - **Higher-is-worse direction** — same as PHQ-9 / GAD-7 /
+      DERS-16 / PCL-5 / OCI-R / K10 / WSAS, OPPOSITE of WHO-5 /
+      DTCQ-8 / Readiness Ruler / CD-RISC-10.  The trajectory layer
+      and clinician UI must treat a falling total as an IMPROVEMENT.
+    - **First reverse-keying pattern** — items 1, 3, 8, 10, 11 are
+      worded in the worry-ABSENT direction and arithmetic-reflected
+      (``6 - raw``) inside the scorer before summing.  The router
+      test layer verifies only the observable wire behavior (total
+      matches expected post-flip sum); the detailed per-item flip
+      math is covered in ``test_pswq_scoring.py``.
+    - No ``cutoff_used`` / ``positive_screen`` — continuous.
+    - ``requires_t3`` is always False — PSWQ has no safety item.
+    - ``subscales`` is None — unidimensional per Meyer 1990 / Brown
+      1992 CFA (distinct from DERS-16's 5-subscale surface).
+    - ``triggering_items`` is None — no firing-item concept.
+    - 1-5 Likert (same range as DERS-16); 0 rejects (below floor),
+      6 rejects (above ceiling).  16 items required (same as
+      DERS-16; the router dispatches by ``instrument`` key, not by
+      count).
+    - Cross-instrument coexistence: PSWQ + GAD-7 (orthogonal
+      trait-worry vs state-anxiety axes), PSWQ + CD-RISC-10
+      (direction-opposite pair), PSWQ + DERS-16 (same count but
+      different construct and envelope shape).
+    """
+
+    def test_all_threes_is_48_continuous(self, client: TestClient) -> None:
+        """Every item at 3 (Likert midpoint) — total 48 (flip-
+        invariant because 6 - 3 = 3).  ``severity`` is the
+        "continuous" sentinel regardless of total."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": "user-pswq-mid",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "pswq"
+        assert body["total"] == 48
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_all_ones_total_36(self, client: TestClient) -> None:
+        """Every raw item at 1.  11 non-reverse items × 1 = 11;
+        5 reverse items post-flip (6-1=5) × 5 = 25.  Total = 36.
+        This test pins that the router passes raw items through to
+        the scorer WITHOUT pre-flipping — if the router flipped
+        first, the scorer would double-flip and land on 16 instead
+        of 36."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [1] * 16,
+                "user_id": "user-pswq-all-ones",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 36
+        assert body["severity"] == "continuous"
+
+    def test_all_fives_total_60(self, client: TestClient) -> None:
+        """Every raw item at 5.  11 non-reverse × 5 = 55; 5 reverse
+        post-flip (6-5=1) × 1 = 5.  Total = 60.  This is the
+        acquiescence-catch: an all-5s responder lands at 60 (not
+        80), demonstrating the reverse-keying design's anti-bias
+        property on the wire."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [5] * 16,
+                "user_id": "user-pswq-all-fives",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 60
+        assert body["severity"] == "continuous"
+
+    def test_maximum_worry_ceiling(self, client: TestClient) -> None:
+        """Maximum-worry pattern: non-reverse items at 5, reverse
+        items at 1 (low "I never worry" endorsement = high worry).
+        Total = (11 × 5) + (5 × 5 post-flip) = 55 + 25 = 80, the
+        instrument ceiling.  ``severity`` still "continuous" — no
+        "severe" band even at ceiling."""
+        items = [0] * 16
+        reverse_positions = {1, 3, 8, 10, 11}
+        for i in range(1, 17):
+            items[i - 1] = 1 if i in reverse_positions else 5
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": items,
+                "user_id": "user-pswq-ceiling",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 80
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_minimum_worry_floor(self, client: TestClient) -> None:
+        """Minimum-worry pattern: non-reverse items at 1, reverse
+        items at 5 (high "I never worry" endorsement = low worry).
+        Total = (11 × 1) + (5 × 1 post-flip) = 11 + 5 = 16, the
+        instrument floor."""
+        items = [0] * 16
+        reverse_positions = {1, 3, 8, 10, 11}
+        for i in range(1, 17):
+            items[i - 1] = 5 if i in reverse_positions else 1
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": items,
+                "user_id": "user-pswq-floor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 16
+        assert body["severity"] == "continuous"
+
+    def test_cutoff_used_not_populated(self, client: TestClient) -> None:
+        """``cutoff_used`` is None because PSWQ has no cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": "user-pswq-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_subscales_is_none(self, client: TestClient) -> None:
+        """``subscales`` is None — PSWQ is unidimensional per Meyer
+        1990 / Brown 1992 CFA.  Distinguishes from DERS-16 (which
+        also has 16 items but populates 5 subscales)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": "user-pswq-nosubs",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [5] * 16,
+                "user_id": "user-pswq-notrig",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_item_2_overwhelm_does_not_trigger_t3(
+        self, client: TestClient
+    ) -> None:
+        """Item 2 ("My worries overwhelm me.") at ceiling (5) is
+        endorsement of the DSM-5 GAD uncontrollability criterion,
+        NOT a crisis signal.  ``requires_t3`` must remain False.
+        Acute ideation screening stays on PHQ-9 item 9 / C-SSRS."""
+        items = [3] * 16
+        items[1] = 5  # item 2
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": items,
+                "user_id": "user-pswq-overwhelm",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_item_14_cannot_stop_does_not_trigger_t3(
+        self, client: TestClient
+    ) -> None:
+        """Item 14 ("Once I start worrying, I cannot stop.") at
+        ceiling is the GAD uncontrollability criterion — worry-
+        postponement / decatastrophizing target, NOT a crisis gate."""
+        items = [3] * 16
+        items[13] = 5  # item 14
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": items,
+                "user_id": "user-pswq-cannot-stop",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["requires_t3"] is False
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": "user-pswq-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["instrument_version"] == "pswq-1.0.0"
+
+    def test_too_few_items_rejects(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 15,
+                "user_id": "user-pswq-few",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_too_many_items_rejects(self, client: TestClient) -> None:
+        """17 items fails — exactly 16 required.  Guards against
+        PCL-5 (20) / CD-RISC-10 (10) / URICA (16 but different
+        instrument) misroute."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 17,
+                "user_id": "user-pswq-many",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_zero_rejects(self, client: TestClient) -> None:
+        """0 fails — floor is 1 (1-5 Likert), not 0 (CD-RISC-10 /
+        PHQ-9 misroute)."""
+        bad = [3] * 16
+        bad[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": bad,
+                "user_id": "user-pswq-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_six_rejects(self, client: TestClient) -> None:
+        """6 fails — ceiling is 5, not 6 (1-6) or 7 (1-7 ERQ range)."""
+        bad = [3] * 16
+        bad[0] = 6
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": bad,
+                "user_id": "user-pswq-six",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_one_and_five_accept(self, client: TestClient) -> None:
+        """1 and 5 are the envelope boundaries and must both
+        accept (at least one of each in the body)."""
+        items = [1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": items,
+                "user_id": "user-pswq-boundaries",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_persists_to_repository_with_raw_pre_flip_items(
+        self, client: TestClient
+    ) -> None:
+        """POST persists the PATIENT'S RAW pre-flip responses to
+        the repository — critical audit-trail invariant for
+        reverse-keyed instruments.  A clinician reviewing the
+        stored record must see what the patient actually ticked,
+        not the scorer's internal post-flip representation."""
+        user = "user-pswq-persist"
+        raw = [3] * 16
+        raw[0] = 2  # item 1 reverse-keyed; patient said "rarely typical"
+        raw[1] = 4  # item 2 non-reverse; patient said "often typical"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": raw,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "pswq"
+        assert rec.severity == "continuous"
+        assert rec.subscales is None
+        # Audit invariant: raw pre-flip items preserved.
+        assert rec.raw_items[0] == 2  # raw, not 4 (post-flip)
+        assert rec.raw_items[1] == 4
+
+    def test_history_projects_pswq(self, client: TestClient) -> None:
+        """GET /history surfaces the PSWQ result with continuous
+        severity and no subscales field."""
+        user = "user-pswq-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "pswq"
+        assert entry["total"] == 48
+        assert entry["severity"] == "continuous"
+
+    def test_coexists_with_gad7_orthogonal_axes(
+        self, client: TestClient
+    ) -> None:
+        """PSWQ (trait worry) + GAD-7 (state anxiety) on the same
+        timeline — the two are orthogonal axes.  A patient can
+        have controlled symptoms (low GAD-7) but persistent trait
+        worry (high PSWQ), or vice versa; both must persist cleanly
+        and retain their distinct envelope shapes (PSWQ continuous,
+        GAD-7 banded)."""
+        user = "user-pswq-gad7"
+        gad = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gad7",
+                "items": [1, 1, 1, 1, 1, 1, 1],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert gad.status_code == 201
+        assert gad.json()["severity"] in {
+            "minimal",
+            "mild",
+            "moderate",
+            "severe",
+        }
+
+        pw = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert pw.status_code == 201
+        assert pw.json()["severity"] == "continuous"
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "gad7" in instruments
+        assert "pswq" in instruments
+
+    def test_coexists_with_ders16_same_count_different_shape(
+        self, client: TestClient
+    ) -> None:
+        """PSWQ and DERS-16 both have 16 items — router must
+        dispatch by ``instrument`` key, not by count.  PSWQ
+        persists unidimensional (subscales=None), DERS-16 persists
+        multi-subscale (subscales populated with 5 keys)."""
+        user = "user-pswq-ders16"
+        de = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert de.status_code == 201
+        assert de.json().get("subscales") is not None
+        assert len(de.json()["subscales"]) == 5
+
+        pw = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert pw.status_code == 201
+        assert pw.json().get("subscales") is None
+
+    def test_coexists_with_cdrisc10_opposite_directions(
+        self, client: TestClient
+    ) -> None:
+        """PSWQ (higher-is-worse) + CD-RISC-10 (higher-is-better)
+        on the same timeline.  Both continuous-sentinel but
+        direction-opposite.  Together they give the trajectory
+        layer a clean worry-vs-resilience pair: rising PSWQ AND
+        falling CD-RISC-10 is a cross-construct deterioration
+        signal."""
+        user = "user-pswq-cdrisc10"
+        cd = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cdrisc10",
+                "items": [3] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert cd.status_code == 201
+        assert cd.json()["severity"] == "continuous"
+
+        pw = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert pw.status_code == 201
+        assert pw.json()["severity"] == "continuous"
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "cdrisc10" in instruments
+        assert "pswq" in instruments
+
+    def test_ignores_mdq_and_sex_fields(self, client: TestClient) -> None:
+        """MDQ / AUDIT-C-specific fields at the request body are
+        silently ignored for non-MDQ / non-AUDIT-C instruments."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pswq",
+                "items": [3] * 16,
+                "sex": "female",
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-pswq-ignores",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "pswq"
+        assert body["total"] == 48
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

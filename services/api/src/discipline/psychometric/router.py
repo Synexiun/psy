@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10.
+CD-RISC-10, PSWQ.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -494,6 +494,47 @@ Safety routing:
   probes) — a floor on item 10 is a DBT-distress-tolerance
   scaffolding signal, not a crisis gate.  Acute ideation screening
   remains PHQ-9 item 9 / C-SSRS.  See ``scoring/cdrisc10.py``.
+- PSWQ (Meyer 1990) is the 16-item Penn State Worry Questionnaire —
+  the gold-standard measure of trait-level worry, the CBT-for-GAD
+  process-target instrument.  GAD-7 measures anxiety symptoms over
+  a 2-week window (state severity); PSWQ measures the dispositional
+  worry *process* that cognitive therapy for GAD explicitly targets,
+  so the two instruments answer orthogonal clinical questions (a
+  patient can have controlled symptoms but persistent worry trait,
+  or vice versa).  **First reverse-keying pattern in the package** —
+  items 1, 3, 8, 10, 11 are worded in the worry-ABSENT direction
+  (e.g., "I do not tend to worry about things.") so a high raw
+  Likert reflects LOW worry; the scorer applies arithmetic
+  reflection (``flipped = 6 - raw``) to those items before summing
+  so every post-flip item contributes in the same direction.  Mixed-
+  direction design is deliberate: Meyer 1990 included reverse-keyed
+  items to suppress acquiescent-response bias (all-5s gives 60, not
+  80; all-1s gives 36, not 16).  ``items`` audit field preserves
+  the RAW pre-flip patient response for auditability — clinicians
+  reviewing the record see what the patient ticked, not the
+  scorer's internal representation.  16 items 1-5 Likert (uniform
+  with DERS-16); total 16-80.  Higher is worse (same as PHQ-9 /
+  GAD-7 / DERS-16 / PCL-5, opposite of WHO-5 / DTCQ-8 / Readiness
+  Ruler / CD-RISC-10).  **No severity bands** — Meyer 1990
+  published GAD/general-pop means (~67 / ~48) but no cross-
+  calibrated cutpoints; downstream cuts (Behar 2003: 45/62 tertiles
+  in students; Startup & Erickson 2006: 56+ GAD-diagnostic in
+  treatment-seekers; Fresco 2003: mid-50s GAD-threshold) are
+  sample-specific and not cross-calibrated against a shared
+  clinical criterion.  Per CLAUDE.md's "don't hand-roll severity
+  thresholds", PSWQ ships as a continuous dimensional measure
+  uniform with DERS-16 / CD-RISC-10 / PACS; envelope carries
+  ``severity="continuous"``.  The clinician-UI layer may surface a
+  "above GAD-sample mean" context flag (score ≥ 60) — that flag is
+  NOT a classification and NOT a gate.  Unidimensional per Meyer
+  1990 / Brown 1992 CFA — no subscales dict.  ``cutoff_used`` /
+  ``positive_screen`` NOT set.  No T3 — the 16 items probe the
+  worry-process construct only (intensity, persistence,
+  uncontrollability, chronicity); item 2 ("My worries overwhelm
+  me.") and item 14 ("Once I start worrying, I cannot stop.") at
+  ceiling endorse GAD-DSM-5-criterion uncontrollability, NOT
+  suicidality.  Acute ideation screening remains PHQ-9 item 9 /
+  C-SSRS.  See ``scoring/pswq.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -615,6 +656,10 @@ from .scoring.phq15 import (
     score_phq15,
 )
 from .scoring.pss10 import InvalidResponseError as Pss10Invalid, score_pss10
+from .scoring.pswq import (
+    InvalidResponseError as PswqInvalid,
+    score_pswq,
+)
 from .scoring.readiness_ruler import (
     InvalidResponseError as ReadinessRulerInvalid,
     score_readiness_ruler,
@@ -677,6 +722,7 @@ Instrument = Literal[
     "wsas",
     "ders16",
     "cdrisc10",
+    "pswq",
 ]
 
 
@@ -716,6 +762,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "wsas": 5,
     "ders16": 16,
     "cdrisc10": 10,
+    "pswq": 16,
 }
 
 
@@ -861,7 +908,7 @@ class AssessmentResult(BaseModel):
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
       SDS / DUDIT / ASRS-6 / AAQ-II / WSAS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
-      Readiness Ruler / DTCQ-8 / CD-RISC-10) emit ``subscales=None``.
+      Readiness Ruler / DTCQ-8 / CD-RISC-10 / PSWQ) emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -871,20 +918,22 @@ class AssessmentResult(BaseModel):
 
     For PACS (Flannery 1999), Craving VAS (Sayette 2000), Readiness
     Ruler (Rollnick 1999 / Heather 2008), DTCQ-8 (Sklar & Turner
-    1999), DERS-16 (Bjureberg 2016), and CD-RISC-10 (Campbell-Sills &
-    Stein 2007), ``severity`` is the literal sentinel ``"continuous"``.
-    None of these instruments publishes severity bands; the trajectory
-    layer extracts the clinical signal from ``total`` directly —
-    week-over-week Δ for PACS, within-episode Δ + EMA trajectory for
-    VAS, week-over-week Δ for the Ruler, week-over-week Δ on the
-    coping-self-efficacy mean for DTCQ-8, RCI-style change detection
-    (Jacobson & Truax 1991) on total+subscales for DERS-16, and
-    RCI-style change on the total for CD-RISC-10 with the "below
-    general-population mean (< 31)" flag surfaced as contextual UI
-    only (not a classification, not a gate).  Direction semantics
-    differ: VAS / PACS / DERS-16 are higher-is-worse; the Ruler /
-    DTCQ-8 / CD-RISC-10 are higher-is-better (same direction as
-    WHO-5).  Clients rendering these results must not attempt to
+    1999), DERS-16 (Bjureberg 2016), CD-RISC-10 (Campbell-Sills &
+    Stein 2007), and PSWQ (Meyer 1990), ``severity`` is the literal
+    sentinel ``"continuous"``.  None of these instruments publishes
+    severity bands; the trajectory layer extracts the clinical
+    signal from ``total`` directly — week-over-week Δ for PACS,
+    within-episode Δ + EMA trajectory for VAS, week-over-week Δ for
+    the Ruler, week-over-week Δ on the coping-self-efficacy mean
+    for DTCQ-8, RCI-style change detection (Jacobson & Truax 1991)
+    on total+subscales for DERS-16, RCI-style change on the total
+    for CD-RISC-10 with the "below general-population mean (< 31)"
+    flag surfaced as contextual UI only (not a classification, not
+    a gate), and RCI-style change on the total for PSWQ with the
+    "above GAD-sample mean (≥ 60)" flag surfaced as contextual UI
+    only.  Direction semantics differ: VAS / PACS / DERS-16 / PSWQ
+    are higher-is-worse; the Ruler / DTCQ-8 / CD-RISC-10 are
+    higher-is-better (same direction as WHO-5).  Clients rendering these results must not attempt to
     classify status from ``severity`` — show ``total`` and the
     trajectory chart instead.  Direction semantics differ:
     VAS and PACS are higher-is-worse (craving rising = deterioration);
@@ -1829,6 +1878,75 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=cd.instrument_version,
         )
+    if payload.instrument == "pswq":
+        # Meyer 1990 Penn State Worry Questionnaire — the gold-standard
+        # 16-item measure of trait-level worry, the CBT-for-GAD
+        # process-target instrument.  GAD-7 measures anxiety symptoms
+        # over a 2-week window (state severity); PSWQ measures the
+        # dispositional worry process that cognitive therapy for GAD
+        # explicitly targets.  A patient can have controlled symptoms
+        # (low GAD-7) but persistent worry trait (high PSWQ), or vice
+        # versa — the two are orthogonal clinical axes.  PSWQ
+        # complements AAQ-II (ACT target: inflexibility), DERS-16 (DBT
+        # target: dysregulation), PCL-5 (trauma-driven hyperarousal),
+        # OCI-R (compulsive subtype), and the symptom-severity cluster
+        # so the intervention-selection layer can route worry-driven
+        # compulsive cycles (hypervigilant checking, pre-emptive
+        # reassurance-seeking, catastrophization-driven avoidance) to
+        # CBT-for-GAD tool variants: worry-postponement,
+        # decatastrophizing, uncertainty-acceptance exposures.
+        # 16 items, 1-5 Likert (1 = "not at all typical of me", 5 =
+        # "very typical of me"); total 16-80.  **First reverse-keying
+        # pattern in the package** — items 1, 3, 8, 10, 11 are worded
+        # in the worry-ABSENT direction (e.g., "I do not tend to worry
+        # about things.") so a high raw Likert on those items reflects
+        # LOW trait-worry.  The scorer applies the arithmetic-
+        # reflection flip (``flipped = 6 - raw``) to those items
+        # before summing so every post-flip item contributes in the
+        # higher-is-more-worry direction uniformly.  Mixed-direction
+        # design is deliberate: Meyer 1990 included reverse-keyed
+        # items to suppress acquiescent-response bias (an all-5s
+        # responder scores 60, not 80; an all-1s responder scores 36,
+        # not 16 — the design self-catches response-set artifacts).
+        # Audit-trail invariant: the scorer's ``items`` field
+        # preserves the PATIENT'S raw pre-flip responses, not the
+        # internal post-flip values — so a clinician reviewing the
+        # stored record sees what the patient actually ticked, not
+        # the scorer's internal representation.
+        # Higher-is-worse direction (same as PHQ-9 / GAD-7 / DERS-16 /
+        # PCL-5 / OCI-R / K10 / WSAS; opposite of WHO-5 / DTCQ-8 /
+        # Readiness Ruler / CD-RISC-10).
+        # **No severity bands** — Meyer 1990 published GAD and
+        # general-pop means (~67 / ~48) but no cross-calibrated
+        # cutpoints.  Downstream cuts (Behar 2003: 45/62 tertiles in
+        # students; Startup & Erickson 2006: 56+ GAD-diagnostic in
+        # treatment-seekers; Fresco 2003: mid-50s GAD-threshold) are
+        # sample-specific and not cross-calibrated against a shared
+        # clinical criterion.  Per CLAUDE.md "don't hand-roll severity
+        # thresholds", PSWQ ships as a continuous dimensional measure
+        # uniform with DERS-16 / CD-RISC-10 / Craving VAS / PACS;
+        # envelope carries ``severity="continuous"``.  Clinician-UI
+        # layer may surface an "above GAD-sample mean" context flag
+        # (score ≥ 60) — NOT a classification, NOT a gate.
+        # Unidimensional per Meyer 1990 / Brown 1992 CFA — no
+        # subscales dict (distinct from DERS-16's 5-subscale surface).
+        # ``cutoff_used`` / ``positive_screen`` NOT set (continuous,
+        # not cutoff).  No T3 — all 16 items probe the worry-process
+        # construct (intensity, persistence, uncontrollability,
+        # chronicity); item 2 ("My worries overwhelm me.") and item
+        # 14 ("Once I start worrying, I cannot stop.") at ceiling
+        # endorse GAD-DSM-5-criterion uncontrollability, NOT
+        # suicidality.  Acute ideation screening stays on PHQ-9 item
+        # 9 / C-SSRS.  See ``scoring/pswq.py``.
+        pw = score_pswq(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pswq",
+            total=pw.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=pw.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1979,6 +2097,7 @@ async def submit_assessment(
         WsasInvalid,
         Ders16Invalid,
         Cdrisc10Invalid,
+        PswqInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
