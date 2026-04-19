@@ -2453,6 +2453,203 @@ class TestBis11Routing:
         assert body["severity"] == "normal"
 
 
+class TestCravingVasRouting:
+    """Craving VAS (single-item 0-100 EMA, Sayette 2000 synthesis) over the wire.
+
+    Craving VAS is the package's **first single-item instrument** — it
+    dropped the Pydantic envelope's ``min_length`` from 3 to 1 so a
+    1-element payload could flow through the same wire shape as every
+    multi-item instrument.  It also uses a 0-100 integer range (not a
+    Likert anchor set like 0-4 / 0-6 / 1-4), matching the canonical
+    Visual Analog Scale form the addiction literature validates.
+
+    Wire-envelope pattern: **continuous severity** (sentinel
+    ``"continuous"``), same as PACS — Sayette 2000 publishes no bands
+    and the literature treats the VAS as a per-user / per-episode
+    relative signal, not a categorical screen.
+
+    These tests pin (1) the dispatch branch picks ``score_craving_vas``,
+    (2) the wire envelope carries ``severity == "continuous"`` across
+    the full 0-100 range, (3) ``requires_t3`` is always False (VAS
+    measures urge, not crisis; acute ideation is gated by PHQ-9 /
+    C-SSRS), (4) the router accepts a 1-element payload (regression
+    guard on the min_length=1 drop), (5) 0 and 2+ item payloads are
+    rejected at 422, (6) out-of-range values (101, -1) are 422.
+    """
+
+    def _post_vas(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "craving_vas", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_peak_craving(self, client: TestClient) -> None:
+        """Single item at 100 → total 100 → severity 'continuous'.  This
+        is the EMA partner to PACS — at urge-onset the product prompts
+        for a VAS, stores the 100, then re-prompts after the
+        intervention for the within-episode Δ."""
+        resp = self._post_vas(client, items=[100])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "craving_vas"
+        assert body["total"] == 100
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "craving_vas-1.0.0"
+
+    def test_zero_craving_still_returns_continuous_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """VAS = 0 is a meaningful EMA reading (post-detox, safe
+        environment, no cues).  The sentinel ``"continuous"`` is
+        invariant across the full 0-100 range — the trajectory layer
+        reads ``total``, not ``severity``, for signal extraction."""
+        resp = self._post_vas(client, items=[0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_midrange_total_is_still_continuous(
+        self, client: TestClient
+    ) -> None:
+        """A midrange VAS (50) must NOT accidentally pick up a banded
+        label.  If a future refactor imports a severity classifier
+        from another instrument, this test catches the cross-wire."""
+        resp = self._post_vas(client, items=[50])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 50
+        assert body["severity"] == "continuous"
+
+    def test_max_total_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: VAS = 100 ('strongest
+        craving I have ever felt') does NOT fire T3.  Acute
+        suicidality is gated by PHQ-9 item 9 / C-SSRS, consistent
+        with the PACS / PHQ-15 / OCI-R / ISI safety-posture
+        convention.  A patient with peak craving AND acute ideation
+        needs a co-administered PHQ-9 or C-SSRS to fire T3 — VAS
+        alone never does."""
+        resp = self._post_vas(client, items=[100])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_envelope_accepts_single_item(self, client: TestClient) -> None:
+        """Regression guard on the ``min_length=1`` drop.  Before Sprint
+        36 the envelope's ``min_length`` was 3 (AUDIT-C's count); a
+        revert would 422 a legitimate VAS payload *before* it reached
+        the per-instrument item-count check, producing a generic
+        Pydantic-shape error instead of the diagnostic
+        'craving_vas requires exactly 1 item' message.  This test
+        pins that a 1-element payload routes through to the scorer."""
+        resp = self._post_vas(client, items=[42])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 42
+        assert body["instrument"] == "craving_vas"
+
+    def test_rejects_empty_list(self, client: TestClient) -> None:
+        """Zero items → 422.  Pydantic's ``min_length=1`` floor fires
+        before the per-instrument check; either layer raising 422 is
+        acceptable — callers only see the unified 422."""
+        resp = self._post_vas(client, items=[])
+        assert resp.status_code == 422
+
+    def test_rejects_two_items(self, client: TestClient) -> None:
+        """Two items → 422.  The per-instrument item-count check at
+        ``_validate_item_count`` fires because ``craving_vas`` expects
+        exactly 1 item.  A two-item payload would most commonly be a
+        caller misrouting a different instrument (MDQ Part-1-only,
+        a fragment of PHQ-2, etc.) — the dedicated error message
+        makes the miswire obvious."""
+        resp = self._post_vas(client, items=[50, 50])
+        assert resp.status_code == 422
+
+    def test_rejects_five_items(self, client: TestClient) -> None:
+        """Five items is the PACS shape → 422.  Pins that the VAS
+        dispatch does not silently accept a misrouted PACS payload.
+        The regression this guards is a client that flipped
+        ``instrument`` but forgot to replace the items array."""
+        resp = self._post_vas(client, items=[1, 2, 3, 4, 5])
+        assert resp.status_code == 422
+
+    def test_rejects_one_hundred_one(self, client: TestClient) -> None:
+        """Item value 101 (one above the VAS ceiling) → 422.  The
+        off-by-one regression this guards is a client that reused a
+        0-based inclusive 101-point UI widget."""
+        resp = self._post_vas(client, items=[101])
+        assert resp.status_code == 422
+
+    def test_rejects_negative_value(self, client: TestClient) -> None:
+        """Negative VAS → 422.  Regression guard against a client that
+        sent a signed integer instead of the unsigned 0-100 scalar."""
+        resp = self._post_vas(client, items=[-1])
+        assert resp.status_code == 422
+
+    def test_persists_vas_submission_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id lands in per-user history with the
+        continuous sentinel and the single integer captured.  EMA
+        trajectory analysis reads stored VAS totals across the
+        timeline — a regression that dropped the total during
+        persistence would silently break the within-user EMA
+        baseline calculation."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "craving_vas",
+            "items": [75],
+            "user_id": "user-vas-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-vas-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "craving_vas"
+        assert stored.total == 75
+        assert stored.severity == "continuous"
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """instrument=craving_vas + extra MDQ fields → extras are
+        ignored, VAS dispatch runs cleanly.  Defensive pin across the
+        dispatcher-ordering contract (same guard as PACS / BIS-11 /
+        PHQ-15)."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "craving_vas",
+                "items": [30],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "craving_vas"
+        assert body["total"] == 30
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

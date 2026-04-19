@@ -1,6 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS, BIS-11.
+PACS, BIS-11, Craving VAS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -36,8 +36,8 @@ Safety routing:
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
-  PCL-5, OCI-R, PHQ-15, PACS, BIS-11 have no safety items —
-  ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
+  PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS have no safety
+  items — ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -68,7 +68,12 @@ Safety routing:
   item; high impulsivity routes to DBT distress-tolerance /
   mindfulness attention training / implementation-intention work
   at the intervention-selection layer, not to T3.  See
-  ``scoring/bis11.py``.
+  ``scoring/bis11.py``.  Craving VAS (Sayette 2000) is the
+  single-item 0-100 EMA partner to PACS — it measures
+  momentary-point craving at urge-onset and post-intervention so
+  the contextual bandit can train on within-episode Δ.  No
+  safety item; a VAS of 100 is "strongest craving ever felt",
+  not active suicidality.  See ``scoring/craving_vas.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -106,6 +111,10 @@ from .scoring.audit_c import (
     InvalidResponseError as AuditCInvalid,
     Sex,
     score_audit_c,
+)
+from .scoring.craving_vas import (
+    InvalidResponseError as CravingVasInvalid,
+    score_craving_vas,
 )
 from .scoring.cssrs import (
     InvalidResponseError as CssrsInvalid,
@@ -170,6 +179,7 @@ Instrument = Literal[
     "phq15",
     "pacs",
     "bis11",
+    "craving_vas",
 ]
 
 
@@ -193,6 +203,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "phq15": 15,
     "pacs": 5,
     "bis11": 30,
+    "craving_vas": 1,
 }
 
 
@@ -202,12 +213,14 @@ class AssessmentRequest(BaseModel):
     Per-instrument item-count is validated at the route layer (after
     Pydantic) so the error message can be specific to the instrument
     ("PHQ-9 requires exactly 9 items, got N").  The Pydantic
-    ``min_length=3, max_length=30`` bound is the broadest envelope
-    covering every supported instrument (AUDIT-C=3 through BIS-11=30);
-    a tighter check needs to know the instrument value, which
-    Pydantic field validators can't see in a clean way.  BIS-11
-    raised the ceiling from 20 to 30 when it shipped — callers on
-    older instruments see no change since the per-instrument count
+    ``min_length=1, max_length=30`` bound is the broadest envelope
+    covering every supported instrument (Craving VAS=1 through
+    BIS-11=30); a tighter check needs to know the instrument value,
+    which Pydantic field validators can't see in a clean way.  Craving
+    VAS (Sprint 36) dropped the floor from 3 to 1 so the single-item
+    EMA instrument could flow through the same wire shape; BIS-11
+    (Sprint 35) had raised the ceiling from 20 to 30.  Callers on
+    multi-item instruments see no change since the per-instrument count
     check at ``_validate_item_count`` is the tight constraint.
 
     ``sex`` is AUDIT-C-only; ignored by other instruments.  Defaulting
@@ -230,7 +243,7 @@ class AssessmentRequest(BaseModel):
     """
 
     instrument: Instrument
-    items: list[int] = Field(min_length=3, max_length=30)
+    items: list[int] = Field(min_length=1, max_length=30)
     sex: Sex | None = Field(
         default=None,
         description="AUDIT-C only; ignored by other instruments.",
@@ -292,12 +305,14 @@ class AssessmentResult(BaseModel):
     positive_count is the closest analogue and clients can use it for
     trajectory tracking independently of band changes.
 
-    For PACS (Flannery 1999), ``severity`` is the literal sentinel
-    ``"continuous"``.  Flannery 1999 publishes no severity bands; the
-    trajectory layer extracts the clinical signal (week-over-week Δ)
-    from ``total`` directly.  Clients rendering PACS results must not
-    attempt to classify status from ``severity`` — show ``total``
-    and the trajectory chart instead.
+    For PACS (Flannery 1999) and Craving VAS (Sayette 2000),
+    ``severity`` is the literal sentinel ``"continuous"``.  Neither
+    instrument publishes severity bands; the trajectory layer extracts
+    the clinical signal (week-over-week Δ for PACS; within-episode Δ
+    and EMA trajectory for VAS) from ``total`` directly.  Clients
+    rendering PACS or VAS results must not attempt to classify status
+    from ``severity`` — show ``total`` and the trajectory chart
+    instead.
     """
 
     assessment_id: str
@@ -577,6 +592,39 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=pacs.instrument_version,
         )
+    if payload.instrument == "craving_vas":
+        # Sayette 2000 synthesis — single-item 0-100 Visual Analog Scale
+        # of momentary craving.  **Continuous-severity envelope** (same
+        # sentinel as PACS) — the VAS publishes no bands and the
+        # literature treats it as a per-user / per-episode relative
+        # signal, not a categorical severity measure.  The clinical
+        # value lives in three places, none of which are absolute
+        # cutoffs: (a) within-user trajectory across EMA sessions,
+        # (b) within-episode Δ (pre-intervention VAS minus post-
+        # intervention VAS) — the efficacy signal the bandit trains
+        # on, and (c) baseline-relative deviation against the user's
+        # running EMA mean.  This is the EMA partner to PACS (weekly
+        # aggregated) — PACS answers 'has this week been harder?',
+        # VAS answers 'is the intervention working right now?'  No
+        # safety routing: a VAS of 100 is 'peak subjective craving',
+        # not active suicidality; acute ideation is gated by PHQ-9
+        # item 9 / C-SSRS, consistent with the PACS / PHQ-15 / OCI-R /
+        # ISI safety-posture convention.  The substance context
+        # (alcohol / cannabis / nicotine / opioid / gambling /
+        # porn-use) is surfaced at the UI layer and stored alongside
+        # the assessment at the repository layer — the scorer is
+        # substance-agnostic so one validated instrument serves every
+        # vertical without per-vertical branching.  See
+        # ``scoring/craving_vas.py``.
+        vas = score_craving_vas(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="craving_vas",
+            total=vas.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=vas.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -711,6 +759,7 @@ async def submit_assessment(
         Phq15Invalid,
         PacsInvalid,
         Bis11Invalid,
+        CravingVasInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
