@@ -4,7 +4,8 @@ PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
-UCLA-3, CIUS.
+UCLA-3, CIUS,
+SWLS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -41,7 +42,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1328,6 +1329,36 @@ Safety routing:
   widest on the platform, uniform with UCLA-3's proportion-
   of-range).  ``items`` field = raw input (identity under
   zero-reverse-keying).  See ``scoring/cius.py``.
+- SWLS — 5 items, 1-7 Likert, NO reverse keying, unidimensional,
+  Diener, Emmons, Larsen & Griffin 1985 (Journal of Personality
+  Assessment 49(1):71-75).  Total = straight sum, range 5-35.
+  HIGHER = more satisfied (uniform with WHO-5 / LOT-R / BRS /
+  MAAS / RSES / CD-RISC-10 / FFMQ-15 / PANAS-10 PA higher-is-
+  better direction).  Severity = ``"continuous"`` — Pavot &
+  Diener 1993 seven-band interpretive guidelines (Extremely
+  satisfied 31-35, Satisfied 26-30, Slightly satisfied 21-25,
+  Neutral 20, Slightly dissatisfied 15-19, Dissatisfied 10-14,
+  Extremely dissatisfied 5-9) stay at the clinician-UI renderer
+  layer, NOT in the envelope band — consistent with UCLA-3 /
+  CIUS "continuous measure with published interpretive
+  guidelines" platform posture and CLAUDE.md non-negotiable #9.
+  NO T3 — no item probes suicidality; item 5 ("would change
+  almost nothing") is a counterfactual life-evaluation probe,
+  not ideation.  Low SWLS paired with low LOT-R surfaces the
+  Beck 1985 hopelessness-suicide-risk profile at the clinician-
+  UI layer as a C-SSRS follow-up prompt, NOT as a scorer-layer
+  T3 flag.  Acquiescence signature: total = 5v linear, endpoint-
+  gap = 30 (full 5-35 range, 100% of range — matches UCLA-3 /
+  CIUS relative endpoint-exposure profile).  ``items`` field =
+  raw input (identity under zero-reverse-keying).  Fills a
+  cognitive-vs-affective gap: WHO-5 measures affective
+  wellbeing, LOT-R measures dispositional optimism, BRS measures
+  bounce-back resilience; SWLS measures cognitive-judgmental
+  global life evaluation ("does my life match my ideal?")
+  which has independent predictive validity for delayed relapse
+  (Moos 2005 AUD n=628 16-year follow-up — SWLS at 1-3 years
+  predicts year-16 remission where affective measures do not).
+  See ``scoring/swls.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1534,6 +1565,10 @@ from .scoring.cius import (
     InvalidResponseError as CiusInvalid,
     score_cius,
 )
+from .scoring.swls import (
+    InvalidResponseError as SwlsInvalid,
+    score_swls,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1610,6 +1645,7 @@ Instrument = Literal[
     "fneb",
     "ucla3",
     "cius",
+    "swls",
 ]
 
 
@@ -1668,6 +1704,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "fneb": 12,
     "ucla3": 3,
     "cius": 14,
+    "swls": 5,
 }
 
 
@@ -4242,6 +4279,129 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=c.instrument_version,
         )
+    if payload.instrument == "swls":
+        # SWLS — 5-item Satisfaction With Life Scale (Diener,
+        # Emmons, Larsen & Griffin, Journal of Personality
+        # Assessment 1985, 49(1):71-75).  Most widely-used self-
+        # report instrument for the **cognitive-judgmental
+        # component of subjective wellbeing**.  Deliberately
+        # constructed by Diener 1985 to be orthogonal to
+        # affective-wellbeing measures — asks the respondent to
+        # evaluate their life against their own IDEAL, a global
+        # judgment integrating across domains (work, relationships,
+        # leisure, health) and across time rather than capturing
+        # transient positive or negative mood.  Pavot & Diener 1993
+        # (Psychological Assessment 5(2):164-172) published the
+        # canonical review with interpretive bands; Pavot & Diener
+        # 2008 (Journal of Positive Psychology 3(2):137-152) is the
+        # 25-year retrospective confirming α range 0.79-0.89,
+        # test-retest r = 0.54 (4 years) / 0.82 (2 months), and
+        # the normative SD ≈ 6.6 that anchors the Jacobson-Truax
+        # RCI at the trajectory layer.
+        #
+        # Fills a cognitive-vs-affective gap in the platform's
+        # wellbeing-measurement roster:
+        # - WHO-5 measures AFFECTIVE wellbeing (last-two-weeks
+        #   mood: cheerful / relaxed / active / rested / interested).
+        # - LOT-R measures DISPOSITIONAL OPTIMISM (trait-level
+        #   expectations about future outcomes).
+        # - BRS measures BOUNCE-BACK RESILIENCE (recovery capacity
+        #   after setbacks).
+        # - SWLS measures COGNITIVE-JUDGMENTAL GLOBAL LIFE
+        #   EVALUATION ("does my life, overall, match my ideal?").
+        #   Diener 1985 §1 explicitly framed this as the cognitive
+        #   counterpart to affective wellbeing: "A respondent can
+        #   have a high level of positive affect and yet be
+        #   dissatisfied with life as a whole because of specific
+        #   unfulfilled areas."
+        #
+        # For relapse-prevention, low SWLS in early recovery is a
+        # documented DELAYED-RELAPSE signal.  Moos & Moos 2005
+        # (Addiction 100(8):1121-1130) found n = 628 AUD-cohort
+        # 16-year follow-up that life-satisfaction at 1-3 years
+        # post-treatment predicted sustained remission at year 16
+        # more strongly than affective measures.  The mechanism:
+        # clients with improved affective wellbeing but persistent
+        # cognitive dissatisfaction ("things are better, but this
+        # isn't the life I want") have an ambient motivational
+        # gradient toward resuming the substance / behavior that
+        # provided the closest proxy to their ideal, even after
+        # post-acute-withdrawal resolves.
+        #
+        # Profile pairings:
+        # - SWLS-low + WHO-5-high ("wrong-life" profile) — ACT
+        #   values-clarification indication (Hayes 2006).
+        # - SWLS-high + WHO-5-low ("right life but poor mood") —
+        #   acute-affective regulation indication.
+        # - SWLS-low + LOT-R-low (hopelessness-suicide-risk
+        #   parallel, Beck 1985) — clinician-UI prompts C-SSRS
+        #   follow-up but the SWLS assessment itself MUST NOT set
+        #   T3.
+        # - SWLS-low + BRS-low ("stuck-stress" pattern, Smith
+        #   2008) — resilience-skills training (Reivich 2002 Penn
+        #   Resiliency Program) precedes life-evaluation work.
+        #
+        # Scoring: 5 items, 1-7 Likert (1 = Strongly Disagree,
+        # 7 = Strongly Agree), NO reverse keying (all five items
+        # positively worded in the "higher = more satisfied"
+        # direction — Diener 1985 Table 1 confirmed and Pavot 1993
+        # retained through subsequent validations).  Total =
+        # straight sum, range 5-35.  HIGHER = more satisfied.
+        # Uniform with WHO-5 / LOT-R / BRS / MAAS / RSES / PANAS-10
+        # PA / CD-RISC-10 / FFMQ-15 "higher-is-better" direction.
+        #
+        # Severity = "continuous".  Pavot & Diener 1993 seven-band
+        # interpretive guidelines (Extremely satisfied 31-35,
+        # Satisfied 26-30, Slightly satisfied 21-25, Neutral 20,
+        # Slightly dissatisfied 15-19, Dissatisfied 10-14,
+        # Extremely dissatisfied 5-9) stay at the CLINICIAN-UI
+        # RENDERER LAYER, not in the envelope band — consistent
+        # with UCLA-3 / CIUS "continuous measure with published
+        # interpretive guidelines" platform posture and CLAUDE.md
+        # non-negotiable #9 ("Don't hand-roll severity thresholds").
+        # Pavot 1993 explicitly called these "overall interpretive
+        # guidelines" rather than diagnostic thresholds, so
+        # collapsing them into envelope bands would over-commit
+        # the clinical-decision scaffolding.  The "Neutral" band
+        # at exactly 20 is especially resistant to envelope
+        # dichotomization — any cutoff choice (≤20 vs <20 vs ≤19
+        # vs <21) would be hand-rolled against the primary-source
+        # guidance.
+        #
+        # Acquiescence signature: linear total = 5v for any all-v
+        # constant vector, endpoint-gap = 30 (full 5-35 range,
+        # 100% of range — matches UCLA-3 / CIUS relative endpoint-
+        # exposure).  Diener 1985 / Pavot 1993 treated the all-
+        # positive-wording as acceptable because α ≈ 0.87 indicated
+        # coherent-interpretation dominance over acquiescence bias
+        # in practice (same rationale as CIUS, SHAPS).
+        #
+        # T3 posture — NO item probes suicidality.  Item 5 ("would
+        # change almost nothing") is a counterfactual life-
+        # evaluation probe, NOT a self-harm or ideation probe.
+        # Acute-risk screening stays on C-SSRS / PHQ-9 item 9.
+        # Low SWLS paired with low LOT-R (Beck 1985 hopelessness-
+        # suicide-risk profile) surfaces at the clinician-UI layer
+        # as a C-SSRS follow-up prompt, NOT as a scorer-layer T3
+        # flag — same posture as UCLA-3 with Calati 2019 loneliness
+        # / suicide-risk association.
+        #
+        # Envelope: banded+total (no subscales — unidimensional
+        # factor structure per Diener 1985 / Pavot 1993 eigenvalue
+        # ratio 2.9:0.6; no scaled_score, positive_screen,
+        # cutoff_used, triggering_items — same shape as UCLA-3 /
+        # CIUS / STAI-6 / FNE-B).  ``items`` field = raw input
+        # (identity under zero-reverse-keying).  See
+        # ``scoring/swls.py``.
+        s = score_swls(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="swls",
+            total=s.total,
+            severity=s.severity,
+            requires_t3=False,
+            instrument_version=s.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -4411,6 +4571,7 @@ async def submit_assessment(
         FnebInvalid,
         Ucla3Invalid,
         CiusInvalid,
+        SwlsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

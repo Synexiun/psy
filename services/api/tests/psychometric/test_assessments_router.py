@@ -18442,6 +18442,631 @@ class TestCiusRouting:
         assert body["total"] == 56
 
 
+class TestSwlsRouting:
+    """End-to-end routing tests for the SWLS dispatcher branch.
+
+    Diener, Emmons, Larsen & Griffin 1985 Satisfaction With Life
+    Scale — 5 items, 1-7 Likert, NO reverse keying (all items
+    positively worded in the "higher = more satisfied" direction
+    per Diener 1985 Table 1 and Pavot & Diener 1993 confirmation),
+    unidimensional, total = straight sum 5-35.  **HIGHER = MORE
+    satisfied** — uniform with WHO-5 / LOT-R / BRS / MAAS / RSES /
+    PANAS-10 PA / CD-RISC-10 / FFMQ-15 "higher-is-better"
+    direction.
+
+    The ZERO-reverse-keying design is Diener 1985's explicit
+    choice: all five items positively worded to probe the
+    cognitive-judgmental "life close to my ideal" construct
+    directly.  Pavot 1993 §Discussion rejected reverse-keying as
+    unnecessary given α = 0.87 evidence of coherent-interpretation
+    dominance over acquiescence bias.  Consequence: the
+    acquiescence signature is the trivial linear formula
+    ``total = 5v`` for any all-v constant vector, and the endpoint-
+    only-responder gap is the full 30-point 5-35 range (100% of
+    range).  This matches UCLA-3 / CIUS in proportion-of-range
+    endpoint exposure.
+
+    Clinically DISTINCT from affective-wellbeing instruments —
+    WHO-5 measures the LAST-TWO-WEEKS affective mood (cheerful,
+    relaxed, active, rested, interested); LOT-R measures DISPOSITIONAL
+    OPTIMISM (trait-level expectations about future outcomes); BRS
+    measures BOUNCE-BACK RESILIENCE.  SWLS measures COGNITIVE-
+    JUDGMENTAL GLOBAL LIFE EVALUATION — a slow-moving trait-like
+    construct that integrates across domains and time.  The four-
+    way dissociation profile (SWLS-low + WHO-5-high + LOT-R-high
+    + BRS-high) is the "wrong-life" pattern: mood / optimism /
+    resilience intact, but cognitive life-evaluation persistently
+    low — ACT values-clarification indication per Hayes 2006.
+
+    Clinical use cases:
+    1. Moos 2005 delayed-relapse detection (n = 628 AUD cohort
+       16-year follow-up — SWLS at 1-3 years predicts year-16
+       remission where affective measures do not).
+    2. ACT values-clarification (Hayes 2006) indication when
+       SWLS-low pairs with normal affective wellbeing.
+    3. Beck 1985 hopelessness-suicide-risk context (SWLS-low +
+       LOT-R-low) — clinician-UI C-SSRS follow-up prompt.
+    4. Smith 2008 BRS validation paper "stuck-stress" pattern
+       (SWLS-low + BRS-low) — resilience-skills-first sequencing.
+    5. Long-horizon trajectory tracking — Pavot 2008 SD ≈ 6.6 and
+       α ≈ 0.87 anchor a Jacobson-Truax RCI MCID of ≈ 6 points
+       on the 5-35 range for the trajectory layer.
+
+    T3 posture — NO item probes suicidality.  Item 5 ("would
+    change almost nothing") is a counterfactual life-evaluation
+    probe, NOT a self-harm or ideation probe.  The clinician-UI
+    layer may prompt C-SSRS follow-up when SWLS-low pairs with
+    LOT-R-low (Beck 1985 hopelessness-suicide-risk profile), but
+    the SWLS assessment itself MUST NOT set T3.  Active-risk
+    screening stays on C-SSRS / PHQ-9 item 9.
+
+    Envelope: banded+total (no subscales — unidimensional factor
+    structure per Diener 1985 / Pavot 1993 eigenvalue ratio
+    2.9:0.6; no scaled_score, positive_screen, cutoff_used,
+    triggering_items — same shape as UCLA-3 / CIUS / STAI-6 /
+    FNE-B / RSES).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ---------------------------------------------------
+
+    def test_max_satisfaction_extremum_thirty_five(
+        self, client: TestClient
+    ) -> None:
+        """Diener 1985 top-of-range: "Strongly Agree" on all five
+        items.  Raw [7]*5.  No reverse keying → total = 35, the
+        Pavot 1993 "Extremely satisfied" ceiling."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [7, 7, 7, 7, 7]},
+            headers=self._headers("swls-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "swls"
+        assert body["total"] == 35
+        assert body["severity"] == "continuous"
+
+    def test_min_satisfaction_extremum_five(
+        self, client: TestClient
+    ) -> None:
+        """Diener 1985 bottom-of-range: "Strongly Disagree" on all
+        five items.  Raw [1]*5 = total 5, the Pavot 1993 "Extremely
+        dissatisfied" floor."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("swls-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 5
+        assert body["severity"] == "continuous"
+
+    def test_pavot_neutral_single_value_twenty(
+        self, client: TestClient
+    ) -> None:
+        """Pavot 1993 single-value "Neutral" point at exactly 20.
+        Raw [4]*5 (all "Neither Agree nor Disagree") = 20.
+        Pavot 1993 explicitly resisted collapsing this into a
+        binary above-vs-below band; the platform MUST surface the
+        value continuously, not as a banded flag."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4, 4, 4, 4, 4]},
+            headers=self._headers("swls-neutral"),
+        )
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "continuous"
+
+    # -- Acquiescence signature — linear total = 5v -----------------------
+
+    @pytest.mark.parametrize(
+        "v, expected",
+        [
+            (1, 5),
+            (2, 10),
+            (3, 15),
+            (4, 20),
+            (5, 25),
+            (6, 30),
+            (7, 35),
+        ],
+    )
+    def test_acquiescence_signature_linear(
+        self, client: TestClient, v: int, expected: int
+    ) -> None:
+        """Linear formula v: total = 5v for any constant vector.
+        NO reverse-keying offset, unlike FNE-B (4v+24 = 28-48) or
+        STAI-6 (constant 15 symmetric collapse).  7-point parametrize
+        covers the full Likert range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [v] * 5},
+            headers=self._headers(f"swls-acq-{v}"),
+        )
+        body = response.json()
+        assert body["total"] == expected
+
+    def test_acquiescence_gap_is_thirty(self, client: TestClient) -> None:
+        """Pin the endpoint-exposure: all-7s minus all-1s = 30,
+        the full 5-35 range (100%).  Matches UCLA-3 / CIUS 100%
+        endpoint-exposure in relative terms.  Documents Diener
+        1985's design trade-off: no reverse-keying in exchange
+        for α = 0.87 coherent-interpretation dominance."""
+        r_low = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("swls-gap-1"),
+        ).json()
+        r_high = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [7, 7, 7, 7, 7]},
+            headers=self._headers("swls-gap-7"),
+        ).json()
+        assert r_high["total"] - r_low["total"] == 30
+
+    # -- Envelope fields — no subscales/cutoff/screen/scaled/trigger ------
+
+    def test_envelope_has_no_subscales(self, client: TestClient) -> None:
+        """Diener 1985 / Pavot 1993 confirmed unidimensional factor
+        structure (eigenvalue ratio 2.9:0.6 = strong single-factor
+        dominance); envelope MUST NOT carry subscales.  Partitioning
+        into facets (e.g., "present-state" vs "retrospective" vs
+        "counterfactual") would over-fit the published factor
+        structure."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4, 4, 4, 4, 4]},
+            headers=self._headers("swls-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_envelope_has_no_cutoff_used(self, client: TestClient) -> None:
+        """Pavot 1993 seven-band interpretive guidelines (Extremely
+        satisfied 31-35 down to Extremely dissatisfied 5-9) are
+        INTERPRETIVE, not decision cutpoints (explicitly framed as
+        "overall interpretive guidelines" in Pavot 1993 §Discussion).
+        Platform MUST NOT surface any as cutoff_used per CLAUDE.md
+        non-negotiable #9 ("Don't hand-roll severity thresholds").
+        Those bands live at the clinician-UI renderer layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [5, 5, 5, 5, 5]},
+            headers=self._headers("swls-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_envelope_has_no_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """SWLS is not a screen.  Pavot 1993's Neutral band at
+        exactly 20 resists binary dichotomization; any cutoff
+        choice would be hand-rolled against primary-source
+        guidance."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [5, 5, 5, 5, 5]},
+            headers=self._headers("swls-no-screen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_envelope_has_no_scaled_score(self, client: TestClient) -> None:
+        """SWLS reports the raw 5-35 total; no scaled mapping to
+        another range (unlike WHO-5 which scales raw 0-25 to 0-100
+        index per Bech 2003)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [5, 5, 5, 5, 5]},
+            headers=self._headers("swls-no-scaled"),
+        )
+        body = response.json()
+        assert body.get("scaled_score") is None
+
+    def test_envelope_has_no_triggering_items(
+        self, client: TestClient
+    ) -> None:
+        """triggering_items is C-SSRS-only (risk-band audit trail).
+        SWLS is continuous; no item individually flags."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("swls-no-triggering"),
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    # -- Severity always continuous ---------------------------------------
+
+    @pytest.mark.parametrize(
+        "items, expected_total",
+        [
+            ([1, 1, 1, 1, 1], 5),     # Extremely dissatisfied floor
+            ([2, 3, 2, 3, 2], 12),    # Dissatisfied band
+            ([3, 4, 3, 4, 3], 17),    # Slightly dissatisfied band
+            ([4, 4, 4, 4, 4], 20),    # Pavot "Neutral" single value
+            ([4, 5, 4, 5, 4], 22),    # Slightly satisfied band
+            ([5, 6, 5, 6, 6], 28),    # Satisfied band
+            ([7, 7, 7, 7, 7], 35),    # Extremely satisfied ceiling
+        ],
+    )
+    def test_severity_is_continuous_across_pavot_bands(
+        self, client: TestClient, items: list[int], expected_total: int
+    ) -> None:
+        """Severity is always ``"continuous"`` regardless of which
+        Pavot 1993 interpretive band the total would fall into.
+        Pins the CLAUDE.md non-negotiable #9 invariant at the wire
+        layer: the envelope does NOT collapse to Pavot's seven-band
+        categorization."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": items},
+            headers=self._headers(f"swls-sev-{expected_total}"),
+        )
+        body = response.json()
+        assert body["total"] == expected_total
+        assert body["severity"] == "continuous"
+
+    # -- T3 posture -------------------------------------------------------
+
+    def test_minimum_total_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Raw [1, 1, 1, 1, 1] = total 5 is the minimum-satisfaction
+        extremum.  Low SWLS paired with low LOT-R parallels Beck
+        1985 hopelessness-suicide-risk profile, but the SWLS
+        instrument itself MUST NOT set requires_t3.  Active-risk
+        screening stays on C-SSRS / PHQ-9 item 9.  The clinician
+        UI may prompt C-SSRS follow-up based on the SWLS × LOT-R
+        combination — that is a renderer-layer decision, not a
+        scorer-layer flag."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("swls-t3-min"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["requires_t3"] is False
+
+    def test_counterfactual_item5_alone_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Item 5 ("If I could live my life over, I would change
+        almost nothing") at minimum with others neutral.  Raw
+        [4, 4, 4, 4, 1] = 17.  "Would change my life" is a
+        counterfactual regret probe, NOT an ideation probe.
+        MUST NOT set T3 even when this item alone is at the floor."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4, 4, 4, 4, 1]},
+            headers=self._headers("swls-t3-item5-floor"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_maximum_total_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Raw [7, 7, 7, 7, 7] = 35 (maximum).  T3 is categorically
+        absent for SWLS."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [7, 7, 7, 7, 7]},
+            headers=self._headers("swls-t3-max"),
+        )
+        body = response.json()
+        assert body["total"] == 35
+        assert body["requires_t3"] is False
+
+    # -- No-reverse-keying wire pins --------------------------------------
+
+    @pytest.mark.parametrize("position", [0, 1, 2, 3, 4])
+    def test_items_pass_through_unchanged_per_position(
+        self, client: TestClient, position: int
+    ) -> None:
+        """SWLS has ZERO reverse-keying.  Raising any single item
+        from 1 to 7 with others at 1 raises the total by exactly 6
+        (the full Likert step × 1 item).  Contrast FNE-B reverse-
+        item positions which DROP the total by 4 when raised.
+        Parametrized over all 5 positions to document the invariant
+        at every administration-order slot."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers(f"swls-pass-{position}-base"),
+        ).json()
+        items = [1, 1, 1, 1, 1]
+        items[position] = 7
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": items},
+            headers=self._headers(f"swls-pass-{position}-raised"),
+        ).json()
+        assert raised["total"] - base["total"] == 6
+
+    def test_item_ordering_does_not_affect_total(
+        self, client: TestClient
+    ) -> None:
+        """Pin asymmetric item pattern [7, 6, 5, 4, 3] forward vs
+        [3, 4, 5, 6, 7] reversed.  SWLS has no reverse-keyed
+        positions, so order reversal MUST yield the same total
+        (25).  Guards against accidental reverse-keying logic
+        leaking through the dispatcher for SWLS payloads."""
+        forward = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [7, 6, 5, 4, 3]},
+            headers=self._headers("swls-order-fwd"),
+        ).json()
+        reversed_items = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [3, 4, 5, 6, 7]},
+            headers=self._headers("swls-order-rev"),
+        ).json()
+        assert forward["total"] == reversed_items["total"] == 25
+
+    # -- Item count traps -------------------------------------------------
+
+    @pytest.mark.parametrize("count", [0, 1, 2, 3, 4, 6, 7, 10, 20])
+    def test_rejects_wrong_item_count(
+        self, client: TestClient, count: int
+    ) -> None:
+        """Any count other than 5 returns 422.  count=10 / count=20
+        guard against accidental full-WHO-5 (5 items — would pass!)
+        or full-BHS-20 submission being routed through the SWLS
+        scorer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4] * count},
+            headers=self._headers(f"swls-ic-{count}"),
+        )
+        assert response.status_code == 422
+
+    # -- Item value traps -------------------------------------------------
+
+    def test_rejects_item_value_zero(self, client: TestClient) -> None:
+        """SWLS is 1-7 Likert; 0 is below range.  Guards against
+        accidental WHO-5 0-5 scale or PHQ-9 0-3 scale submission."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [0, 4, 4, 4, 4]},
+            headers=self._headers("swls-iv-0"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_eight(self, client: TestClient) -> None:
+        """SWLS is 1-7 Likert; 8 is above range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [8, 4, 4, 4, 4]},
+            headers=self._headers("swls-iv-8"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_negative(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [-1, 4, 4, 4, 4]},
+            headers=self._headers("swls-iv-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_ninety_nine(
+        self, client: TestClient
+    ) -> None:
+        """Far-above-range guard against accidental percentage-
+        scale submission."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [99, 4, 4, 4, 4]},
+            headers=self._headers("swls-iv-99"),
+        )
+        assert response.status_code == 422
+
+    # -- Item type traps --------------------------------------------------
+
+    def test_rejects_string_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": ["four", 4, 4, 4, 4]},
+            headers=self._headers("swls-iv-str"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_float_with_decimal(self, client: TestClient) -> None:
+        """Pydantic ``list[int]`` rejects 4.5 as non-integer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4.5, 4, 4, 4, 4]},
+            headers=self._headers("swls-iv-fl"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic bool-coercion doc ---------------------------------------
+
+    def test_true_coerced_to_one_is_valid(self, client: TestClient) -> None:
+        """Pydantic's ``list[int]`` coerces JSON ``true`` → 1 BEFORE
+        the scorer sees it.  On SWLS's 1-7 scale, 1 is a valid
+        response ("Strongly Disagree") so True passes.  With item 1
+        as True and items 2-5 at 1, total = 5."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [True, 1, 1, 1, 1]},
+            headers=self._headers("swls-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 5
+
+    def test_false_coerced_to_zero_is_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces ``false`` → 0, which is BELOW SWLS's
+        1-7 range.  Range check rejects with 422.  Unlike CIUS
+        (0-4, 0 valid) where the JSON boolean round-trips as a
+        legitimate score, SWLS rejects at the range layer.  This
+        matches the UCLA-3 / FNE-B / STAI-6 / PHQ-9 / GAD-7 bool-
+        false-rejection pattern."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [False, 1, 1, 1, 1]},
+            headers=self._headers("swls-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_vignette_extremely_dissatisfied_floor(
+        self, client: TestClient
+    ) -> None:
+        """Pavot 1993 "Extremely dissatisfied" floor.  Raw [1]*5 = 5.
+        Severe-depression-with-pervasive-dissatisfaction profile;
+        long-horizon suicide-risk context when paired with low
+        LOT-R (Beck 1985)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("swls-vig-floor"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["severity"] == "continuous"
+
+    def test_vignette_moos_delayed_relapse_profile(
+        self, client: TestClient
+    ) -> None:
+        """Moos 2005 delayed-relapse signature: improved affective
+        wellbeing (WHO-5 would be high) with persistent low
+        cognitive satisfaction.  SWLS = 13 ("Dissatisfied" band)
+        in an 18-month-post-AUD-treatment client with good mood
+        but "this isn't the life I want" cognitive profile.  Raw
+        [2, 3, 3, 3, 2] = 13.  Intervention signal: ACT values-
+        clarification (Hayes 2006) or BATD with values-mapping
+        (Kanter 2010), NOT further affect-work."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [2, 3, 3, 3, 2]},
+            headers=self._headers("swls-vig-moos"),
+        )
+        body = response.json()
+        assert body["total"] == 13
+        assert body["severity"] == "continuous"
+
+    def test_vignette_pavot_neutral(self, client: TestClient) -> None:
+        """Pavot 1993 "Neutral" single-value band at exactly 20.
+        Raw [4]*5.  Platform does NOT collapse this into an
+        above-vs-below binary band — the envelope surfaces the
+        continuous value."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4, 4, 4, 4, 4]},
+            headers=self._headers("swls-vig-neutral"),
+        )
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "continuous"
+
+    def test_vignette_satisfied_stable_recovery(
+        self, client: TestClient
+    ) -> None:
+        """Pavot 1993 "Satisfied" band.  Raw [5, 6, 5, 6, 6] = 28.
+        Stable-recovery profile — Moos 2005 long-horizon-remission
+        predictor at this range in 1-3 years post-treatment."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [5, 6, 5, 6, 6]},
+            headers=self._headers("swls-vig-satisfied"),
+        )
+        body = response.json()
+        assert body["total"] == 28
+        assert body["severity"] == "continuous"
+
+    def test_vignette_extremely_satisfied_ceiling(
+        self, client: TestClient
+    ) -> None:
+        """Pavot 1993 "Extremely satisfied" ceiling.  Raw [7]*5 = 35."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [7, 7, 7, 7, 7]},
+            headers=self._headers("swls-vig-ceiling"),
+        )
+        body = response.json()
+        assert body["total"] == 35
+        assert body["severity"] == "continuous"
+
+    def test_vignette_cbt_responder_delta(
+        self, client: TestClient
+    ) -> None:
+        """12-week CBT + BA responder signature: pre-treatment
+        [2, 2, 3, 2, 2] = 11 ("Dissatisfied"), post-treatment
+        [5, 5, 5, 4, 4] = 23 ("Slightly satisfied").  Delta 12 is
+        substantially above the Jacobson 1991 RCI MCID (≈ 6 points
+        derived from Pavot 1993 α ≈ 0.87 and Pavot 2008 SD ≈ 6.6);
+        documents reliable clinical change at the trajectory
+        layer."""
+        pre = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [2, 2, 3, 2, 2]},
+            headers=self._headers("swls-vig-cbt-pre"),
+        ).json()
+        post = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [5, 5, 5, 4, 4]},
+            headers=self._headers("swls-vig-cbt-post"),
+        ).json()
+        assert pre["total"] == 11
+        assert post["total"] == 23
+        assert post["total"] - pre["total"] == 12
+
+    def test_vignette_wrong_life_ACT_indication(
+        self, client: TestClient
+    ) -> None:
+        """Hayes 2006 ACT values-clarification indication: the
+        "wrong-life" profile features low item-4 (important things
+        attained) and low item-5 (would change nothing) with
+        neutral present-state items (1-3).  Raw [4, 4, 4, 2, 1] = 15.
+        At the clinician-UI layer, pairs with normal WHO-5 /
+        LOT-R / BRS to identify ACT values-mapping as the matched
+        intervention (NOT further affect-work, NOT resilience
+        skills)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [4, 4, 4, 2, 1]},
+            headers=self._headers("swls-vig-wrong-life"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_vignette_hopelessness_parallel_profile(
+        self, client: TestClient
+    ) -> None:
+        """Beck 1985 hopelessness-suicide-risk PARALLEL profile:
+        low SWLS documenting the "my life isn't good" cognitive
+        half.  At the clinician-UI layer, pairs with low LOT-R
+        (the "and I don't expect it to get good" future-directed
+        half) to prompt C-SSRS follow-up.  Raw [1, 2, 2, 1, 1] = 7
+        (within Pavot 1993 "Extremely dissatisfied" band).
+        The SWLS assessment itself MUST NOT set requires_t3 —
+        that stays on C-SSRS / PHQ-9 item 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "swls", "items": [1, 2, 2, 1, 1]},
+            headers=self._headers("swls-vig-hopelessness"),
+        )
+        body = response.json()
+        assert body["total"] == 7
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
