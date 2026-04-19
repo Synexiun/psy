@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS, SCOFF, PANAS-10.
+ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1023,6 +1023,57 @@ Safety routing:
   No T3 — item 1 "upset" is general NA, NOT suicidal ideation.
   Acute-risk screening stays on C-SSRS / PHQ-9 item 9.  See
   ``scoring/panas10.py``.
+- RSES (Rosenberg 1965): 10 items, 0-3 Likert, 5 reverse-keyed
+  (items 2, 5, 6, 8, 9).  Rosenberg Self-Esteem Scale — the
+  most widely-used psychological instrument (>100k citations).
+  Morris Rosenberg's *Society and the Adolescent Self-Image*
+  (Princeton University Press 1965) established the
+  unidimensional global self-esteem construct; Gray-Little 1997
+  IRT meta-analysis confirmed unidimensional factor structure;
+  Schmitt & Allik 2005 cross-national n = 16,998 confirmed
+  factorial invariance across 53 nations (grand M = 21.3 SD =
+  5.5 on 0-30 scale).  Fills the platform's **self-concept
+  dimension gap** — every prior instrument targets a specific
+  syndrome, a craving / impulse construct, an affect dimension,
+  a regulatory construct, or a resilience / recovery construct.
+  None measure GLOBAL SELF-ESTEEM, the evaluative attitude one
+  holds toward oneself.  Self-concept is clinically load-
+  bearing for relapse prevention specifically via the
+  **abstinence-violation effect** (Marlatt 1985 Relapse
+  Prevention pp. 37-44; Marlatt 2005 Relapse Prevention 2nd
+  ed): a single lapse triggers an internal / stable / global
+  attributional cascade with low self-esteem as both substrate
+  and outcome — a self-reinforcing cycle that RSES measures.
+  Intervention matching: low RSES routes to self-compassion-
+  based work (Neff 2003; Gilbert 2010 CFT) or self-efficacy-
+  strengthening (Bandura 1977; Witkiewitz 2007).  Reverse-
+  keyed items (2, 5, 6, 8, 9) are the negatively-worded items
+  ("At times I think I am no good at all", "I feel I do not
+  have much to be proud of", "I certainly feel useless at
+  times", "I wish I could have more respect for myself", "All
+  in all, I am inclined to feel that I am a failure"); post-
+  flip = (ITEM_MIN + ITEM_MAX) - raw = 3 - raw.  Inherits the
+  PGSI / BRS / TAS-20 / PSWQ / LOT-R reverse-keying idiom.
+  Total = sum of post-flip, 0-30.  HIGHER = more self-esteem
+  (higher-is-better direction, uniform with WHO-5 / BRS /
+  PANAS-10 total / LOT-R / MAAS / CD-RISC-10 / Ruler /
+  DTCQ-8).  NO bands — Rosenberg 1965 did not publish clinical
+  cutpoints; Gray-Little 1997 meta-analysis confirmed no
+  banded thresholds; Schmitt & Allik 2005 cross-national means
+  are descriptive, not clinical.  Hand-rolling bands violates
+  CLAUDE.md.  severity = "continuous" sentinel; trajectory
+  layer applies Jacobson-Truax RCI (Jacobson & Truax 1991) on
+  total directly.  NO subscales — Gray-Little 1997 IRT
+  confirmed unidimensional; Tomas 1999 / Marsh 1996 two-factor
+  proposals are method-artifact (positive-negative wording
+  bias), not substantive.  NO T3 — RSES measures self-esteem,
+  not suicidality.  Item 9 "inclined to feel that I am a
+  failure" is a SELF-CONCEPT item per Rosenberg 1965
+  derivation, NOT ideation.  Item 6 "I certainly feel useless
+  at times" is similarly a self-concept item.  Acute-risk
+  screening stays on C-SSRS / PHQ-9 item 9.  ``items`` field
+  preserves RAW pre-flip for audit invariance.  See
+  ``scoring/rses.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1186,6 +1237,10 @@ from .scoring.rrs10 import (
     InvalidResponseError as Rrs10Invalid,
     score_rrs10,
 )
+from .scoring.rses import (
+    InvalidResponseError as RsesInvalid,
+    score_rses,
+)
 from .scoring.scoff import (
     InvalidResponseError as ScoffInvalid,
     SCOFF_POSITIVE_CUTOFF,
@@ -1274,6 +1329,7 @@ Instrument = Literal[
     "brs",
     "scoff",
     "panas10",
+    "rses",
 ]
 
 
@@ -1326,6 +1382,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "brs": 6,
     "scoff": 5,
     "panas10": 10,
+    "rses": 10,
 }
 
 
@@ -3385,6 +3442,72 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=p.instrument_version,
         )
+    if payload.instrument == "rses":
+        # Rosenberg 1965 Self-Esteem Scale — 10-item 0-3 Likert
+        # global self-esteem instrument.  The most widely-used
+        # psychological instrument (>100k citations per Google
+        # Scholar).  Morris Rosenberg's *Society and the
+        # Adolescent Self-Image* (Princeton University Press
+        # 1965) established the unidimensional self-esteem
+        # construct; Gray-Little 1997 IRT meta-analysis
+        # confirmed unidimensional factor structure; Schmitt &
+        # Allik 2005 cross-national n = 16,998 confirmed
+        # factorial invariance across 53 nations.
+        # Fills the platform's **self-concept dimension gap** —
+        # every prior instrument targets a syndrome, a craving /
+        # impulse construct, an affect dimension, a regulatory
+        # construct, or a resilience / recovery construct.  None
+        # measure GLOBAL SELF-ESTEEM, the evaluative attitude
+        # one holds toward oneself.
+        # Clinical load-bearing for relapse prevention via the
+        # **abstinence-violation effect** (AVE; Marlatt 1985
+        # Relapse Prevention pp. 37-44).  A single lapse triggers
+        # an internal / stable / global attributional cascade
+        # with low self-esteem as both substrate and outcome —
+        # a self-reinforcing cycle that RSES measures directly.
+        # Intervention matching:
+        #   - low RSES -> self-compassion-based work (Neff
+        #     2003; Gilbert 2010 CFT) or self-efficacy-
+        #     strengthening (Bandura 1977; Witkiewitz 2007);
+        #   - high RSES with persistent SUD -> possibly
+        #     narcissistic / externalizing profile suggesting
+        #     DBT-adapted framing (Linehan 2015).
+        # Trajectory monitoring: self-esteem is state-sensitive
+        # (Kernis 2005) and responds to intervention within
+        # weeks.  RSES + Jacobson-Truax RCI gives an early-
+        # signal measure of whether intervention is landing or
+        # AVE is dominant.
+        # Reverse-keying: items 2, 5, 6, 8, 9 are negatively
+        # worded; post-flip = 3 - raw.  Inherits the PGSI / BRS
+        # / TAS-20 / PSWQ / LOT-R reverse-keying idiom.  Total =
+        # sum of post-flip, 0-30.  Higher-is-better direction.
+        # No bands — Rosenberg 1965 did not publish clinical
+        # cutpoints; Gray-Little 1997 and Schmitt & Allik 2005
+        # cross-national means are descriptive, not clinical.
+        # severity = "continuous"; trajectory layer applies RCI
+        # on total directly.
+        # No subscales — Gray-Little 1997 IRT confirmed
+        # unidimensional.  Tomas 1999 / Marsh 1996 two-factor
+        # proposals are method-artifact (positive-negative
+        # wording bias), not substantive subscales.
+        # No T3 — RSES measures self-esteem, not suicidality.
+        # Item 9 "All in all, I am inclined to feel that I am a
+        # failure" is a self-concept item per Rosenberg 1965
+        # derivation, NOT ideation.  Item 6 "I certainly feel
+        # useless at times" is similarly a self-concept item.
+        # Acute-risk screening stays on C-SSRS / PHQ-9 item 9.
+        # A clinician reviewing a low RSES should pair it with
+        # a safety screen, but the RSES itself does not carry
+        # an acute-risk signal.  See ``scoring/rses.py``.
+        r = score_rses(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="rses",
+            total=r.total,
+            severity=r.severity,
+            requires_t3=False,
+            instrument_version=r.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3548,6 +3671,7 @@ async def submit_assessment(
         BrsInvalid,
         ScoffInvalid,
         Panas10Invalid,
+        RsesInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

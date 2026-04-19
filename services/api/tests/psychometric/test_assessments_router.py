@@ -14610,6 +14610,488 @@ class TestPanas10Routing:
 
 
 # =============================================================================
+# RSES (self-esteem) routing — Rosenberg 1965 / Gray-Little 1997
+# =============================================================================
+
+
+class TestRsesRouting:
+    """End-to-end routing tests for the RSES dispatcher branch.
+
+    Rosenberg 1965 Self-Esteem Scale — 10 items, 0-3 Likert, total
+    0-30 (POST-FLIP), unidimensional (Gray-Little 1997 IRT), no
+    bands (severity = ``"continuous"``).  **HIGHER = MORE SELF-
+    ESTEEM** — same direction as WHO-5 / BRS / MAAS / CD-RISC-10.
+
+    Reverse-keying: items 2, 5, 6, 8, 9 are negatively worded and
+    flipped via ``3 - raw`` before summation.  The wire ``items``
+    are NOT surfaced by the AssessmentResult envelope (consistent
+    with every other reverse-keyed instrument — TAS-20 / PSWQ /
+    LOT-R / BRS); the wire ``total`` is the POST-FLIP sum.
+
+    Diagnostic property (Marsh 1996): balanced 5-positive / 5-
+    negative wording means raw all-0s AND raw all-3s BOTH yield
+    total 15.  Pinned in two parallel tests because it is the
+    canonical acquiescence-bias-control signature — if either
+    extreme drifts off 15, reverse-keying has broken.
+
+    No bands: Rosenberg 1965 and Gray-Little 1997 did not publish
+    clinical cutpoints.  Jacobson-Truax RCI is applied to the raw
+    total in the trajectory layer, not inside the scorer.  The
+    severity field is the sentinel literal ``"continuous"``.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ----------------------------------------------------
+
+    def test_max_self_esteem_flourishing(self, client: TestClient) -> None:
+        """Maximum self-esteem — raw agreement with every positive
+        (1,3,4,7,10) and disagreement with every negative (2,5,6,
+        8,9).  Post-flip all 3s, total 30.  Clinically: flourishing
+        self-concept."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [3, 0, 3, 3, 0, 0, 3, 0, 0, 3]},
+            headers=self._headers("rses-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "rses"
+        assert body["total"] == 30
+        assert body["severity"] == "continuous"
+
+    def test_min_self_esteem_abstinence_violation_signature(
+        self, client: TestClient
+    ) -> None:
+        """Minimum self-esteem — the Marlatt 1985 abstinence-
+        violation-effect signature.  Raw disagreement with every
+        positive, agreement with every negative.  Post-flip all
+        0s, total 0.  Clinically: the lowest-self-concept ceiling
+        and the substrate most predictive of relapse."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [0, 3, 0, 0, 3, 3, 0, 3, 3, 0]},
+            headers=self._headers("rses-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_acquiescence_bias_all_zeros_yields_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias control (Marsh 1996): raw all-0s
+        (strongly disagree with every item regardless of valence)
+        yields total 15 after reverse-keying — NOT 0.  This is the
+        balanced-wording guarantee; if this drifts, reverse-keying
+        has broken.  5 positive × 0 + 5 negative × (3-0=3) = 15."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [0] * 10},
+            headers=self._headers("rses-acq-zeros"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_acquiescence_bias_all_threes_yields_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias control (Marsh 1996): raw all-3s
+        (strongly agree with every item regardless of valence)
+        yields total 15 — NOT 30.  The mirror of the all-0s test;
+        together these pin the balanced-wording property that
+        Rosenberg 1965 built the scale around."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [3] * 10},
+            headers=self._headers("rses-acq-threes"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_international_mean_vignette(self, client: TestClient) -> None:
+        """Schmitt & Allik 2005 cross-cultural meta-analysis
+        reported an international mean near ~21.  This specific
+        item pattern — mild positive agreement, mild negative
+        disagreement — yields total 21 exactly and represents the
+        typical non-clinical community respondent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [3, 1, 2, 2, 1, 1, 2, 1, 1, 2]},
+            headers=self._headers("rses-intl-mean"),
+        )
+        body = response.json()
+        assert body["total"] == 21
+        assert body["severity"] == "continuous"
+
+    def test_wire_total_is_post_flip_not_raw_sum(
+        self, client: TestClient
+    ) -> None:
+        """The wire total is the POST-FLIP sum.  Raw [3,3,3,3,3,
+        3,3,3,3,3] has raw-sum 30 but post-flip sum 15 — the wire
+        must emit 15 to confirm the scorer applied reverse-keying.
+        (Consistent with TAS-20 / PSWQ / LOT-R / BRS wire-layer
+        policy: the envelope surfaces post-flip; raw pre-flip is
+        preserved only inside the scorer's ``items`` for audit.)"""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [3] * 10},
+            headers=self._headers("rses-post-flip"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["total"] != 30
+
+    def test_response_envelope_has_no_subscales(
+        self, client: TestClient
+    ) -> None:
+        """Gray-Little 1997 IRT confirmed unidimensional — no
+        subscales field.  Two-factor proposals (Tomas 1999) are
+        method-artifact per Marsh 1996, not substantive."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") in (None, {}, [])
+
+    def test_response_envelope_has_no_cutoff_used(
+        self, client: TestClient
+    ) -> None:
+        """RSES is continuous, not a screen — cutoff_used absent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_response_envelope_has_no_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """RSES is continuous, not a screen — positive_screen
+        absent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-no-posscreen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_response_envelope_has_instrument_version(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "rses-1.0.0"
+
+    def test_severity_always_continuous_regardless_of_total(
+        self, client: TestClient
+    ) -> None:
+        """Severity is the sentinel literal ``"continuous"`` for
+        every RSES response — Rosenberg 1965 / Gray-Little 1997
+        did not publish bands, and inventing them would violate
+        the CLAUDE.md "no hand-rolled severity thresholds" rule."""
+        for items, key in (
+            ([3, 0, 3, 3, 0, 0, 3, 0, 0, 3], "rses-sev-30"),
+            ([0, 3, 0, 0, 3, 3, 0, 3, 3, 0], "rses-sev-0"),
+            ([2] * 10, "rses-sev-mid"),
+            ([1, 2, 1, 1, 2, 2, 1, 2, 2, 1], "rses-sev-10"),
+        ):
+            response = client.post(
+                "/v1/assessments",
+                json={"instrument": "rses", "items": items},
+                headers=self._headers(key),
+            )
+            assert response.json()["severity"] == "continuous"
+
+    # -- T3 posture -------------------------------------------------------
+
+    def test_never_requires_t3_at_min(self, client: TestClient) -> None:
+        """RSES has NO safety item.  Even at the AVE-signature
+        minimum (total 0), requires_t3 is False — self-esteem
+        impairment is a clinical substrate but not an acute-risk
+        signal.  C-SSRS / PHQ-9 item 9 remain the T3 sources."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [0, 3, 0, 0, 3, 3, 0, 3, 3, 0]},
+            headers=self._headers("rses-no-t3-min"),
+        )
+        body = response.json()
+        assert body["total"] == 0
+        assert body["requires_t3"] is False
+
+    def test_never_requires_t3_item_9_is_self_concept_not_ideation(
+        self, client: TestClient
+    ) -> None:
+        """Item 9 ("inclined to feel that I am a failure") is a
+        SELF-CONCEPT item per Rosenberg 1965 §2, NOT an ideation
+        item.  Maximum agreement on item 9 (raw 3 -> post-flip 0)
+        must not trigger T3, because failure-framing without
+        lethality context is not suicidality."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2, 1, 2, 2, 1, 1, 2, 1, 3, 2]},
+            headers=self._headers("rses-no-t3-item9"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    # -- Reverse-keying wire-level pins ----------------------------------
+
+    def test_reverse_scoring_position_1_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 1 is positive-worded (non-reverse).  Raising
+        it from 2 to 3 raises the total by +1."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-rev-base1"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [3, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("rses-rev-raise1"),
+        ).json()["total"]
+        assert raised == base + 1
+
+    def test_reverse_scoring_position_2_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 2 is negative-worded (reverse-keyed).  Raising
+        it from 2 to 3 LOWERS the total by -1 (post-flip 1 ->
+        post-flip 0)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-rev-base2"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [2, 3, 2, 2, 2, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("rses-rev-raise2"),
+        ).json()["total"]
+        assert raised == base - 1
+
+    def test_reverse_scoring_position_5_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 5 ("I feel I do not have much to be proud
+        of") is reverse-keyed."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-rev-base5"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [2, 2, 2, 2, 3, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("rses-rev-raise5"),
+        ).json()["total"]
+        assert raised == base - 1
+
+    def test_reverse_scoring_position_9_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 9 ("inclined to feel that I am a failure") is
+        reverse-keyed.  Despite being the most-cited "low self-
+        esteem" item, the mechanical reverse-keying is identical
+        to items 2, 5, 6, 8 — no special-casing."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 10},
+            headers=self._headers("rses-rev-base9"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [2, 2, 2, 2, 2, 2, 2, 2, 3, 2],
+            },
+            headers=self._headers("rses-rev-raise9"),
+        ).json()["total"]
+        assert raised == base - 1
+
+    def test_direction_higher_is_more_self_esteem(
+        self, client: TestClient
+    ) -> None:
+        """Global direction pin — the flourishing pattern must
+        yield a strictly higher total than the AVE-signature
+        pattern.  If this inverts, the valence map has flipped."""
+        flourishing = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [3, 0, 3, 3, 0, 0, 3, 0, 0, 3]},
+            headers=self._headers("rses-dir-flourish"),
+        ).json()["total"]
+        ave = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [0, 3, 0, 0, 3, 3, 0, 3, 3, 0]},
+            headers=self._headers("rses-dir-ave"),
+        ).json()["total"]
+        assert flourishing > ave
+
+    # -- Item-count validation -------------------------------------------
+
+    def test_item_count_9_rejected(self, client: TestClient) -> None:
+        """Trap: someone drops an item and sends 9 — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 9},
+            headers=self._headers("rses-nine-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_11_rejected(self, client: TestClient) -> None:
+        """Trap: someone appends a trailing item — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 11},
+            headers=self._headers("rses-eleven-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_20_rejected(self, client: TestClient) -> None:
+        """Trap: someone confuses RSES (10) with TAS-20 (20)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 20},
+            headers=self._headers("rses-twenty-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_6_rejected(self, client: TestClient) -> None:
+        """Trap: someone confuses RSES (10) with BRS (6)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": [2] * 6},
+            headers=self._headers("rses-six-items"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value validation -------------------------------------------
+
+    def test_item_value_4_rejected(self, client: TestClient) -> None:
+        """RSES Likert is 0-3, not 0-4.  Trap: someone applies a
+        PHQ-9 (0-3) or GAD-7 (0-3) + 1 off-by-one."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [4, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("rses-four-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [-1, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("rses-negative-item"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_99_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [99, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("rses-99-value"),
+        )
+        assert response.status_code == 422
+
+    def test_pydantic_coerces_json_bool_to_int(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``true`` / ``false`` to int 1 / 0
+        at the wire layer — the scorer-level bool rejection (see
+        ``test_rses_scoring``) pins Python-layer bool rejection,
+        but the wire-layer Pydantic coercion means a JSON ``true``
+        in items is accepted as equivalent to ``1``.  Documented
+        here (matching the ACEs wire-layer pin) so any future
+        stricter-validation refactor surfaces this behavior change
+        explicitly.  The request succeeds because [true,false,...]
+        deserializes to a valid [1,0,...] item sequence."""
+        items: list = [True, False, 2, 2, 2, 2, 2, 2, 2, 2]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "rses", "items": items},
+            headers=self._headers("rses-json-bool"),
+        )
+        assert response.status_code == 201
+        assert response.json()["severity"] == "continuous"
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_clinical_vignette_impaired_self_concept_early_recovery(
+        self, client: TestClient
+    ) -> None:
+        """Early-recovery SUD patient with impaired self-concept.
+        Mild disagreement with positives (raw 1), mild agreement
+        with negatives (raw 2, post-flip 1).  Total 5+5=10 —
+        well below the Schmitt 2005 international mean of 21,
+        consistent with the Marlatt 1985 AVE substrate."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [1, 2, 1, 1, 2, 2, 1, 2, 2, 1],
+            },
+            headers=self._headers("rses-vignette-impaired"),
+        )
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "continuous"
+
+    def test_clinical_vignette_mild_positive(
+        self, client: TestClient
+    ) -> None:
+        """Non-clinical community respondent — mild agreement
+        with positives (raw 2), mild disagreement with negatives
+        (raw 1, post-flip 2).  Total 10+10=20, just below the
+        Schmitt 2005 international mean of 21."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rses",
+                "items": [2, 1, 2, 2, 1, 1, 2, 1, 1, 2],
+            },
+            headers=self._headers("rses-vignette-mild-positive"),
+        )
+        body = response.json()
+        assert body["total"] == 20
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
