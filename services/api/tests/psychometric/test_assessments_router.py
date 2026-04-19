@@ -30395,3 +30395,412 @@ class TestSasSvRouting:
         ).json()
         assert a["total"] == b["total"]
         assert a["positive_screen"] == b["positive_screen"]
+
+
+# ---------------------------------------------------------------------------
+# TestPhq9Routing
+# ---------------------------------------------------------------------------
+
+
+class TestPhq9Routing:
+    """HTTP-layer tests for PHQ-9 (Kroenke, Spitzer, Williams 2001).
+
+    9 items, 0-3 Likert. Total 0-27, HIGHER = MORE depressive symptoms.
+    Severity bands: none (0-4), mild (5-9), moderate (10-14),
+    moderately_severe (15-19), severe (20-27).
+    Item 9 > 0 triggers T3: requires_t3=True, t3_reason="phq9_item9_positive".
+    No cutoff_used, no positive_screen, no subscales.
+    """
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"phq9-test-{idem_key}"}
+
+    @staticmethod
+    def _floor_items() -> list[int]:
+        return [0] * 9
+
+    @staticmethod
+    def _ceil_items() -> list[int]:
+        return [3] * 9
+
+    @staticmethod
+    def _items_with_total(total: int) -> list[int]:
+        """Build a valid 9-item list with the given total (0-27).
+        Item 9 kept at 0 to avoid T3 triggering.
+        """
+        items = [0] * 9
+        remaining = total
+        for i in range(8):  # only first 8 items — keep item 9 at 0
+            add = min(3, remaining)
+            items[i] += add
+            remaining -= add
+            if remaining == 0:
+                break
+        return items
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_phq9_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_phq9_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_phq9_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "phq9"
+
+    def test_phq9_total_floor(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("total-floor"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_phq9_total_ceil(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._ceil_items()},
+            headers=self._headers("total-ceil"),
+        ).json()
+        assert body["total"] == 27
+
+    def test_phq9_severity_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("sev-present"),
+        ).json()
+        assert "severity" in body
+
+    def test_phq9_requires_t3_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("t3-present"),
+        ).json()
+        assert "requires_t3" in body
+
+    def test_phq9_no_cutoff_used(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_phq9_no_positive_screen(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("no-ps"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_phq9_no_subscales(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._floor_items()},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    # ------------------------------------------------------------------
+    # Severity bands
+    # ------------------------------------------------------------------
+
+    def test_phq9_severity_none_at_0(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(0)},
+            headers=self._headers("sev-none-0"),
+        ).json()
+        assert body["severity"] == "none"
+
+    def test_phq9_severity_none_at_4(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(4)},
+            headers=self._headers("sev-none-4"),
+        ).json()
+        assert body["severity"] == "none"
+
+    def test_phq9_severity_mild_at_5(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(5)},
+            headers=self._headers("sev-mild-5"),
+        ).json()
+        assert body["severity"] == "mild"
+
+    def test_phq9_severity_mild_at_9(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(9)},
+            headers=self._headers("sev-mild-9"),
+        ).json()
+        assert body["severity"] == "mild"
+
+    def test_phq9_severity_moderate_at_10(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(10)},
+            headers=self._headers("sev-mod-10"),
+        ).json()
+        assert body["severity"] == "moderate"
+
+    def test_phq9_severity_moderate_at_14(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(14)},
+            headers=self._headers("sev-mod-14"),
+        ).json()
+        assert body["severity"] == "moderate"
+
+    def test_phq9_severity_moderately_severe_at_15(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(15)},
+            headers=self._headers("sev-modsev-15"),
+        ).json()
+        assert body["severity"] == "moderately_severe"
+
+    def test_phq9_severity_moderately_severe_at_19(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(19)},
+            headers=self._headers("sev-modsev-19"),
+        ).json()
+        assert body["severity"] == "moderately_severe"
+
+    def test_phq9_severity_severe_at_20(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(20)},
+            headers=self._headers("sev-severe-20"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    def test_phq9_severity_severe_at_27(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._ceil_items()},
+            headers=self._headers("sev-severe-27"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    # ------------------------------------------------------------------
+    # T3 safety routing (item 9)
+    # ------------------------------------------------------------------
+
+    def test_phq9_item9_zero_no_t3(self, client: TestClient) -> None:
+        items = [0] * 9  # item 9 = 0
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-item9-0"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_phq9_item9_1_triggers_t3(self, client: TestClient) -> None:
+        items = [0] * 9
+        items[8] = 1  # item 9 in 0-indexed
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-item9-1"),
+        ).json()
+        assert body["requires_t3"] is True
+
+    def test_phq9_item9_2_triggers_t3(self, client: TestClient) -> None:
+        items = [0] * 9
+        items[8] = 2
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-item9-2"),
+        ).json()
+        assert body["requires_t3"] is True
+
+    def test_phq9_item9_3_triggers_t3(self, client: TestClient) -> None:
+        items = [0] * 9
+        items[8] = 3
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-item9-3"),
+        ).json()
+        assert body["requires_t3"] is True
+
+    def test_phq9_t3_reason_on_positive_item9(self, client: TestClient) -> None:
+        items = [0] * 9
+        items[8] = 1
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-reason"),
+        ).json()
+        assert body["t3_reason"] == "phq9_item9_positive"
+
+    def test_phq9_t3_reason_none_when_no_t3(self, client: TestClient) -> None:
+        items = [0] * 9
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-reason-none"),
+        ).json()
+        assert body.get("t3_reason") is None
+
+    def test_phq9_high_score_no_t3_when_item9_zero(
+        self, client: TestClient
+    ) -> None:
+        # Total=24 across items 1-8, item 9=0 — no T3 despite high total
+        items = [3] * 8 + [0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-high-no-t3"),
+        ).json()
+        assert body["requires_t3"] is False
+        assert body["total"] == 24
+
+    def test_phq9_low_score_t3_when_item9_positive(
+        self, client: TestClient
+    ) -> None:
+        # Total=1 (only item 9 = 1) — T3 fires even at minimal overall score
+        items = [0] * 8 + [1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("t3-low-t3"),
+        ).json()
+        assert body["requires_t3"] is True
+        assert body["total"] == 1
+
+    # ------------------------------------------------------------------
+    # Item-count validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_phq9_8_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [0] * 8},
+            headers=self._headers("cnt-8"),
+        )
+        assert resp.status_code == 422
+
+    def test_phq9_10_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [0] * 10},
+            headers=self._headers("cnt-10"),
+        )
+        assert resp.status_code == 422
+
+    def test_phq9_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-range validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_phq9_item_4_returns_422(self, client: TestClient) -> None:
+        items = [0] * 9
+        items[0] = 4
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("range-4"),
+        )
+        assert resp.status_code == 422
+
+    def test_phq9_negative_item_returns_422(self, client: TestClient) -> None:
+        items = [0] * 9
+        items[3] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_phq9_mdd_episode_severe(self, client: TestClient) -> None:
+        # All items at max — MDD with suicidal ideation
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._ceil_items()},
+            headers=self._headers("vig-mdd"),
+        ).json()
+        assert body["severity"] == "severe"
+        assert body["requires_t3"] is True
+
+    def test_phq9_subclinical_no_t3(self, client: TestClient) -> None:
+        # PHQ-9 total=3, item 9=0
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": self._items_with_total(3)},
+            headers=self._headers("vig-sub"),
+        ).json()
+        assert body["severity"] == "none"
+        assert body["requires_t3"] is False
+
+    def test_phq9_total_matches_sum(self, client: TestClient) -> None:
+        items = [0, 1, 2, 3, 1, 0, 2, 1, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("sum-match"),
+        ).json()
+        assert body["total"] == sum(items)
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_phq9_deterministic(self, client: TestClient) -> None:
+        items = [0, 1, 2, 3, 1, 0, 2, 1, 0]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
+        assert a["requires_t3"] == b["requires_t3"]
