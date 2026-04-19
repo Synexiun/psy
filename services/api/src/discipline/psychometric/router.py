@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6.
+GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -308,6 +308,52 @@ Safety routing:
   suicidality item — items 5 (fidget) and 6 (driven by a motor)
   probe hyperactivity, not intent — acute ideation screening remains
   PHQ-9 item 9 / C-SSRS.  See ``scoring/asrs6.py``.
+  AAQ-II (Bond 2011) is the 7-item Acceptance and Action
+  Questionnaire-II — the definitive transdiagnostic measure of
+  **psychological inflexibility**, the ACT (Acceptance and Commitment
+  Therapy) target construct.  Where CBT-aligned instruments (PHQ-9 /
+  GAD-7 / PCL-5) measure symptom severity, AAQ-II measures the
+  *relationship* to symptoms (experiential avoidance / cognitive
+  fusion) — two patients with identical PHQ-9 totals can differ
+  sharply on AAQ-II, and the AAQ-II difference predicts treatment
+  course and intervention fit independently of symptom severity
+  (Bond 2011, Hayes 2006).  Closes the ACT-alignment intervention-
+  selection gap at the platform assessment layer: the contextual
+  bandit needs the psychological-inflexibility signal to route a
+  craving episode to an ACT-variant tool (defusion / values-
+  clarification / willingness exercises) when experiential avoidance
+  is the active process, rather than defaulting to CBT cognitive
+  restructuring which can backfire in high-inflexibility patients
+  (Hayes 2006 §"When not to do CBT").  **First instrument with a
+  1-7 Likert envelope in the package** — prior instruments use 0-3
+  (C-SSRS), 0-4 (PHQ-9 / GAD-7 / DUDIT items 1-9 / ASRS-6 / etc.),
+  0-5 (WHO-5 / PCL-5 / OCI-R), or 1-5 (K10 / K6).  Bond 2011's
+  7-point scale reduces ceiling / floor compression observed in
+  earlier AAQ versions; the widened per-item resolution is load-
+  bearing at the sensitivity layer.  ``ITEM_MIN = 1`` is shared with
+  K10 / K6 but ``ITEM_MAX = 7`` is novel — a response of 0 is
+  rejected (even though 0-indexed instruments in the package accept
+  it) and responses of 6 / 7 are accepted (even though K10 / K6
+  would reject them).  Total 7-49.  Cutoff ≥ 24 per Bond 2011 (ROC-
+  derived vs SCID-II, sensitivity 0.75 / specificity 0.80).  The
+  router maps onto the cutoff-only wire envelope (severity =
+  "positive_screen" / "negative_screen") uniform with PHQ-2 / GAD-2 /
+  OASIS / PC-PTSD-5 / AUDIT-C / SDS / K6 / DUDIT / ASRS-6.
+  ``cutoff_used`` echoes the Bond 2011 cutoff (= 24, constant across
+  all inputs — unlike AUDIT-C / SDS / DUDIT where the cutoff varies
+  by demographic axis).  **No subscale exposure**: Bond 2011's
+  confirmatory factor analysis supports a unidimensional structure
+  for AAQ-II; earlier AAQ-I / 9-item sub-factor proposals did not
+  survive psychometric refinement into AAQ-II.  **No banded
+  severity**: Bond 2011 published only the ≥ 24 clinical cutoff;
+  secondary sources with ordinal bands are not calibrated against a
+  published clinical criterion and the package refuses to ship them
+  per CLAUDE.md's "don't hand-roll severity thresholds" rule.  No
+  safety routing: AAQ-II has no suicidality item — item 1 / 4
+  ("painful experiences and memories") and item 2 ("afraid of my
+  feelings") are process-of-avoidance probes, not intent probes —
+  acute ideation screening remains PHQ-9 item 9 / C-SSRS.  See
+  ``scoring/aaq2.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -333,6 +379,10 @@ from discipline.shared.logging import LogStream, get_stream_logger
 
 from .repository import AssessmentRecord, get_assessment_repository
 from .safety_items import evaluate_phq9
+from .scoring.aaq2 import (
+    InvalidResponseError as Aaq2Invalid,
+    score_aaq2,
+)
 from .scoring.asrs6 import (
     ASRS6_POSITIVE_CUTOFF,
     InvalidResponseError as Asrs6Invalid,
@@ -471,6 +521,7 @@ Instrument = Literal[
     "k6",
     "dudit",
     "asrs6",
+    "aaq2",
 ]
 
 
@@ -506,6 +557,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "k6": 6,
     "dudit": 11,
     "asrs6": 6,
+    "aaq2": 7,
 }
 
 
@@ -618,11 +670,11 @@ class AssessmentResult(BaseModel):
 
     Instrument-specific optional fields:
     - ``index`` — WHO-5 only; the WHO-5 Index (0–100).
-    - ``cutoff_used`` — AUDIT-C / SDS / DUDIT / ASRS-6; the cutoff that was
-      applied (AUDIT-C 3 or 4, SDS 3-5 by substance, DUDIT 2 or 6 by sex,
-      ASRS-6 4 of 6 fired items).
+    - ``cutoff_used`` — AUDIT-C / SDS / DUDIT / ASRS-6 / AAQ-II; the cutoff
+      that was applied (AUDIT-C 3 or 4, SDS 3-5 by substance, DUDIT 2 or 6
+      by sex, ASRS-6 4 of 6 fired items, AAQ-II 24 per Bond 2011).
     - ``positive_screen`` — AUDIT-C / SDS / DUDIT / K6 / PHQ-2 / GAD-2 /
-      OASIS / PC-PTSD-5 / MDQ / ASRS-6; whether the cutoff gate is met.
+      OASIS / PC-PTSD-5 / MDQ / ASRS-6 / AAQ-II; whether the cutoff gate is met.
     - ``t3_reason`` — PHQ-9 / C-SSRS when ``requires_t3`` is True;
       a short machine-readable reason code for logging/display.
     - ``triggering_items`` — C-SSRS / ASRS-6; 1-indexed item numbers that
@@ -645,7 +697,7 @@ class AssessmentResult(BaseModel):
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
-      SDS / DUDIT / ASRS-6 / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
+      SDS / DUDIT / ASRS-6 / AAQ-II / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
       Readiness Ruler / DTCQ-8) emit ``subscales=None``.
 
@@ -1405,6 +1457,45 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             triggering_items=list(ar.triggering_items),
             instrument_version=ar.instrument_version,
         )
+    if payload.instrument == "aaq2":
+        # Bond 2011 Acceptance and Action Questionnaire-II — 7-item
+        # transdiagnostic measure of psychological inflexibility, the
+        # ACT (Acceptance and Commitment Therapy) target construct.
+        # **First 1-7 Likert instrument in the package** — the widened
+        # per-item resolution (7 points vs 5) reduces ceiling / floor
+        # compression observed in earlier AAQ versions and is load-
+        # bearing at the sensitivity layer (Bond 2011).
+        # ``ITEM_MIN = 1`` is shared with K10 / K6 but the 7-point
+        # ceiling is novel; the scorer rejects 0 (even though 0-indexed
+        # instruments accept it) and accepts 6 / 7 (even though K10 /
+        # K6 would reject them).  Cutoff ≥ 24 per Bond 2011 (ROC-
+        # derived vs SCID-II, sensitivity 0.75 / specificity 0.80) —
+        # constant across all inputs, unlike AUDIT-C / SDS / DUDIT
+        # where the cutoff varies by demographic axis.  Cutoff envelope
+        # uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 / AUDIT-C /
+        # SDS / K6 / DUDIT / ASRS-6.  No subscales (Bond 2011 CFA
+        # supports unidimensional structure).  No banded severity
+        # (Bond 2011 published only the ≥ 24 cutoff).  No T3 (AAQ-II
+        # has no suicidality item — "painful experiences" / "afraid of
+        # feelings" items are process-of-avoidance probes, not intent
+        # probes).  Clinically: positive screen routes a craving
+        # episode to ACT-variant intervention tools (defusion / values-
+        # clarification / willingness exercises) at the bandit layer
+        # when experiential avoidance is the active process.  See
+        # ``scoring/aaq2.py``.
+        aq = score_aaq2(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="aaq2",
+            total=aq.total,
+            severity=(
+                "positive_screen" if aq.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            cutoff_used=aq.cutoff_used,
+            positive_screen=aq.positive_screen,
+            instrument_version=aq.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1551,6 +1642,7 @@ async def submit_assessment(
         K6Invalid,
         DuditInvalid,
         Asrs6Invalid,
+        Aaq2Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

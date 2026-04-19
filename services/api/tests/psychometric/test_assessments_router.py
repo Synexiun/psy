@@ -6732,6 +6732,406 @@ class TestAsrs6Routing:
         assert body["positive_screen"] is True
 
 
+class TestAaq2Routing:
+    """AAQ-II (Bond 2011) router dispatch.
+
+    Wire contract invariants:
+    - Cutoff envelope (``severity`` = "positive_screen" /
+      "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS /
+      PC-PTSD-5 / AUDIT-C / SDS / K6 / DUDIT / ASRS-6.
+    - ``cutoff_used`` echoes Bond 2011's ≥ 24 clinical cutoff —
+      constant across all inputs (unlike AUDIT-C / SDS / DUDIT where
+      the cutoff varies by demographic axis).
+    - ``requires_t3`` is always False — AAQ-II has no safety item.
+    - ``subscales=None`` — Bond 2011 CFA validates unidimensional.
+    - ``triggering_items`` is None — AAQ-II is a sum-vs-cutoff
+      instrument, no per-item firing audit trail.
+    - NOVEL 1-7 Likert envelope — first in the package.  Items
+      outside [1, 7] must 422 (0 rejects even though 0-indexed
+      instruments accept it; 8 rejects at the ceiling).
+    """
+
+    def test_all_min_is_negative(self, client: TestClient) -> None:
+        """Every item at 1 ("Never true") — total 7, far below
+        cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [1, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-aaq2-min",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "aaq2"
+        assert body["total"] == 7
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 24
+        assert body["requires_t3"] is False
+
+    def test_below_cutoff_is_negative(self, client: TestClient) -> None:
+        """Total 23 — one below Bond 2011's ≥ 24 cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [3, 3, 3, 3, 3, 4, 4],
+                "user_id": "user-aaq2-below",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 23
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_at_cutoff_is_positive(self, client: TestClient) -> None:
+        """Total 24 — at Bond 2011's clinical cutoff.  Boundary is
+        ≥, not >."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [3, 3, 3, 3, 4, 4, 4],
+                "user_id": "user-aaq2-at",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 24
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 24
+
+    def test_maxed_positive(self, client: TestClient) -> None:
+        """Ceiling case — every item at 7 ("Always true")."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [7, 7, 7, 7, 7, 7, 7],
+                "user_id": "user-aaq2-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 49
+        assert body["positive_screen"] is True
+
+    def test_cutoff_used_is_constant(self, client: TestClient) -> None:
+        """Unlike AUDIT-C / SDS / DUDIT, AAQ-II's cutoff does not vary
+        by a demographic axis.  Every AAQ-II response surfaces
+        cutoff_used = 24."""
+        for items, user in [
+            ([1, 1, 1, 1, 1, 1, 1], "user-aaq2-cu-low"),
+            ([4, 4, 4, 4, 4, 4, 4], "user-aaq2-cu-mid"),
+            ([7, 7, 7, 7, 7, 7, 7], "user-aaq2-cu-high"),
+        ]:
+            response = client.post(
+                "/v1/assessments",
+                json={
+                    "instrument": "aaq2",
+                    "items": items,
+                    "user_id": user,
+                },
+                headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+            )
+            assert response.status_code == 201
+            assert response.json()["cutoff_used"] == 24
+
+    def test_rejects_wrong_item_count(self, client: TestClient) -> None:
+        """AAQ-II requires exactly 7 items."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [1, 1, 1, 1, 1, 1],  # 6 items
+                "user_id": "user-aaq2-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_zero_item(self, client: TestClient) -> None:
+        """NOVEL 1-7 envelope: 0 is rejected even though every
+        0-indexed instrument in the package accepts it.  Distinct
+        clinical meaning — Bond 2011 Likert starts at 1 = "Never
+        true"."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [0, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-aaq2-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_eight_item(self, client: TestClient) -> None:
+        """NOVEL 1-7 envelope: 8 is out-of-range — the Likert ceiling
+        is 7 ("Always true")."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [8, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-aaq2-eight",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_accepts_six_and_seven(self, client: TestClient) -> None:
+        """NOVEL 1-7 envelope: 6 ("Almost always true") and 7
+        ("Always true") are valid — K10 / K6 would reject these
+        even though their ITEM_MIN=1 matches AAQ-II.  Pin that
+        AAQ-II widens the ceiling cleanly."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [6, 7, 6, 7, 6, 7, 6],
+                "user_id": "user-aaq2-sixes-sevens",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 45
+        assert body["positive_screen"] is True
+
+    def test_never_fires_t3(self, client: TestClient) -> None:
+        """All max — no safety flag.  Items 1 / 4 ("painful
+        experiences / memories") and 2 ("afraid of my feelings") are
+        process-of-avoidance probes, NOT intent probes."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [7, 7, 7, 7, 7, 7, 7],
+                "user_id": "user-aaq2-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_subscales_is_none(self, client: TestClient) -> None:
+        """Bond 2011 CFA: unidimensional.  No subscales surfaced."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [4, 4, 4, 4, 4, 4, 4],
+                "user_id": "user-aaq2-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        """AAQ-II is a sum-vs-cutoff instrument; no per-item firing
+        concept.  Unlike ASRS-6, no triggering_items surface."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [7, 7, 7, 7, 7, 7, 7],
+                "user_id": "user-aaq2-triggering",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # Wire shape: triggering_items key exists on the envelope but
+        # value is None (or empty) for instruments without per-item
+        # firing.  The persistence layer stores None.
+        assert not body.get("triggering_items")
+
+    def test_instrument_version_surfaces(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [1, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-aaq2-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument_version"] == "aaq2-1.0.0"
+
+    def test_persists_to_repository(self, client: TestClient) -> None:
+        """A submission with user_id persists to the history
+        repository with the cutoff fields preserved."""
+        user = "user-aaq2-persist"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [4, 4, 4, 4, 4, 4, 4],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "aaq2"
+        assert rec.total == 28
+        assert rec.positive_screen is True
+        assert rec.cutoff_used == 24
+
+    def test_history_projects_aaq2(self, client: TestClient) -> None:
+        """GET /history surfaces the AAQ-II result with cutoff_used
+        and positive_screen preserved."""
+        user = "user-aaq2-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [5, 5, 5, 5, 5, 5, 5],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "aaq2"
+        assert entry["total"] == 35
+        assert entry["positive_screen"] is True
+        assert entry["cutoff_used"] == 24
+
+    def test_aaq2_and_phq9_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """AAQ-II (psychological inflexibility, process measure) and
+        PHQ-9 (depression severity, symptom measure) cover ORTHOGONAL
+        constructs.  A high PHQ-9 does not imply a high AAQ-II and
+        vice versa.  The wire must preserve both records cleanly so
+        the bandit can read both signals when picking an
+        intervention variant."""
+        user = "user-aaq2-phq9-both"
+        # AAQ-II — high inflexibility (total 35).
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [5, 5, 5, 5, 5, 5, 5],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        # PHQ-9 — moderate depression (total 12).
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [2, 2, 1, 1, 2, 1, 1, 1, 1],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert set(by_instrument) == {"aaq2", "phq9"}
+        # Independent wire surfaces — AAQ-II carries cutoff_used=24
+        # with positive_screen; PHQ-9 carries severity banding.
+        assert by_instrument["aaq2"].cutoff_used == 24
+        assert by_instrument["aaq2"].positive_screen is True
+        assert by_instrument["phq9"].total == 12
+        assert by_instrument["phq9"].severity == "moderate"
+        # PHQ-9 doesn't populate cutoff_used (banded instrument).
+        assert by_instrument["phq9"].cutoff_used is None
+
+    def test_ignores_sex_field(self, client: TestClient) -> None:
+        """AAQ-II is not sex-keyed — submitting a ``sex`` field must
+        be ignored without perturbing the screen decision.  Bond 2011
+        published a single cutoff regardless of demographic axis."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [3, 3, 3, 3, 4, 4, 4],
+                "sex": "female",
+                "user_id": "user-aaq2-sex-ignored",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 24
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 24  # not a sex-keyed cutoff
+
+    def test_ignores_substance_field(self, client: TestClient) -> None:
+        """AAQ-II is not substance-keyed — submitting ``substance``
+        must not perturb scoring (SDS-only field)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [4, 4, 4, 4, 4, 4, 4],
+                "substance": "heroin",
+                "user_id": "user-aaq2-substance-ignored",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 24
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """concurrent_symptoms / functional_impairment are MDQ-only."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [5, 5, 5, 5, 5, 5, 5],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-aaq2-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "aaq2"
+        assert body["total"] == 35
+        assert body["positive_screen"] is True
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
