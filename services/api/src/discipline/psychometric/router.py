@@ -1,5 +1,5 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT-C, C-SSRS,
-PSS-10.
+PSS-10, DAST-10.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -31,8 +31,8 @@ Safety routing:
   T3 check per Kroenke 2001).
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
-- GAD-7, WHO-5, AUDIT-C, PSS-10 have no safety items — ``requires_t3``
-  is always False.  WHO-5 ``depression_screen`` band is *not* a T3
+- GAD-7, WHO-5, AUDIT-C, PSS-10, DAST-10 have no safety items —
+  ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen`` band is *not* a T3
   trigger; T3 is reserved for active suicidality per
   Docs/Whitepapers/04_Safety_Framework.md §T3.
 
@@ -62,6 +62,7 @@ from .scoring.cssrs import (
     InvalidResponseError as CssrsInvalid,
     score_cssrs_screen,
 )
+from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
 from .scoring.gad7 import InvalidResponseError as Gad7Invalid, score_gad7
 from .scoring.phq9 import InvalidResponseError as Phq9Invalid, score_phq9
 from .scoring.pss10 import InvalidResponseError as Pss10Invalid, score_pss10
@@ -77,7 +78,7 @@ router = APIRouter(prefix="/assessments", tags=["psychometric"])
 _safety = get_stream_logger(LogStream.SAFETY)
 
 
-Instrument = Literal["phq9", "gad7", "who5", "audit_c", "cssrs", "pss10"]
+Instrument = Literal["phq9", "gad7", "who5", "audit_c", "cssrs", "pss10", "dast10"]
 
 
 # Item-count contracts per instrument.  Pinned so a request with the
@@ -90,6 +91,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "audit_c": 3,
     "cssrs": 6,
     "pss10": 10,
+    "dast10": 10,
 }
 
 
@@ -268,15 +270,25 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             triggering_items=list(c.triggering_items),
             instrument_version=c.instrument_version,
         )
-    # pss10
-    p = score_pss10(payload.items)
+    if payload.instrument == "pss10":
+        p = score_pss10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pss10",
+            total=p.total,
+            severity=p.band,
+            requires_t3=False,
+            instrument_version=p.instrument_version,
+        )
+    # dast10
+    d = score_dast10(payload.items)
     return AssessmentResult(
         assessment_id=str(uuid4()),
-        instrument="pss10",
-        total=p.total,
-        severity=p.band,
+        instrument="dast10",
+        total=d.total,
+        severity=d.band,
         requires_t3=False,
-        instrument_version=p.instrument_version,
+        instrument_version=d.instrument_version,
     )
 
 
@@ -337,6 +349,7 @@ async def submit_assessment(
         AuditCInvalid,
         CssrsInvalid,
         Pss10Invalid,
+        Dast10Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
@@ -421,8 +434,8 @@ async def compute_trajectory(payload: TrajectoryRequest) -> TrajectoryResponse:
     yield identical outputs.
 
     Direction interpretation by instrument:
-    - PHQ-9 / GAD-7 / PSS-10 / AUDIT-C: lower is better; ``delta < 0``
-      with |delta| ≥ threshold → improvement.
+    - PHQ-9 / GAD-7 / PSS-10 / AUDIT-C / DAST-10: lower is better;
+      ``delta < 0`` with |delta| ≥ threshold → improvement.
     - WHO-5: higher is better; ``delta > 0`` with |delta| ≥ threshold
       → improvement.
 

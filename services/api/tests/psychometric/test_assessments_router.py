@@ -603,6 +603,103 @@ class TestPss10Routing:
 
 
 # =============================================================================
+# DAST-10 — HTTP dispatch
+# =============================================================================
+
+
+class TestDast10Routing:
+    """DAST-10 over the wire.
+
+    Two coverage priorities over the scorer's unit tests: (1) confirm
+    the router's dispatch branch picks ``score_dast10`` and populates
+    the unified envelope correctly, (2) confirm that DAST-10 — which
+    has no safety item — never trips the T3 path regardless of score
+    severity.
+    """
+
+    def test_all_no_is_low_with_reverse_score(self, client: TestClient) -> None:
+        """Subtle case: all-No inputs produce total 1 (not 0) because
+        item 3 reverses — "no, I cannot always stop" → scored 1.  This
+        is the same family of 'baseline isn't zero' property that PSS-10
+        has; a regression here would silently under-report drug-use
+        problems in patients who answer No to everything."""
+        resp = _post(client, instrument="dast10", items=[0] * 10)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "dast10"
+        assert body["total"] == 1
+        assert body["severity"] == "low"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "dast10-1.0.0"
+
+    def test_none_band(self, client: TestClient) -> None:
+        """True 'no problems' profile — all items No except item 3
+        (Yes, can always stop), which reverses to 0 and keeps the
+        total at 0."""
+        items = [0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+        resp = _post(client, instrument="dast10", items=items)
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "none"
+
+    def test_moderate_band(self, client: TestClient) -> None:
+        """Moderate band — brief intervention indicated.  Tests the
+        reverse-scored contribution to an interior band."""
+        # Items 1, 4, 5, 6 Yes; item 3 No → scored 1.  Total 5.
+        items = [1, 0, 0, 1, 1, 1, 0, 0, 0, 0]
+        resp = _post(client, instrument="dast10", items=items)
+        body = resp.json()
+        assert body["total"] == 5
+        assert body["severity"] == "moderate"
+
+    def test_severe_band(self, client: TestClient) -> None:
+        """Maximum score — every item endorsed with loss of control
+        on item 3.  Intensive-treatment indicated."""
+        items = [1, 1, 0, 1, 1, 1, 1, 1, 1, 1]
+        resp = _post(client, instrument="dast10", items=items)
+        body = resp.json()
+        assert body["total"] == 10
+        assert body["severity"] == "severe"
+        assert body["requires_t3"] is False
+
+    def test_wrong_item_count_422(self, client: TestClient) -> None:
+        """Router validates count before scoring; error message names
+        the instrument so a multi-instrument harness can route by it."""
+        resp = _post(client, instrument="dast10", items=[0] * 9)
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert "dast10" in detail["message"]
+        assert "10 items" in detail["message"]
+
+    def test_out_of_range_item_422(self, client: TestClient) -> None:
+        """A raw value of 2 is invalid on a 0/1 (no/yes) scale."""
+        resp = _post(
+            client, instrument="dast10", items=[2, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        )
+        assert resp.status_code == 422
+
+    def test_dast10_never_fires_t3(self, client: TestClient) -> None:
+        """Across every band DAST-10 never sets ``requires_t3=True``.
+        DAST-10 has no safety item (no C-SSRS-style suicidality question,
+        no PHQ-9-style item 9).  A regression here would route drug-use
+        patients into the crisis UI when they should go to substance-use
+        intake."""
+        cases = [
+            [0, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # none
+            [1, 0, 1, 0, 0, 0, 0, 0, 0, 0],  # low
+            [1, 0, 0, 1, 1, 1, 0, 0, 0, 0],  # moderate
+            [1, 1, 0, 1, 1, 1, 1, 1, 0, 0],  # substantial
+            [1, 1, 0, 1, 1, 1, 1, 1, 1, 1],  # severe
+        ]
+        for items in cases:
+            resp = _post(client, instrument="dast10", items=items)
+            assert resp.status_code == 201
+            body = resp.json()
+            assert body["requires_t3"] is False
+            assert body.get("t3_reason") is None
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
@@ -629,6 +726,11 @@ class TestExtendedResponseShape:
         pss10_body = _post(client, instrument="pss10", items=[2] * 10).json()
         assert not (required - set(pss10_body.keys()))
 
+        dast10_body = _post(
+            client, instrument="dast10", items=[0, 0, 1, 0, 0, 0, 0, 0, 0, 0]
+        ).json()
+        assert not (required - set(dast10_body.keys()))
+
     def test_triggering_items_absent_or_empty_for_non_cssrs(
         self, client: TestClient
     ) -> None:
@@ -639,6 +741,11 @@ class TestExtendedResponseShape:
         assert body.get("triggering_items") in (None, [])
 
         body = _post(client, instrument="pss10", items=[2] * 10).json()
+        assert body.get("triggering_items") in (None, [])
+
+        body = _post(
+            client, instrument="dast10", items=[1, 1, 0, 1, 1, 1, 1, 1, 1, 1]
+        ).json()
         assert body.get("triggering_items") in (None, [])
 
 
@@ -831,6 +938,18 @@ class TestSafetyStreamT3Emission:
     ) -> None:
         captured = self._capture_safety_events(monkeypatch)
         _post(client, instrument="pss10", items=[4] * 10)
+        assert captured == []
+
+    def test_dast10_never_emits(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """DAST-10 has no safety item — even the maximum-severity
+        screen (every item endorsed, control item negative) must not
+        fire a safety event.  A regression that emitted on DAST-10
+        severe would put substance-use intake patients into the
+        clinical-ops T3 paging queue, where they don't belong."""
+        captured = self._capture_safety_events(monkeypatch)
+        _post(client, instrument="dast10", items=[1, 1, 0, 1, 1, 1, 1, 1, 1, 1])
         assert captured == []
 
     # ---- user_id pass-through ----
