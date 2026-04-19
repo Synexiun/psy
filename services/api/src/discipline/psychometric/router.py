@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS, K6.
+GAD-2, OASIS, K10, SDS, K6, DUDIT.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -235,6 +235,37 @@ Safety routing:
   hopelessness / depressed / worthless items (2 / 4 / 6) are affect
   probes, not intent probes — same posture as K10.  See
   ``scoring/k6.py``.
+  DUDIT (Berman 2003, 2005) is the 11-item Drug Use Disorders
+  Identification Test — the parallel to AUDIT for non-alcohol
+  substances.  Together with AUDIT-C (alcohol) and the Gossop 1995
+  SDS (specific-substance dependence), DUDIT completes the substance-
+  use screening trio at the assessment layer.  **First instrument
+  with a non-uniform per-index item validator** — items 1-9 take
+  the 0-4 Likert envelope, items 10-11 take the {0, 2, 4} trinary
+  envelope (no / yes-but-not-in-last-year / yes-in-last-year).  A
+  response of 1 or 3 on items 10-11 is rejected at the scorer even
+  though it sits within the numerical range 0-4; the router forwards
+  the scorer's ``InvalidResponseError`` as 422 with a message naming
+  the legal values (0/2/4).  Total 0-44.  Sex-keyed cutoffs
+  (Berman 2005): men ≥ 6 / women ≥ 2 / unspecified ≥ 2 (safety-
+  conservative default, matches female cutoff — same posture as
+  AUDIT-C sex = "unspecified").  The sex asymmetry is larger than
+  AUDIT-C's (3× vs ≈1.3×) because women show drug-related harm at
+  substantially lower use frequencies per Berman 2005 §4.  The
+  ``sex`` field on the request is now read by both AUDIT-C and DUDIT
+  — a single demographic axis serves both sex-keyed cutoff
+  instruments.  The router maps onto the cutoff-only wire envelope
+  (severity = "positive_screen" / "negative_screen") uniform with
+  PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 / AUDIT-C / SDS / K6.  ``cutoff_used``
+  echoes the sex-keyed cutoff so a clinician-UI renders "positive
+  at ≥ N".  **No subscale exposure**: Berman 2003 validates DUDIT
+  at the unidimensional screening-score level; factor-analysis sub-
+  structure is not clinically scored.  No safety routing: DUDIT's
+  loss-of-control items (4 / 5 / 6) are substance-use probes, not
+  suicidality probes, and item 10 ("have you or anyone else been
+  hurt") spans physical / mental / social / legal consequences
+  (not intent) — acute ideation screening remains PHQ-9 item 9 /
+  C-SSRS.  See ``scoring/dudit.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -285,6 +316,10 @@ from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
 from .scoring.dtcq8 import (
     InvalidResponseError as Dtcq8Invalid,
     score_dtcq8,
+)
+from .scoring.dudit import (
+    InvalidResponseError as DuditInvalid,
+    score_dudit,
 )
 from .scoring.gad2 import (
     InvalidResponseError as Gad2Invalid,
@@ -387,6 +422,7 @@ Instrument = Literal[
     "k10",
     "sds",
     "k6",
+    "dudit",
 ]
 
 
@@ -420,6 +456,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "k10": 10,
     "sds": 5,
     "k6": 6,
+    "dudit": 11,
 }
 
 
@@ -439,10 +476,14 @@ class AssessmentRequest(BaseModel):
     multi-item instruments see no change since the per-instrument count
     check at ``_validate_item_count`` is the tight constraint.
 
-    ``sex`` is AUDIT-C-only; ignored by other instruments.  Defaulting
-    to ``None`` (rather than ``"unspecified"``) lets the router echo
-    'caller did not supply' vs 'caller supplied unspecified' if that
-    distinction ever matters for telemetry.
+    ``sex`` is read by both AUDIT-C (Bush 1998 sex-keyed cutoff) and
+    DUDIT (Berman 2005 sex-keyed cutoff); ignored by other instruments.
+    Defaulting to ``None`` (rather than ``"unspecified"``) lets the
+    router echo 'caller did not supply' vs 'caller supplied
+    unspecified' if that distinction ever matters for telemetry.  Both
+    instruments map ``None`` to the conservative (lower, more
+    sensitive) cutoff — AUDIT-C ≥ 3 / DUDIT ≥ 2 — as the safety posture
+    for unknown sex.
 
     ``behavior_within_3mo`` is C-SSRS-only; it modulates whether a
     positive item 6 (past suicidal behavior) escalates to acute T3.
@@ -468,7 +509,11 @@ class AssessmentRequest(BaseModel):
     items: list[int] = Field(min_length=1, max_length=30)
     sex: Sex | None = Field(
         default=None,
-        description="AUDIT-C only; ignored by other instruments.",
+        description=(
+            "Read by AUDIT-C (Bush 1998) and DUDIT (Berman 2005); "
+            "ignored by other instruments.  ``None`` maps to the "
+            "conservative cutoff — AUDIT-C ≥ 3 / DUDIT ≥ 2."
+        ),
     )
     behavior_within_3mo: bool | None = Field(
         default=None,
@@ -524,8 +569,10 @@ class AssessmentResult(BaseModel):
 
     Instrument-specific optional fields:
     - ``index`` — WHO-5 only; the WHO-5 Index (0–100).
-    - ``cutoff_used`` — AUDIT-C only; the cutoff that was applied (3 or 4).
-    - ``positive_screen`` — AUDIT-C only; whether ``total >= cutoff_used``.
+    - ``cutoff_used`` — AUDIT-C / SDS / DUDIT; the cutoff that was
+      applied (AUDIT-C 3 or 4, SDS 3-5 by substance, DUDIT 2 or 6 by sex).
+    - ``positive_screen`` — AUDIT-C / SDS / DUDIT / K6 / PHQ-2 / GAD-2 /
+      OASIS / PC-PTSD-5 / MDQ; whether the cutoff gate is met.
     - ``t3_reason`` — PHQ-9 / C-SSRS when ``requires_t3`` is True;
       a short machine-readable reason code for logging/display.
     - ``triggering_items`` — C-SSRS only; 1-indexed item numbers that
@@ -544,7 +591,7 @@ class AssessmentResult(BaseModel):
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
-      SDS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
+      SDS / DUDIT / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
       Readiness Ruler / DTCQ-8) emit ``subscales=None``.
 
@@ -1239,6 +1286,33 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=k6.positive_screen,
             instrument_version=k6.instrument_version,
         )
+    if payload.instrument == "dudit":
+        # Berman 2005 Drug Use Disorders Identification Test — 11-item
+        # non-alcohol substance-use screen.  Novel per-index validator:
+        # items 1-9 take the 0-4 Likert envelope, items 10-11 take the
+        # {0, 2, 4} trinary envelope; a response of 1 or 3 on items
+        # 10-11 is rejected at the scorer even though it sits within
+        # the numerical range 0-4.  Sex-keyed cutoff extends the
+        # AUDIT-C precedent (men ≥ 6 / women ≥ 2 / unspecified ≥ 2).
+        # Cutoff envelope uniform with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 /
+        # MDQ / AUDIT-C / SDS / K6.  ``cutoff_used`` echoes the sex-
+        # keyed cutoff.  No subscales (Berman 2003 validated at the
+        # unidimensional screening-score level), no T3 (loss-of-
+        # control / consequence items are not suicidality probes).
+        # See ``scoring/dudit.py``.
+        du = score_dudit(payload.items, sex=payload.sex or "unspecified")
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="dudit",
+            total=du.total,
+            severity=(
+                "positive_screen" if du.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            cutoff_used=du.cutoff_used,
+            positive_screen=du.positive_screen,
+            instrument_version=du.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1383,6 +1457,7 @@ async def submit_assessment(
         K10Invalid,
         SdsInvalid,
         K6Invalid,
+        DuditInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

@@ -5812,6 +5812,523 @@ class TestK6Routing:
         assert body["total"] == 13
 
 
+class TestDuditRouting:
+    """DUDIT (Berman 2005) router dispatch.
+
+    Wire contract invariants:
+    - Cutoff envelope (``severity`` = "positive_screen" /
+      "negative_screen") uniform with PHQ-2 / GAD-2 / OASIS /
+      PC-PTSD-5 / AUDIT-C / SDS / K6.
+    - ``cutoff_used`` echoes the sex-keyed Berman 2005 cutoff
+      (men ≥ 6 / women ≥ 2 / unspecified ≥ 2).
+    - ``requires_t3`` is always False — DUDIT has no safety item.
+    - ``subscales=None`` — Berman 2003 validates unidimensional.
+    - Items 1-9 take 0-4 Likert; items 10-11 take {0, 2, 4} trinary.
+      A response of 1 or 3 on items 10-11 must 422 with the trinary
+      message, not silently score.
+    - The ``sex`` request field now serves BOTH AUDIT-C and DUDIT —
+      a single demographic axis for two sex-keyed cutoff instruments.
+    """
+
+    def test_male_negative_below_cutoff(self, client: TestClient) -> None:
+        """Male, total=5 — below male cutoff (6)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": "user-dudit-male-neg",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "dudit"
+        assert body["total"] == 5
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 6
+        assert body["requires_t3"] is False
+
+    def test_male_positive_at_cutoff(self, client: TestClient) -> None:
+        """Male, total=6 — Berman 2005 male cutoff boundary."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": "user-dudit-male-pos",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 6
+
+    def test_female_negative_below_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """Female, total=1 — below female cutoff (2)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "female",
+                "user_id": "user-dudit-female-neg",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 1
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 2
+
+    def test_female_positive_at_cutoff(self, client: TestClient) -> None:
+        """Female, total=2 — Berman 2005 female cutoff boundary."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "female",
+                "user_id": "user-dudit-female-pos",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 2
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 2
+
+    def test_unspecified_sex_uses_female_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """Safety-conservatism — unspecified sex defaults to cutoff 2."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "unspecified",
+                "user_id": "user-dudit-unspec",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["cutoff_used"] == 2
+        assert body["positive_screen"] is True
+
+    def test_sex_omitted_falls_back_to_conservative_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """Omitting sex entirely — router maps None → "unspecified"
+        → female cutoff (2).  Safety-conservative posture mirroring
+        AUDIT-C."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "user_id": "user-dudit-no-sex",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["cutoff_used"] == 2
+        assert body["positive_screen"] is True
+
+    def test_same_total_differs_across_sexes(
+        self, client: TestClient
+    ) -> None:
+        """Total=4: below male cutoff (6), above female cutoff (2).
+        Load-bearing wire-level pin — the dispatch must produce
+        opposite positive_screen values for the same total depending
+        on sex."""
+        items = [1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+        resp_m = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": items,
+                "sex": "male",
+                "user_id": "user-dudit-sex-male",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        resp_f = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": items,
+                "sex": "female",
+                "user_id": "user-dudit-sex-female",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp_m.status_code == 201
+        assert resp_f.status_code == 201
+        m_body = resp_m.json()
+        f_body = resp_f.json()
+        assert m_body["total"] == 4
+        assert f_body["total"] == 4
+        assert m_body["positive_screen"] is False
+        assert f_body["positive_screen"] is True
+        assert m_body["cutoff_used"] == 6
+        assert f_body["cutoff_used"] == 2
+
+    def test_positive_does_not_fire_t3(
+        self, client: TestClient
+    ) -> None:
+        """Max-value response — high screen but no T3 (no safety item)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+                "sex": "male",
+                "user_id": "user-dudit-t3-none",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 44
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        """Berman 2003 validates unidimensional — no subscales."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0] * 11,
+                "sex": "female",
+                "user_id": "user-dudit-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["subscales"] is None
+
+    def test_rejects_twelve_items(self, client: TestClient) -> None:
+        """Router-layer item-count check — 12 items is not DUDIT."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0] * 12,
+                "sex": "male",
+                "user_id": "user-dudit-count-12",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+        assert "exactly 11" in response.json()["detail"]["message"]
+
+    def test_rejects_ten_items_audit_misroute(
+        self, client: TestClient
+    ) -> None:
+        """10 items is AUDIT territory — must NOT silently score as DUDIT."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0] * 10,
+                "sex": "male",
+                "user_id": "user-dudit-misroute-audit",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_three_items_auditc_misroute(
+        self, client: TestClient
+    ) -> None:
+        """3 items is AUDIT-C territory — must NOT silently score as DUDIT."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0, 0, 0],
+                "sex": "male",
+                "user_id": "user-dudit-misroute-auditc",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_likert_item_out_of_range(
+        self, client: TestClient
+    ) -> None:
+        """Likert item (1-9) with value 5 — out of [0, 4]."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": "user-dudit-likert-oor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+        assert "out of range" in response.json()["detail"]["message"]
+
+    def test_rejects_trinary_one_at_item_ten(
+        self, client: TestClient
+    ) -> None:
+        """NOVEL pin — item 10 with value 1.  Within numerical range
+        [0, 4] but NOT in the trinary set {0, 2, 4}.  Must 422 with a
+        message naming the legal values (0/2/4) so a caller understands
+        the yes/not-last-year/last-year semantic."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+                "sex": "male",
+                "user_id": "user-dudit-trinary-one",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+        msg = response.json()["detail"]["message"]
+        assert "item 10" in msg
+        assert "0, 2, or 4" in msg
+
+    def test_rejects_trinary_three_at_item_eleven(
+        self, client: TestClient
+    ) -> None:
+        """Item 11 with value 3 — another illegal trinary value."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+                "sex": "female",
+                "user_id": "user-dudit-trinary-three",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+        assert "item 11" in response.json()["detail"]["message"]
+
+    def test_rejects_invalid_sex_literal(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic-level Literal check on the sex field."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [0] * 11,
+                "sex": "other",
+                "user_id": "user-dudit-bad-sex",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submitted DUDIT with positive screen is recorded in the
+        repository under the user_id with the cutoff-envelope shape."""
+        user = "user-dudit-hist"
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "dudit"
+        assert rec.total == 6
+        assert rec.severity == "positive_screen"
+        assert rec.positive_screen is True
+        assert rec.cutoff_used == 6
+        assert rec.sex == "male"
+        assert rec.raw_items == (2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0)
+        assert rec.requires_t3 is False
+
+    def test_history_projection_surfaces_cutoff_envelope(
+        self, client: TestClient
+    ) -> None:
+        """GET /history surfaces severity + positive_screen + cutoff_used
+        for a DUDIT record."""
+        user = "user-dudit-hist-proj"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "female",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "dudit"
+        assert entry["severity"] == "positive_screen"
+        assert entry["positive_screen"] is True
+        assert entry["cutoff_used"] == 2
+
+    def test_dudit_and_auditc_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """DUDIT (drugs) and AUDIT-C (alcohol) are BOTH sex-keyed
+        cutoff instruments.  The wire's single ``sex`` field serves
+        both.  Pin that a user can submit DUDIT and AUDIT-C on the
+        same timeline without cross-contamination of cutoff_used or
+        sex values."""
+        user = "user-dudit-auditc-both"
+        # DUDIT male, total 6 — positive at male cutoff 6.
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 2, 2, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        # AUDIT-C male, total 4 — positive at male cutoff 4.
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "audit_c",
+                "items": [2, 1, 1],
+                "sex": "male",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert set(by_instrument) == {"dudit", "audit_c"}
+        assert by_instrument["dudit"].cutoff_used == 6
+        assert by_instrument["dudit"].positive_screen is True
+        assert by_instrument["audit_c"].cutoff_used == 4
+        assert by_instrument["audit_c"].positive_screen is True
+        # Both carry the same demographic axis value — sex is shared,
+        # cutoff_used is not.
+        assert by_instrument["dudit"].sex == "male"
+        assert by_instrument["audit_c"].sex == "male"
+
+    def test_dudit_and_sds_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """DUDIT (general drug problems, sex-keyed cutoff) and SDS
+        (specific-substance psychological dependence, substance-keyed
+        cutoff) cover different constructs on different demographic
+        axes.  The wire envelope must preserve both cleanly:
+        DUDIT surfaces sex + cutoff_used=6 (male), SDS surfaces
+        cutoff_used=5 (heroin) without either field bleeding into the
+        other record."""
+        user = "user-dudit-sds-both"
+        # DUDIT male, total 10 — positive.
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 2, 2, 2, 2, 0, 0, 0, 0, 0, 0],
+                "sex": "male",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        # SDS heroin, total 5 — positive at heroin cutoff 5.
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sds",
+                "items": [1, 1, 1, 1, 1],
+                "substance": "heroin",
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert by_instrument["dudit"].sex == "male"
+        assert by_instrument["dudit"].substance is None
+        assert by_instrument["sds"].sex is None
+        assert by_instrument["sds"].substance == "heroin"
+        assert by_instrument["dudit"].cutoff_used == 6
+        assert by_instrument["sds"].cutoff_used == 5
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """concurrent_symptoms / functional_impairment are MDQ-only —
+        submitting them with a DUDIT request must not perturb scoring."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dudit",
+                "items": [2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                "sex": "female",
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-dudit-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "dudit"
+        assert body["total"] == 4
+        assert body["positive_screen"] is True
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
