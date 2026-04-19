@@ -2103,6 +2103,169 @@ class TestPhq15Routing:
         assert body["severity"] == "high"
 
 
+class TestPacsRouting:
+    """PACS (Penn Alcohol Craving Scale, Flannery 1999) over the wire.
+
+    PACS introduces the platform's third wire-envelope pattern:
+    **continuous severity**.  Banded-severity instruments (PHQ-9 /
+    GAD-7 / ISI / PHQ-15) carry a severity label drawn from a
+    clinically-validated threshold tuple; screen-style instruments
+    (PCL-5 / PC-PTSD-5 / OCI-R / MDQ / AUDIT-C) carry
+    positive_screen / negative_screen.  PACS carries the sentinel
+    ``"continuous"`` because Flannery 1999 publishes no severity
+    bands — the trajectory layer extracts the clinical signal from
+    week-over-week Δ, not from a categorical classification.
+
+    These tests pin (1) the dispatch branch picks ``score_pacs``,
+    (2) the wire envelope carries ``severity == "continuous"``
+    regardless of total, (3) ``requires_t3`` is always False
+    (craving is the pre-behavior signal the platform intervenes on
+    in the 60-180s urge-to-action window, not a T3 crisis marker),
+    (4) item-count + item-range validation surface as 422.
+    """
+
+    def _post_pacs(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "pacs", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_high_craving(self, client: TestClient) -> None:
+        """All 5 items at 6 → total 30 → severity 'continuous'.  The
+        total value carries the clinical signal; 'continuous' is a
+        sentinel declaring that the receiving system must not
+        categorize status from this field."""
+        resp = self._post_pacs(client, items=[6, 6, 6, 6, 6])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pacs"
+        assert body["total"] == 30
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "pacs-1.0.0"
+
+    def test_zero_craving_still_returns_continuous_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """All items 0 → total 0.  The sentinel ``"continuous"`` is
+        invariant across the entire 0-30 range — the absence of
+        craving is just as much "measure, don't classify" as the
+        presence of it.  A regression that coerced the zero case to
+        a different label would break the uniform trajectory
+        rendering contract."""
+        resp = self._post_pacs(client, items=[0, 0, 0, 0, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_mid_range_total_is_still_continuous(
+        self, client: TestClient
+    ) -> None:
+        """A mid-range total must NOT accidentally pick up a banded
+        label.  If a future refactor imports a severity classifier
+        from another instrument, this test catches the cross-wire."""
+        # 3 + 4 + 3 + 2 + 3 = 15
+        resp = self._post_pacs(client, items=[3, 4, 3, 2, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_max_total_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: PACS total 30 (maximum
+        craving) does NOT fire T3.  T3 is reserved for active
+        suicidality per Whitepaper 04 §T3 and fires only on PHQ-9
+        item 9 / C-SSRS items 4-6.  A patient with maximum craving
+        AND acute suicidality needs a co-administered PHQ-9 or
+        C-SSRS to fire T3 — PACS alone never should."""
+        resp = self._post_pacs(client, items=[6, 6, 6, 6, 6])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_four_items(self, client: TestClient) -> None:
+        resp = self._post_pacs(client, items=[0, 0, 0, 0])
+        assert resp.status_code == 422
+
+    def test_rejects_six_items(self, client: TestClient) -> None:
+        resp = self._post_pacs(client, items=[0, 0, 0, 0, 0, 0])
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item_value(
+        self, client: TestClient
+    ) -> None:
+        """Item value 7 supplied (one above the Flannery 1999 ceiling)
+        → 422.  The regression this guards is a client that reused a
+        1-7 UI widget and forgot to zero-index it."""
+        items = [0, 0, 0, 0, 0]
+        items[2] = 7
+        resp = self._post_pacs(client, items=items)
+        assert resp.status_code == 422
+
+    def test_persists_pacs_submission_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id lands in per-user history with the
+        continuous sentinel captured.  The trajectory layer reads
+        the stored total (not the severity) to compute week-over-week
+        Δ — the clinical signal.  A regression that dropped the total
+        during persistence would silently break the product-core
+        intervention path."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "pacs",
+            "items": [4, 5, 3, 5, 4],  # total 21
+            "user_id": "user-pacs-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-pacs-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "pacs"
+        assert stored.total == 21
+        assert stored.severity == "continuous"
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """instrument=pacs + extra MDQ fields → extras are ignored,
+        PACS dispatch runs cleanly.  Same defensive pin as the other
+        non-MDQ branches — catches a dispatcher-ordering regression
+        that would try to score MDQ when a PACS was intended."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pacs",
+                "items": [2, 2, 2, 2, 2],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pacs"
+        assert body["total"] == 10
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

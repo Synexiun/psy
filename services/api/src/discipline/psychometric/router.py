@@ -1,5 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
-C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15.
+C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
+PACS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -35,7 +36,7 @@ Safety routing:
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
-  PCL-5, OCI-R, PHQ-15 have no safety items — ``requires_t3`` is
+  PCL-5, OCI-R, PHQ-15, PACS have no safety items — ``requires_t3`` is
   always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -55,7 +56,13 @@ Safety routing:
   interoceptive-exposure / somatic-awareness interventions —
   item 6 (chest pain) and item 8 (fainting) are medical-urgency
   markers surfaced by the clinician-UI layer separately and are not
-  T3 triggers — see ``scoring/phq15.py``.
+  T3 triggers — see ``scoring/phq15.py``.  PACS (Flannery 1999)
+  is a continuous craving measure — the trajectory layer extracts
+  its signal via week-over-week Δ rather than classifying a status.
+  It is *the* platform-core instrument since craving is the
+  60-180s urge-to-action construct the product intervenes on, but
+  it carries no crisis item and no validated severity bands.
+  See ``scoring/pacs.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -106,6 +113,10 @@ from .scoring.ocir import (
     InvalidResponseError as OcirInvalid,
     score_ocir,
 )
+from .scoring.pacs import (
+    InvalidResponseError as PacsInvalid,
+    score_pacs,
+)
 from .scoring.pcl5 import (
     InvalidResponseError as Pcl5Invalid,
     score_pcl5,
@@ -147,6 +158,7 @@ Instrument = Literal[
     "pcl5",
     "ocir",
     "phq15",
+    "pacs",
 ]
 
 
@@ -168,6 +180,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pcl5": 20,
     "ocir": 18,
     "phq15": 15,
+    "pacs": 5,
 }
 
 
@@ -263,6 +276,13 @@ class AssessmentResult(BaseModel):
     no clinically meaningful single-number "total" for C-SSRS, but
     positive_count is the closest analogue and clients can use it for
     trajectory tracking independently of band changes.
+
+    For PACS (Flannery 1999), ``severity`` is the literal sentinel
+    ``"continuous"``.  Flannery 1999 publishes no severity bands; the
+    trajectory layer extracts the clinical signal (week-over-week Δ)
+    from ``total`` directly.  Clients rendering PACS results must not
+    attempt to classify status from ``severity`` — show ``total``
+    and the trajectory chart instead.
     """
 
     assessment_id: str
@@ -494,6 +514,30 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=phq15.instrument_version,
         )
+    if payload.instrument == "pacs":
+        # Flannery 1999 — 5-item 0-6 Likert Penn Alcohol Craving Scale,
+        # total 0-30.  **Continuous-severity envelope** (new in Sprint 34)
+        # — Flannery 1999 publishes no severity bands and the clinical
+        # literature treats PACS as a week-over-week trajectory measure,
+        # not a categorical screen.  The router emits
+        # ``severity="continuous"`` as a sentinel so every instrument in
+        # the dispatch table has a severity field (banded / screen /
+        # continuous), without hand-rolling bands that would violate
+        # CLAUDE.md's "Don't hand-roll severity thresholds" rule.  No
+        # safety routing: craving is the *pre-behavior* signal the
+        # platform intervenes on within the 60-180 second urge-to-action
+        # window, not a T3 crisis marker.  A positive PACS + acute
+        # suicidality still needs co-administered PHQ-9 / C-SSRS to fire
+        # T3, consistent with the PHQ-15 / OCI-R / ISI safety posture.
+        pacs = score_pacs(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pacs",
+            total=pacs.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=pacs.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -626,6 +670,7 @@ async def submit_assessment(
         Pcl5Invalid,
         OcirInvalid,
         Phq15Invalid,
+        PacsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
