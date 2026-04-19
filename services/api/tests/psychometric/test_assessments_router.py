@@ -1552,6 +1552,185 @@ class TestIsiRouting:
 
 
 # =============================================================================
+# PCL-5 (Weathers 2013 / Blevins 2015) — 20-item full PTSD checklist
+# =============================================================================
+
+
+class TestPcl5Routing:
+    """PCL-5 over the wire.
+
+    Router-level contract verification for the 20-item 0-4 Likert
+    full-PTSD-assessment.  The scorer's own unit tests exhaustively
+    pin the ``>= 33`` cutoff and cluster boundaries; these tests pin
+    (1) the dispatch branch picks ``score_pcl5``, (2) the wire
+    envelope carries ``total`` = summed severity (0-80) + ``severity``
+    = positive/negative_screen (uniform with PC-PTSD-5 / MDQ), (3)
+    the Pydantic envelope accepts 20-item bodies (the max_length
+    bound was widened in this sprint), and (4) ``requires_t3`` is
+    always False.
+    """
+
+    def _post_pcl5(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "pcl5", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_above_cutoff(self, client: TestClient) -> None:
+        """All 20 items at 4 → total 80 → positive screen.  The
+        envelope carries total = summed severity, NOT the positive-
+        item count like MDQ / PC-PTSD-5.  Receiving FHIR systems
+        reading this integer + the PCL-5 LOINC must interpret it
+        as a severity sum."""
+        resp = self._post_pcl5(client, items=[4] * 20)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pcl5"
+        assert body["total"] == 80
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "pcl5-1.0.0"
+
+    def test_cutoff_boundary_at_thirty_three(
+        self, client: TestClient
+    ) -> None:
+        """Total exactly 33 → positive screen (the Blevins 2015
+        published operating point).  A fence-post regression here
+        would misclassify roughly half of the clinical-cutoff cohort."""
+        # Build: 8 items at 4 (=32) + 1 item at 1 = 33; rest zero.
+        items = [0] * 20
+        for i in range(8):
+            items[i] = 4
+        items[8] = 1
+        resp = self._post_pcl5(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 33
+        assert body["positive_screen"] is True
+
+    def test_just_below_cutoff_is_negative(
+        self, client: TestClient
+    ) -> None:
+        """Total 32 → negative screen.  Complements the boundary test
+        from the other side so both comparator directions are pinned."""
+        items = [0] * 20
+        for i in range(8):
+            items[i] = 4
+        resp = self._post_pcl5(client, items=items)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 32
+        assert body["positive_screen"] is False
+
+    def test_zero_total_is_negative_screen(self, client: TestClient) -> None:
+        """All items 0 → total 0 → negative screen.  The degenerate
+        case — a patient who answered 0 to every symptom."""
+        resp = self._post_pcl5(client, items=[0] * 20)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_max_severity_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: PCL-5 total 80 (maximum
+        severity) does NOT fire the T3 crisis pathway.  T3 is
+        reserved for active suicidality — a severe-PTSD patient
+        with suicidality needs a co-administered C-SSRS submission.
+        Letting PCL-5 fire T3 would spam the clinical-ops safety
+        queue (every severe-PTSD patient would trigger it) and
+        desensitize responders to genuine crises."""
+        resp = self._post_pcl5(client, items=[4] * 20)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_nineteen_items(self, client: TestClient) -> None:
+        resp = self._post_pcl5(client, items=[0] * 19)
+        assert resp.status_code == 422
+
+    def test_rejects_twenty_one_items(self, client: TestClient) -> None:
+        """Extra item → 422.  This test also pins that the Pydantic
+        envelope's max_length was correctly widened to 20 this
+        sprint (not left at 13).  If the envelope still rejected
+        20-item bodies, the happy-path test would have failed
+        first — but if max_length was widened to 21, this test
+        catches the slip."""
+        resp = self._post_pcl5(client, items=[0] * 21)
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Item > 4 → 422."""
+        items = [0] * 20
+        items[0] = 5
+        resp = self._post_pcl5(client, items=items)
+        assert resp.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id shows in per-user history with
+        positive_screen flag captured.  The clinician-UI renders
+        PCL-5 history with the positive-screen badge from the stored
+        field; trajectory analysis uses the stored total for RCI
+        deltas."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Build a clearly-positive PCL-5 (total 40, above cutoff).
+        items = [2] * 20  # total = 40
+        body = {
+            "instrument": "pcl5",
+            "items": items,
+            "user_id": "user-pcl5-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-pcl5-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "pcl5"
+        assert stored.total == 40
+        assert stored.positive_screen is True
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """Client mistakenly sending MDQ-only fields with
+        instrument=pcl5 → dispatcher reaches PCL-5 branch before the
+        MDQ fallthrough; the extra fields are ignored.  Defensive
+        pin against dispatcher-ordering regressions."""
+        items = [2] * 20  # total 40 → positive
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pcl5",
+                "items": items,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "pcl5"
+        assert body["positive_screen"] is True
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 

@@ -1,5 +1,5 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
-C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI.
+C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -34,9 +34,9 @@ Safety routing:
   T3 check per Kroenke 2001).
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
-- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI
-  have no safety items — ``requires_t3`` is always False for these
-  instruments.  WHO-5 ``depression_screen`` band is *not* a T3
+- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
+  PCL-5 have no safety items — ``requires_t3`` is always False for
+  these instruments.  WHO-5 ``depression_screen`` band is *not* a T3
   trigger; T3 is reserved for active suicidality per
   Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ screen
   is a referral signal for a bipolar-spectrum structured interview,
@@ -45,7 +45,10 @@ Safety routing:
   (CAPS-5 / PCL-5 structured interview, EMDR / TF-CBT intake), not a
   crisis signal — see ``scoring/pcptsd5.py``.  A severe ISI result
   is a referral signal for CBT-I / sleep medicine, not a crisis
-  signal — see ``scoring/isi.py``.
+  signal — see ``scoring/isi.py``.  A positive PCL-5 screen is the
+  structured follow-up to PC-PTSD-5 — referral for trauma-focused
+  therapy (PE / CPT / EMDR), not a crisis signal — see
+  ``scoring/pcl5.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -92,6 +95,10 @@ from .scoring.mdq import (
     InvalidResponseError as MdqInvalid,
     score_mdq,
 )
+from .scoring.pcl5 import (
+    InvalidResponseError as Pcl5Invalid,
+    score_pcl5,
+)
 from .scoring.pcptsd5 import (
     InvalidResponseError as PcPtsd5Invalid,
     score_pcptsd5,
@@ -122,6 +129,7 @@ Instrument = Literal[
     "mdq",
     "pcptsd5",
     "isi",
+    "pcl5",
 ]
 
 
@@ -140,6 +148,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "mdq": 13,
     "pcptsd5": 5,
     "isi": 7,
+    "pcl5": 20,
 }
 
 
@@ -149,8 +158,8 @@ class AssessmentRequest(BaseModel):
     Per-instrument item-count is validated at the route layer (after
     Pydantic) so the error message can be specific to the instrument
     ("PHQ-9 requires exactly 9 items, got N").  The Pydantic
-    ``min_length=3, max_length=13`` bound is the broadest envelope
-    covering every supported instrument (AUDIT-C=3 through MDQ=13);
+    ``min_length=3, max_length=20`` bound is the broadest envelope
+    covering every supported instrument (AUDIT-C=3 through PCL-5=20);
     a tighter check needs to know the instrument value, which
     Pydantic field validators can't see in a clean way.
 
@@ -174,7 +183,7 @@ class AssessmentRequest(BaseModel):
     """
 
     instrument: Instrument
-    items: list[int] = Field(min_length=3, max_length=13)
+    items: list[int] = Field(min_length=3, max_length=20)
     sex: Sex | None = Field(
         default=None,
         description="AUDIT-C only; ignored by other instruments.",
@@ -404,6 +413,27 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=i.instrument_version,
         )
+    if payload.instrument == "pcl5":
+        # Weathers 2013 / Blevins 2015 — 20-item 0-4 Likert, total
+        # 0-80, positive at >= 33.  Wire envelope follows PC-PTSD-5 /
+        # MDQ / AUDIT-C's positive/negative_screen semantic since
+        # PCL-5 is a cutoff-driven screen (not a banded severity
+        # instrument like PHQ-9).  Cluster B/C/D/E subscales are
+        # computed by the scorer but not yet surfaced on the wire —
+        # a future sprint will expose them when the clinician UI
+        # needs cluster-level trajectory analysis.
+        pcl = score_pcl5(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pcl5",
+            total=pcl.total,
+            severity=(
+                "positive_screen" if pcl.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=pcl.positive_screen,
+            instrument_version=pcl.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -533,6 +563,7 @@ async def submit_assessment(
         MdqInvalid,
         PcPtsd5Invalid,
         IsiInvalid,
+        Pcl5Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

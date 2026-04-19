@@ -59,6 +59,15 @@ LOINC_CODES: dict[str, str] = {
     # via valueCodeableConcept on a paired Observation by the
     # reports layer.
     "isi": "96899-5",
+    # PCL-5 (Weathers 2013) uses LOINC 91006-2 for the total 0-80
+    # severity sum.  Same treatment as ISI: ``valueInteger`` carries
+    # the summed 0-4 Likert items; positive_screen (>= 33 per Blevins
+    # 2015) is surfaced via valueCodeableConcept on a paired
+    # Observation.  A future sprint may register the four DSM-5
+    # cluster subscales (B/C/D/E) as separate Observation components
+    # under the PCL-5 panel — the cluster codes exist in LOINC but
+    # are not emitted yet.
+    "pcl5": "91006-2",
 }
 
 LOINC_DISPLAY: dict[str, str] = {
@@ -72,6 +81,7 @@ LOINC_DISPLAY: dict[str, str] = {
     "mdq": "Mood Disorder Questionnaire (MDQ) positive item count",
     "pcptsd5": "Primary Care PTSD Screen for DSM-5 (PC-PTSD-5) positive item count",
     "isi": "Insomnia Severity Index (ISI) total score",
+    "pcl5": "PTSD Checklist for DSM-5 (PCL-5) total score",
 }
 
 # HL7 v3 terminology URIs — pinned as constants so callers (and tests) can
