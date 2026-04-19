@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS.
+MSPSS, GSE.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -42,7 +42,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1574,6 +1574,10 @@ from .scoring.mspss import (
     MSPSS_SUBSCALES,
     score_mspss,
 )
+from .scoring.gse import (
+    InvalidResponseError as GseInvalid,
+    score_gse,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1652,6 +1656,7 @@ Instrument = Literal[
     "cius",
     "swls",
     "mspss",
+    "gse",
 ]
 
 
@@ -1712,6 +1717,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "cius": 14,
     "swls": 5,
     "mspss": 12,
+    "gse": 10,
 }
 
 
@@ -4594,6 +4600,133 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=m.instrument_version,
         )
+    if payload.instrument == "gse":
+        # GSE — 10-item Generalized Self-Efficacy Scale
+        # (Schwarzer & Jerusalem 1995).  Trait-level general self-
+        # efficacy, Bandura's (1977, 1997) construct of belief in
+        # one's capability to organize and execute the courses of
+        # action required to produce desired outcomes.  Cross-
+        # culturally validated across 25 countries (Scholz,
+        # Gutiérrez-Doña, Sud & Schwarzer 2002; n=19,120; median
+        # α=0.86), and meta-analytically confirmed on n=16,657
+        # observations (Luszczynska, Scholz & Schwarzer 2005).
+        #
+        # Construct placement in the platform's self-efficacy roster:
+        #
+        # - DTCQ-8 (Sklar & Turner 1999) measures SITUATION-SPECIFIC
+        #   coping self-efficacy across Marlatt 1985's 8 high-risk
+        #   relapse situations on a 0-100 confidence scale.  Probes
+        #   "can I resist in THIS situation?"
+        # - BRS (Smith 2008) measures BOUNCE-BACK RESILIENCE — the
+        #   behavioral-recovery dimension.  Probes "do I return to
+        #   baseline after stress?"
+        # - RSES (Rosenberg 1965) measures GLOBAL SELF-ESTEEM — the
+        #   global evaluative attitude toward the self.  Probes "do
+        #   I value myself?"
+        # - GSE measures GENERAL SELF-EFFICACY — the trait-level
+        #   backdrop against which situation-specific self-
+        #   efficacies are formed.  Probes "do I generally believe
+        #   my competence and resourcefulness are sufficient to
+        #   navigate challenges?"
+        #
+        # Bandura 1997 §2 explicitly differentiated self-esteem from
+        # self-efficacy: RSES + GSE surface *both* dimensions
+        # without redundancy.  GSE + DTCQ-8 together cover the
+        # trait/situation axis of self-efficacy (Luszczynska 2005
+        # r ≈ 0.40).
+        #
+        # Clinical pairings the scorer's output supports at the
+        # clinician-UI layer:
+        #
+        # - GSE low + DTCQ-8 low — trait deficit + situation-specific
+        #   deficit.  "Pervasive-low-confidence" profile.  Bandura
+        #   1997 mastery-experiences approach (small-step successes
+        #   build trait-level self-efficacy) before situation-
+        #   specific skill work.  Avoid jumping directly to high-
+        #   risk-situation exposure — the client lacks the trait-
+        #   level foundation to tolerate the failure probability.
+        # - GSE high + DTCQ-8 low — "competence-gap" profile common
+        #   in high-functioning early-recovery clients.  Marlatt
+        #   2005 coping-skills training targeted at the specific
+        #   low-confidence DTCQ-8 situations.  The trait-level
+        #   foundation is intact, so situation-specific skills build
+        #   directly.
+        # - GSE low + DTCQ-8 high — substance-situation confident but
+        #   generally depleted.  Often a recent-abstinence-milestone
+        #   artifact.  Intervention match: generalization work (how
+        #   does substance-resisting confidence apply to other life
+        #   domains?).
+        # - GSE high + DTCQ-8 high — full self-efficacy profile.
+        #   Protective; maintenance-oriented interventions.
+        # - GSE low + BRS low — cognitive-expectation deficit +
+        #   behavioral-recovery deficit.  Cascades into the Marlatt
+        #   1985 AVE pathway: lapse → catastrophic cognition → no
+        #   bounce-back → full relapse.  Parallel self-efficacy +
+        #   resilience-skills training (Reivich 2002 PRP).
+        # - GSE low + LOT-R low — self-efficacy deficit + pessimism.
+        #   Closely parallels Beck 1979 depressive-cognitive-triad
+        #   (self, world, future).  CBT-D indication (Beck 1979;
+        #   Hollon 2005).
+        # - GSE low + SWLS low + PSS-10 high — "overwhelmed-and-
+        #   depleted" profile.  Cohen-Wills 1985 buffering-capacity
+        #   breakdown + global dissatisfaction.  Priority:
+        #   immediate stress regulation + graduated mastery
+        #   experiences; life-evaluation work later.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: 10-40 straight sum of the ten 1-4 Likert
+        #   items.  Higher = more general self-efficacy (uniform
+        #   with WHO-5 / LOT-R / BRS / MAAS / RSES / SWLS / MSPSS /
+        #   PANAS-10 PA direction).
+        # - ``severity``: always ``"continuous"``.  Schwarzer 1995
+        #   did not publish severity bands; Scholz 2002 normative
+        #   distribution (mean ≈ 29, SD ≈ 4) and Luszczynska 2005
+        #   meta-analytic norms (28-32 cluster) stay at the
+        #   clinician-UI renderer layer per CLAUDE.md non-
+        #   negotiable #9.
+        # - ``requires_t3``: always False.  No GSE item probes
+        #   suicidality.  Item 7 ("remain calm when facing
+        #   difficulties because I can rely on my coping abilities")
+        #   is a coping-confidence probe, NOT a self-harm or
+        #   ideation probe.  Acute-risk screening stays on C-SSRS /
+        #   PHQ-9 item 9.  GSE low paired with high PHQ-9 / LOT-R
+        #   low surfaces at the clinician-UI layer as a C-SSRS
+        #   follow-up prompt (per Beck 1979 cognitive-triad × Beck
+        #   1985 hopelessness-suicide-risk convergence), NOT as a
+        #   scorer-layer T3 flag — same renderer-versus-scorer-
+        #   layer boundary established for SWLS / MSPSS / UCLA-3.
+        #
+        # Deliberately-absent fields:
+        #
+        # - No ``subscales`` — Scholz 2002 (n=19,120 / 25 countries)
+        #   confirmed unidimensional factor structure.  Partitioning
+        #   into facets would over-fit the published structure and
+        #   invalidate Scholz 2002 cross-cultural measurement
+        #   invariance.
+        # - No ``positive_screen`` / ``cutoff_used`` — GSE is not a
+        #   screen; general self-efficacy is a continuous-
+        #   dimensional measure without a validated diagnostic gate.
+        # - No ``index`` — the total IS the published score.
+        # - No ``triggering_items`` — no C-SSRS-style item-level
+        #   acuity routing.
+        #
+        # Trajectory-layer machinery (not this scorer's concern):
+        # Jacobson & Truax 1991 RCI on GSE is a mid-horizon measure
+        # (faster than SWLS life-satisfaction, slower than PACS /
+        # VAS state craving).  From Scholz 2002 α=0.86 and SD≈5 →
+        # RCI ≈ 5 points.  A 5-point GSE delta is clinically
+        # meaningful in a Marlatt-style relapse-prevention program.
+        # See ``scoring/gse.py``.
+        g = score_gse(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="gse",
+            total=g.total,
+            severity=g.severity,
+            requires_t3=False,
+            instrument_version=g.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -4765,6 +4898,7 @@ async def submit_assessment(
         CiusInvalid,
         SwlsInvalid,
         MspssInvalid,
+        GseInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

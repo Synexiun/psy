@@ -19692,6 +19692,620 @@ class TestMspssRouting:
         assert body["requires_t3"] is False
 
 
+class TestGseRouting:
+    """End-to-end routing tests for the GSE dispatcher branch.
+
+    Schwarzer & Jerusalem 1995 Generalized Self-Efficacy Scale —
+    10 items, 1-4 Likert, NO reverse keying (all 10 items positively
+    worded per Schwarzer 1995 Table 1), unidimensional factor
+    structure (Scholz, Gutiérrez-Doña, Sud & Schwarzer 2002;
+    n=19,120 across 25 countries; median α=0.86).  Total = 10-40.
+    **HIGHER = MORE general self-efficacy** — uniform with
+    WHO-5 / LOT-R / BRS / MAAS / RSES / SWLS / MSPSS / PANAS-10 PA
+    "higher-is-better" direction.
+
+    Single-total envelope — NO subscales (Scholz 2002 unidimensional
+    factor structure pinned by cross-cultural measurement invariance).
+    Partitioning into facets would over-fit the published structure
+    and is refused at the scorer layer.
+
+    Clinical use cases (all resolved at the clinician-UI renderer
+    layer; the scorer output stays ``"continuous"`` per CLAUDE.md
+    non-negotiable #9):
+
+    1. Bandura 1997 mastery-experience sequencing — GSE low +
+       DTCQ-8 low ("pervasive-low-confidence") indicates small-step
+       success-building BEFORE high-risk-situation exposure.
+    2. Marlatt 2005 coping-skills targeting — GSE high + DTCQ-8 low
+       ("competence-gap" profile) indicates direct situation-specific
+       skill work without trait-level preamble.
+    3. Marlatt 1985 AVE pathway — GSE low + BRS low indicates
+       parallel self-efficacy + resilience training (Reivich 2002
+       PRP).
+    4. Beck 1979 cognitive-triad convergence — GSE low + LOT-R low
+       indicates CBT-D (Beck 1979; Hollon 2005).
+    5. Cohen-Wills 1985 buffering breakdown — GSE low + SWLS low +
+       PSS-10 high ("overwhelmed-and-depleted") indicates immediate
+       stress regulation + graduated mastery, life-evaluation later.
+
+    T3 posture — NO item probes suicidality.  Item 7 ("remain calm
+    when facing difficulties because I can rely on my coping
+    abilities") is a coping-confidence probe, NOT a self-harm or
+    ideation probe.  Active-risk screening stays on C-SSRS /
+    PHQ-9 item 9.
+
+    Envelope: banded+total (no subscales, scaled_score,
+    positive_screen, cutoff_used, triggering_items, index).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ---------------------------------------------------
+
+    def test_max_efficacy_extremum_forty(
+        self, client: TestClient
+    ) -> None:
+        """Schwarzer 1995 top-of-range: "Exactly true" on all 10
+        items.  Raw [4]*10.  No reverse keying → total = 40,
+        Scholz 2002 descriptive-ceiling."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [4] * 10},
+            headers=self._headers("gse-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "gse"
+        assert body["total"] == 40
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_min_efficacy_extremum_ten(
+        self, client: TestClient
+    ) -> None:
+        """Schwarzer 1995 bottom-of-range: "Not at all true" on all
+        10 items.  Raw [1]*10 → total 10.  Scholz 2002 descriptive
+        floor."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [1] * 10},
+            headers=self._headers("gse-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "continuous"
+
+    def test_midpoint_twenty_five(
+        self, client: TestClient
+    ) -> None:
+        """Midpoint of the 10-40 range: alternating 2/3 × 5.  Total
+        = 25.  Envelope stays continuous per CLAUDE.md non-
+        negotiable #9 — Scholz 2002 norms (mean ≈ 29, SD ≈ 4) and
+        Luszczynska 2005 descriptive clusters stay at the
+        clinician-UI layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [2, 3] * 5},
+            headers=self._headers("gse-mid"),
+        )
+        body = response.json()
+        assert body["total"] == 25
+        assert body["severity"] == "continuous"
+
+    def test_scholz_normative_mean_twenty_nine(
+        self, client: TestClient
+    ) -> None:
+        """Scholz 2002 European n=4,988 normative mean ≈ 29.  A
+        submission landing at 29 must still render ``"continuous"``
+        — the normative distribution is a RENDERER-LAYER reference
+        point, not a severity band."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 2],
+            },
+            headers=self._headers("gse-normative-mean"),
+        )
+        body = response.json()
+        assert body["total"] == 29
+        assert body["severity"] == "continuous"
+
+    def test_envelope_has_no_subscales(
+        self, client: TestClient
+    ) -> None:
+        """Scholz 2002 unidimensional factor structure → the
+        response MUST NOT populate ``subscales``.  If it did, a
+        clinician renderer might incorrectly partition the total
+        into facets that the published validation does not
+        support."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [3] * 10},
+            headers=self._headers("gse-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_envelope_has_no_cutoff_or_screen(
+        self, client: TestClient
+    ) -> None:
+        """GSE is not a screen — no validated diagnostic gate
+        against a structured clinical interview exists.  Envelope
+        must NOT populate ``cutoff_used`` or ``positive_screen``."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [3] * 10},
+            headers=self._headers("gse-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_envelope_has_no_index_or_scaled_score(
+        self, client: TestClient
+    ) -> None:
+        """The GSE total IS the published score — no WHO-5-style
+        index or MAAS-style scaled_score.  Callers should render
+        ``total`` directly."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [3] * 10},
+            headers=self._headers("gse-no-index"),
+        )
+        body = response.json()
+        assert body.get("index") is None
+        assert body.get("scaled_score") is None
+
+    def test_envelope_has_no_triggering_items(
+        self, client: TestClient
+    ) -> None:
+        """GSE has no C-SSRS-style per-item acuity routing."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [3] * 10},
+            headers=self._headers("gse-no-triggering"),
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_envelope_carries_instrument_version(
+        self, client: TestClient
+    ) -> None:
+        """The pinned instrument_version flows into the FHIR R4
+        Observation export at the reporting layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [3] * 10},
+            headers=self._headers("gse-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "gse-1.0.0"
+
+    # -- Acquiescence signature -----------------------------------------
+
+    @pytest.mark.parametrize("v", [1, 2, 3, 4])
+    def test_uniform_response_produces_linear_total(
+        self, client: TestClient, v: int
+    ) -> None:
+        """All-positive-wording scale — uniform response v produces
+        total = 10 × v.  Would fail if any position were reverse-
+        keyed (would introduce asymmetry)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [v] * 10},
+            headers=self._headers(f"gse-uniform-{v}"),
+        )
+        body = response.json()
+        assert body["total"] == 10 * v
+
+    def test_acquiescence_gap_equals_full_range(
+        self, client: TestClient
+    ) -> None:
+        """Uniform-agreement minus uniform-disagreement = full range
+        (30 points = 100% of the 10-40 scale).  Schwarzer 1995
+        all-positive wording signature — any reverse-keyed item
+        would shrink this gap."""
+        agree = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [4] * 10},
+            headers=self._headers("gse-acq-agree"),
+        ).json()
+        disagree = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [1] * 10},
+            headers=self._headers("gse-acq-disagree"),
+        ).json()
+        assert agree["total"] - disagree["total"] == 30
+
+    # -- No reverse-keying pass-through --------------------------------
+
+    @pytest.mark.parametrize("pos_1_indexed", list(range(1, 11)))
+    def test_single_four_at_position_increases_total_uniformly(
+        self, client: TestClient, pos_1_indexed: int
+    ) -> None:
+        """Baseline [1]*10 with one 4 at position N → total = 13 at
+        every position.  A reverse-keyed position would decrease
+        the total instead."""
+        items = [1] * 10
+        items[pos_1_indexed - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers(f"gse-reverse-check-{pos_1_indexed}"),
+        )
+        body = response.json()
+        assert body["total"] == 13
+
+    # -- T3 posture ------------------------------------------------------
+
+    def test_t3_always_false_at_max(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [4] * 10},
+            headers=self._headers("gse-t3-max"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    def test_t3_always_false_at_min(
+        self, client: TestClient
+    ) -> None:
+        """GSE minimum total (10) signals pervasive-low-confidence,
+        which the clinician-UI layer may escalate to a C-SSRS
+        prompt ONLY in combination with PHQ-9 / LOT-R.  The GSE
+        assessment itself MUST NOT set requires_t3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [1] * 10},
+            headers=self._headers("gse-t3-min"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    def test_t3_always_false_item_7_coping_confidence(
+        self, client: TestClient
+    ) -> None:
+        """Schwarzer 1995 item 7 — "I can remain calm when facing
+        difficulties because I can rely on my coping abilities" —
+        is a COPING-CONFIDENCE probe, NOT a self-harm or ideation
+        probe.  A low response on item 7 does not indicate acute
+        risk; the GSE scorer MUST NOT set requires_t3 on the basis
+        of item 7."""
+        items = [3] * 10
+        items[6] = 1  # item 7 = "Not at all true"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-t3-item7"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    # -- Severity across the Scholz 2002 range ---------------------------
+
+    @pytest.mark.parametrize(
+        "responses",
+        [
+            [1] * 10,                           # 10 — descriptive floor
+            [2] * 10,                           # 20
+            [2, 3, 2, 3, 2, 3, 2, 3, 2, 3],     # 25 — midpoint
+            [3, 3, 3, 3, 3, 3, 3, 3, 3, 2],     # 29 — normative mean
+            [3] * 10,                           # 30
+            [4, 4, 4, 4, 4, 3, 3, 3, 3, 3],     # 35
+            [4] * 10,                           # 40 — descriptive ceiling
+        ],
+    )
+    def test_severity_continuous_across_range(
+        self, client: TestClient, responses: list[int]
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": responses},
+            headers=self._headers(
+                f"gse-severity-range-{sum(responses)}"
+            ),
+        )
+        body = response.json()
+        assert body["severity"] == "continuous"
+
+    # -- Item-count validation -------------------------------------------
+
+    @pytest.mark.parametrize(
+        "bad_count", [1, 2, 5, 7, 8, 9, 11, 12, 20]
+    )
+    def test_wrong_item_count_returns_422(
+        self, client: TestClient, bad_count: int
+    ) -> None:
+        """Per-instrument item count is pinned at the router.  GSE
+        = 10 (Schwarzer 1995); all other counts 422.  Note: count=0
+        is rejected earlier by Pydantic's min_length=1, so not in
+        this parametrize set."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [2] * bad_count},
+            headers=self._headers(f"gse-bad-count-{bad_count}"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value validation -------------------------------------------
+
+    def test_zero_item_value_returns_422(
+        self, client: TestClient
+    ) -> None:
+        items = [2] * 10
+        items[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-zero"),
+        )
+        assert response.status_code == 422
+
+    def test_five_item_value_returns_422(
+        self, client: TestClient
+    ) -> None:
+        items = [2] * 10
+        items[4] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-five"),
+        )
+        assert response.status_code == 422
+
+    def test_negative_item_value_returns_422(
+        self, client: TestClient
+    ) -> None:
+        items = [2] * 10
+        items[9] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_large_item_value_returns_422(
+        self, client: TestClient
+    ) -> None:
+        items = [2] * 10
+        items[2] = 99
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-large"),
+        )
+        assert response.status_code == 422
+
+    # -- Type validation -------------------------------------------------
+
+    def test_numeric_string_coerces_via_pydantic_lax_mode(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic ``list[int]`` uses LAX-mode coercion: a numeric
+        string "4" coerces to int 4 BEFORE the scorer's isinstance
+        check runs.  Documented behavior — the scorer's type
+        rejection only fires on values that PYDANTIC cannot coerce
+        to int.  All 10 "4"s → total 40 (success, not 422)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": ["4"] * 10},
+            headers=self._headers("gse-string-coerce"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 40
+
+    def test_non_numeric_string_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """Non-numeric strings cannot lax-coerce → Pydantic 422 at
+        the wire layer, BEFORE the scorer runs."""
+        items: list[object] = [2] * 10
+        items[0] = "hello"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-str-reject"),
+        )
+        assert response.status_code == 422
+
+    def test_float_item_value_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """Floats also reject at Pydantic's strict-int mode for
+        non-whole floats.  3.5 cannot coerce to int losslessly."""
+        items: list[object] = [2] * 10
+        items[0] = 3.5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": items},
+            headers=self._headers("gse-float-reject"),
+        )
+        assert response.status_code == 422
+
+    def test_bool_true_coerces_via_pydantic_lax_mode(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic lax-mode coerces JSON ``true`` to int 1 — a
+        valid Likert response — BEFORE the scorer runs.  The
+        scorer's bool-rejection guard never sees the value, so the
+        request succeeds with total = 10 (all 1s).  The scorer's
+        bool rejection is still the authoritative check at the
+        Python-call layer (see test_gse_scoring.py)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [True] * 10},
+            headers=self._headers("gse-bool-true"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 10
+
+    def test_bool_false_coerces_then_rejected_at_range(
+        self, client: TestClient
+    ) -> None:
+        """JSON ``false`` coerces to int 0 via Pydantic lax-mode,
+        then the scorer's RANGE check (1-4) rejects it → 422.  The
+        error surfaces as a range violation rather than a type
+        violation at the wire layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [False] * 10},
+            headers=self._headers("gse-bool-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_vignette_pervasive_low_confidence_bandura_1997(
+        self, client: TestClient
+    ) -> None:
+        """Bandura 1997 §3 pervasive-low-efficacy profile.  Pairs
+        with DTCQ-8 low to indicate mastery-experience sequencing
+        BEFORE high-risk-situation exposure.  Scorer emits
+        ``"continuous"``; the intervention match is resolved at the
+        clinician-UI layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [1, 1, 2, 1, 1, 1, 1, 2, 1, 1],
+            },
+            headers=self._headers("gse-vig-bandura"),
+        )
+        body = response.json()
+        assert body["total"] == 12  # deep low tail
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_competence_gap_marlatt_2005(
+        self, client: TestClient
+    ) -> None:
+        """Marlatt 2005 high-functioning-early-recovery profile.
+        GSE near normative mean + DTCQ-8 low → direct situation-
+        specific skill work without trait-level preamble."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("gse-vig-marlatt-gap"),
+        )
+        body = response.json()
+        assert body["total"] == 30
+        assert body["severity"] == "continuous"
+
+    def test_vignette_ave_pathway_marlatt_1985(
+        self, client: TestClient
+    ) -> None:
+        """Marlatt 1985 abstinence-violation-effect pathway.  GSE
+        low + BRS low → cognitive-expectation deficit AND
+        behavioral-recovery deficit.  Priority: parallel self-
+        efficacy + resilience training (Reivich 2002 PRP).  GSE
+        scorer output low, severity continuous, NOT T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [1, 2, 1, 1, 2, 1, 1, 2, 1, 1],
+            },
+            headers=self._headers("gse-vig-ave"),
+        )
+        body = response.json()
+        assert body["total"] == 13
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_depressive_triad_beck_1979(
+        self, client: TestClient
+    ) -> None:
+        """Beck 1979 cognitive-triad convergence.  GSE low (self-
+        competence deficit) + LOT-R low (future pessimism) → CBT-D
+        indication (Beck 1979; Hollon 2005).  Clinician-UI may
+        prompt C-SSRS follow-up in combination with PHQ-9; the GSE
+        scorer itself MUST NOT set T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [1, 1, 1, 2, 1, 1, 1, 1, 2, 1],
+            },
+            headers=self._headers("gse-vig-beck"),
+        )
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_overwhelmed_and_depleted_cohen_wills(
+        self, client: TestClient
+    ) -> None:
+        """Cohen-Wills 1985 buffering-capacity breakdown + global
+        dissatisfaction.  GSE low + SWLS low + PSS-10 high →
+        immediate stress regulation + graduated mastery; life-
+        evaluation work later."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [1, 2, 2, 1, 1, 2, 1, 2, 1, 2],
+            },
+            headers=self._headers("gse-vig-cohenwills"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_full_self_efficacy_profile(
+        self, client: TestClient
+    ) -> None:
+        """GSE-high + DTCQ-8 high → full self-efficacy.  Protective;
+        maintenance-oriented interventions."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "gse", "items": [4] * 10},
+            headers=self._headers("gse-vig-full"),
+        )
+        body = response.json()
+        assert body["total"] == 40
+        assert body["severity"] == "continuous"
+
+    def test_vignette_baseline_followup_rci_5pt_delta(
+        self, client: TestClient
+    ) -> None:
+        """Jacobson & Truax 1991 RCI ≈ 5 points on GSE (from Scholz
+        2002 α=0.86, SD≈5).  A 5-point delta is clinically
+        meaningful in Marlatt-style relapse prevention.  Both
+        baseline and followup render as ``"continuous"`` — the
+        delta is computed at the trajectory layer, not encoded in
+        a severity band."""
+        baseline = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2],
+            },
+            headers=self._headers("gse-traj-baseline"),
+        ).json()
+        followup = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gse",
+                "items": [3, 2, 3, 2, 3, 2, 2, 3, 2, 3],
+            },
+            headers=self._headers("gse-traj-followup"),
+        ).json()
+        assert baseline["total"] == 20
+        assert followup["total"] == 25
+        assert followup["total"] - baseline["total"] == 5
+        assert baseline["severity"] == "continuous"
+        assert followup["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
