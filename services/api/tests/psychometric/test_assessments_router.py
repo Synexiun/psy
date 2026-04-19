@@ -28281,3 +28281,590 @@ class TestPcsRouting:
         assert low["total"] == 0
         assert high["severity"] == "continuous"
         assert low["severity"] == "continuous"
+
+
+class TestEssRouting:
+    """End-to-end routing tests for the ESS dispatcher branch.
+
+    Epworth Sleepiness Scale (Johns 1991 Sleep 14(6):540-545).
+    8-item 0-3 Likert self-report; total 0-24; HIGHER = MORE
+    daytime sleepiness.  Single factor per Johns 1993 EFA
+    (Cronbach α = 0.88).  Published severity bands from Johns
+    1993 Chest 103(1):30-36 + Johns 2000 J Sleep Res 9(1):5-11:
+
+        0-10  normal
+        11-12 mild
+        13-15 moderate
+        16-24 severe
+
+    Envelope shape:
+
+    - ``total``: 0-24 sum of the 8 items.
+    - ``severity``: one of ``"normal"`` / ``"mild"`` /
+      ``"moderate"`` / ``"severe"`` from the Johns published bands.
+    - ``requires_t3``: always False — no item probes ideation.
+    - **NO** ``positive_screen`` — Johns 1991/1993/2000 publish
+      severity bands only, not a diagnostic threshold (narcolepsy
+      / OSA diagnoses require PSG).  Same shape as PHQ-9 / GAD-7.
+    - **NO** ``subscales`` (unidimensional per Johns 1993 EFA),
+      ``index``, ``cutoff_used``, ``triggering_items``,
+      ``endorsed_item_count``, ``t3_reason``.
+
+    Clinical role — fills the DAYTIME-SLEEPINESS / SLEEP-
+    PROPENSITY dimension orthogonal to ISI (insomnia symptoms).
+    EDS is a documented addiction-relapse amplifier via stimulant
+    self-medication (Roehrs 2016), alcohol-disrupted sleep
+    architecture (Brower 2008), and prefrontal-hypometabolism →
+    impulsivity coupling that NARROWS the 60-180 s intervention
+    window (Hasler 2012).
+
+    Direction: Higher = MORE daytime sleepiness.  Same direction
+    as PHQ-9 / GAD-7 / AUDIT / DUDIT / FTND / PSS-10 / DASS-21 /
+    IGDS9-SF / PCS; opposite of WHO-5 / BRS / LOT-R / RSES / MAAS
+    / CD-RISC-10 / WEMWBS.
+
+    No safety items.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Happy path ------------------------------------------------
+
+    def test_floor_all_zeros_total_zero_normal(
+        self, client: TestClient
+    ) -> None:
+        """Minimum endorsement — all 8 items at 0 ('Would never
+        doze').  Total 0; severity normal."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [0] * 8},
+            headers=self._headers("ess-floor"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "ess"
+        assert body["total"] == 0
+        assert body["severity"] == "normal"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "ess-1.0.0"
+
+    def test_ceiling_all_threes_total_twenty_four_severe(
+        self, client: TestClient
+    ) -> None:
+        """Maximum endorsement — all 8 items at 3 ('High chance
+        of dozing').  Total 24 = 8 × 3.  Severity severe.
+        Consistent with Johns 1991 narcolepsy profile."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [3] * 8},
+            headers=self._headers("ess-ceiling"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 24
+        assert body["severity"] == "severe"
+
+    def test_midpoint_all_ones_total_eight_normal(
+        self, client: TestClient
+    ) -> None:
+        """Mid-low — all 8 items at 1.  Total 8; severity normal
+        (still within 0-10 band)."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [1] * 8},
+            headers=self._headers("ess-midlow"),
+        ).json()
+        assert body["total"] == 8
+        assert body["severity"] == "normal"
+
+    def test_midpoint_all_twos_total_sixteen_severe(
+        self, client: TestClient
+    ) -> None:
+        """Mid-high — all 8 items at 2.  Total 16; severity
+        severe (boundary of severe band)."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [2] * 8},
+            headers=self._headers("ess-midhigh"),
+        ).json()
+        assert body["total"] == 16
+        assert body["severity"] == "severe"
+
+    def test_explicit_mixed_vector(self, client: TestClient) -> None:
+        """Known vector [3, 2, 1, 0, 3, 2, 1, 0] → total 12 → mild."""
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ess",
+                "items": [3, 2, 1, 0, 3, 2, 1, 0],
+            },
+            headers=self._headers("ess-explicit"),
+        ).json()
+        assert body["total"] == 12
+        assert body["severity"] == "mild"
+
+    # -- Severity boundaries --------------------------------------
+
+    @pytest.mark.parametrize(
+        "items,expected_total,expected_severity",
+        [
+            # Upper of normal band.
+            ([3, 3, 3, 1, 0, 0, 0, 0], 10, "normal"),
+            # Lower of mild band.
+            ([3, 3, 3, 2, 0, 0, 0, 0], 11, "mild"),
+            # Upper of mild band.
+            ([3, 3, 3, 3, 0, 0, 0, 0], 12, "mild"),
+            # Lower of moderate band.
+            ([3, 3, 3, 3, 1, 0, 0, 0], 13, "moderate"),
+            # Upper of moderate band.
+            ([3, 3, 3, 3, 3, 0, 0, 0], 15, "moderate"),
+            # Lower of severe band.
+            ([3, 3, 3, 3, 3, 1, 0, 0], 16, "severe"),
+            # Absolute ceiling.
+            ([3] * 8, 24, "severe"),
+        ],
+    )
+    def test_severity_at_johns_published_boundaries(
+        self,
+        client: TestClient,
+        items: list[int],
+        expected_total: int,
+        expected_severity: str,
+    ) -> None:
+        """Each Johns 1993/2000 band boundary verified over HTTP.
+        Off-by-one at 10/11, 12/13, 15/16 would shift clinical-
+        severity categorization end-to-end."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers(
+                f"ess-bdy-{expected_total}-{expected_severity}"
+            ),
+        ).json()
+        assert body["total"] == expected_total
+        assert body["severity"] == expected_severity
+
+    def test_severity_band_transitions_are_stable(
+        self, client: TestClient
+    ) -> None:
+        """Submit totals 10, 11, 12, 13 in sequence — severities
+        should go normal, mild, mild, moderate.  Catches
+        regression where band map is mutated between calls."""
+        vectors = [
+            ([3, 3, 3, 1, 0, 0, 0, 0], "normal"),
+            ([3, 3, 3, 2, 0, 0, 0, 0], "mild"),
+            ([3, 3, 3, 3, 0, 0, 0, 0], "mild"),
+            ([3, 3, 3, 3, 1, 0, 0, 0], "moderate"),
+        ]
+        for i, (items, expected) in enumerate(vectors):
+            body = client.post(
+                "/v1/assessments",
+                json={"instrument": "ess", "items": items},
+                headers=self._headers(f"ess-trans-{i}"),
+            ).json()
+            assert body["severity"] == expected
+
+    # -- Item-count validation ------------------------------------
+
+    def test_rejects_seven_items(self, client: TestClient) -> None:
+        """ESS requires exactly 8 items — one short → 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [1] * 7},
+            headers=self._headers("ess-short"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_nine_items(self, client: TestClient) -> None:
+        """ESS requires exactly 8 items — one extra → 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [1] * 9},
+            headers=self._headers("ess-long"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_empty_items(self, client: TestClient) -> None:
+        """Empty list → 422, not 500."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": []},
+            headers=self._headers("ess-empty"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-range validation ------------------------------------
+
+    def test_rejects_item_below_zero(
+        self, client: TestClient
+    ) -> None:
+        """ESS item range is 0-3 — negative → 422."""
+        items = [1] * 8
+        items[0] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_above_three(
+        self, client: TestClient
+    ) -> None:
+        """ESS item ceiling is 3 — contrast IGDS9-SF (1-5) and PCS
+        (0-4) which allow higher.  ESS rejects 4 → 422."""
+        items = [1] * 8
+        items[0] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-four"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_out_of_range_at_last_position(
+        self, client: TestClient
+    ) -> None:
+        """Range violation at position 8 — off-by-one guard."""
+        items = [1] * 8
+        items[7] = 99
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-last-oor"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic wire-layer coercion -----------------------------
+
+    def test_accepts_json_true_coerced_to_one(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic lax-mode coerces JSON ``true`` to int 1 — valid
+        for ESS 0-3 range.  Scorer's bool-rejection gate never
+        sees the bool because coercion happens first."""
+        items: list[int | bool] = [1] * 8
+        items[0] = True
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-json-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # True → 1; 1 + 7 = 8.
+        assert body["total"] == 8
+
+    def test_accepts_json_false_coerced_to_zero(
+        self, client: TestClient
+    ) -> None:
+        """JSON ``false`` coerces to 0 — valid for ESS 0-3 range.
+        Same behavior as PCS (0-4) and different from IGDS9-SF
+        (1-5) which rejects 0."""
+        items: list[int | bool] = [1] * 8
+        items[0] = False
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-json-false"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 7
+
+    def test_accepts_numeric_string(self, client: TestClient) -> None:
+        """JSON ``"2"`` coerces to int 2 — valid."""
+        items: list[int | str] = [1] * 8
+        items[0] = "2"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-str-num"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 9
+
+    def test_rejects_non_numeric_string(
+        self, client: TestClient
+    ) -> None:
+        """Non-numeric string does not coerce → 422."""
+        items: list[int | str] = [1] * 8
+        items[0] = "sometimes"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-str-bad"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_null_item(self, client: TestClient) -> None:
+        """JSON null → 422.  No silent zero-substitution."""
+        items: list[int | None] = [1] * 8
+        items[3] = None
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-null"),
+        )
+        assert response.status_code == 422
+
+    # -- Envelope shape -------------------------------------------
+
+    def test_envelope_shape_present_and_absent_fields(
+        self, client: TestClient
+    ) -> None:
+        """Full envelope audit.  ESS emits: assessment_id,
+        instrument, total, severity, requires_t3,
+        instrument_version.  ESS does NOT emit: positive_screen,
+        cutoff_used, endorsed_item_count, index, triggering_items,
+        subscales, t3_reason.  Absent fields are None (Pydantic
+        default)."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [1] * 8},
+            headers=self._headers("ess-envelope"),
+        ).json()
+        # Present:
+        assert body["instrument"] == "ess"
+        assert isinstance(body["assessment_id"], str)
+        assert body["assessment_id"]
+        assert body["total"] == 8
+        assert body["severity"] == "normal"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "ess-1.0.0"
+        # Absent / None (ESS is unidimensional with band severity):
+        assert body.get("positive_screen") is None
+        assert body.get("cutoff_used") is None
+        assert body.get("endorsed_item_count") is None
+        assert body.get("index") is None
+        assert body.get("triggering_items") is None
+        assert body.get("subscales") is None
+        assert body.get("t3_reason") is None
+
+    def test_assessment_id_is_non_empty_and_unique(
+        self, client: TestClient
+    ) -> None:
+        """Fresh UUID per call; identical items still yield
+        distinct IDs."""
+        body1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [2] * 8},
+            headers=self._headers("ess-id-1"),
+        ).json()
+        body2 = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [2] * 8},
+            headers=self._headers("ess-id-2"),
+        ).json()
+        assert body1["assessment_id"] != body2["assessment_id"]
+
+    def test_instrument_version_stable_across_calls(
+        self, client: TestClient
+    ) -> None:
+        """``instrument_version`` is compile-time constant."""
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [0] * 8},
+            headers=self._headers("ess-ver-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [3] * 8},
+            headers=self._headers("ess-ver-b"),
+        ).json()
+        assert a["instrument_version"] == "ess-1.0.0"
+        assert b["instrument_version"] == "ess-1.0.0"
+
+    # -- Clinical vignettes ---------------------------------------
+
+    def test_vignette_johns_1991_healthy_control(
+        self, client: TestClient
+    ) -> None:
+        """Johns & Hocking 1997 Australian workers normative
+        sample — median ESS ≈ 5-6.  Profile: low dozing tendency
+        across most situations, mild in monotony-prone contexts
+        (reading, TV)."""
+        items = [1, 1, 0, 1, 1, 0, 1, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-healthy"),
+        ).json()
+        assert body["total"] == 5
+        assert body["severity"] == "normal"
+        assert body["requires_t3"] is False
+
+    def test_vignette_narcolepsy_full_profile(
+        self, client: TestClient
+    ) -> None:
+        """Johns 1991 Appendix — narcolepsy ESS ceiling.  Full-
+        severity profile across all situations."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [3] * 8},
+            headers=self._headers("ess-vig-narco"),
+        ).json()
+        assert body["total"] == 24
+        assert body["severity"] == "severe"
+
+    def test_vignette_obstructive_sleep_apnea(
+        self, client: TestClient
+    ) -> None:
+        """Johns 1993 OSA sample — mean ESS 13.6.  Profile:
+        moderate dozing across most passive situations.  Maps to
+        moderate EDS."""
+        items = [2, 2, 1, 2, 2, 1, 2, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-osa"),
+        ).json()
+        assert body["total"] == 13
+        assert body["severity"] == "moderate"
+
+    def test_vignette_roehrs_2016_stimulant_withdrawal_rebound(
+        self, client: TestClient
+    ) -> None:
+        """Roehrs 2016 Sleep Med Clin 11(3):379-388 — stimulant
+        withdrawal produces rebound hypersomnia.  ESS ≥ 16 in
+        early-abstinence window.  Clinician-UI pairs with DAST-10
+        / ASRS-6 positive and routes to sleep-restoration
+        content."""
+        items = [3, 3, 2, 3, 3, 2, 3, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-stim-wd"),
+        ).json()
+        assert body["total"] == 21
+        assert body["severity"] == "severe"
+
+    def test_vignette_brower_2008_alcohol_post_acute_withdrawal(
+        self, client: TestClient
+    ) -> None:
+        """Brower 2008 — alcohol-dependent users in post-acute-
+        withdrawal report persistent ESS ≥ 13 for months; this is
+        a relapse-risk marker.  Clinician-UI pairs with AUDIT
+        positive and elevates T1 preemptive priority."""
+        items = [2, 2, 2, 2, 2, 2, 2, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-etoh-wd"),
+        ).json()
+        assert body["total"] == 15
+        assert body["severity"] == "moderate"
+
+    def test_vignette_franzen_2008_depression_sleep_loop(
+        self, client: TestClient
+    ) -> None:
+        """Franzen & Buysse 2008 — depression-sleep bidirectional
+        loop.  PHQ-9 elevation + ESS elevation routes to
+        behavioral-activation + sleep-restriction protocol."""
+        items = [2, 3, 2, 2, 3, 1, 2, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-dep"),
+        ).json()
+        assert body["total"] == 17
+        assert body["severity"] == "severe"
+
+    def test_vignette_hasler_2012_adolescent_circadian_phase(
+        self, client: TestClient
+    ) -> None:
+        """Hasler 2012 — adolescents have delayed circadian phase;
+        normative ESS is higher than adults (≈ 7-9) without
+        pathology.  Test confirms band stays ``normal``."""
+        items = [1, 2, 1, 1, 2, 1, 1, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-teen"),
+        ).json()
+        assert body["total"] == 9
+        assert body["severity"] == "normal"
+
+    def test_vignette_urge_window_narrowing(
+        self, client: TestClient
+    ) -> None:
+        """Hasler 2012 sleep-impulsivity coupling — high ESS
+        predicts narrowed deliberation (prefrontal
+        hypometabolism).  Platform-mission: severe-band ESS is an
+        orthogonal biological risk marker for the 60-180 s
+        intervention window.  Scorer just reports; intervention
+        layer adjusts the window."""
+        items = [3, 3, 3, 2, 3, 2, 3, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-urge"),
+        ).json()
+        assert body["total"] == 21
+        assert body["severity"] == "severe"
+        assert body["requires_t3"] is False
+
+    def test_vignette_composite_sleep_disorder_with_isi(
+        self, client: TestClient
+    ) -> None:
+        """ESS elevated + ISI elevated → composite sleep-disorder
+        profile.  Johns 2000 clinical-pathway recommends PSG
+        referral.  Scorer just reports the ESS; intervention layer
+        does the cross-instrument routing."""
+        items = [3, 3, 2, 3, 3, 2, 2, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-vig-composite"),
+        ).json()
+        assert body["total"] == 20
+        assert body["severity"] == "severe"
+
+    # -- Determinism & direction ----------------------------------
+
+    def test_rci_determinism_identical_input_yields_identical_output(
+        self, client: TestClient
+    ) -> None:
+        """Jacobson-Truax 1991 RCI: same items → same total,
+        severity, instrument_version.  assessment_id differs."""
+        items = [2, 1, 3, 0, 2, 1, 3, 0]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": items},
+            headers=self._headers("ess-rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
+        assert a["instrument_version"] == b["instrument_version"]
+
+    def test_direction_higher_equals_more_sleepiness(
+        self, client: TestClient
+    ) -> None:
+        """Direction guarantee: total 24 > total 0; higher =
+        more daytime sleepiness.  Same direction as PHQ-9 /
+        GAD-7 / AUDIT / DUDIT / FTND / PSS-10 / DASS-21 /
+        IGDS9-SF / PCS; OPPOSITE of WHO-5 / BRS / LOT-R / RSES /
+        MAAS / CD-RISC-10 / WEMWBS."""
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [3] * 8},
+            headers=self._headers("ess-dir-high"),
+        ).json()
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "ess", "items": [0] * 8},
+            headers=self._headers("ess-dir-low"),
+        ).json()
+        assert high["total"] > low["total"]
+        assert high["total"] == 24
+        assert low["total"] == 0
+        assert high["severity"] == "severe"
+        assert low["severity"] == "normal"

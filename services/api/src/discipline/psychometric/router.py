@@ -6,7 +6,7 @@ CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
 MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
-IGDS9-SF, PCS.
+IGDS9-SF, PCS, ESS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -46,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1622,6 +1622,10 @@ from .scoring.pcs import (
     InvalidResponseError as PcsInvalid,
     score_pcs,
 )
+from .scoring.ess import (
+    InvalidResponseError as EssInvalid,
+    score_ess,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1710,6 +1714,7 @@ Instrument = Literal[
     "wemwbs",
     "igds9sf",
     "pcs",
+    "ess",
 ]
 
 
@@ -1780,6 +1785,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "wemwbs": 14,
     "igds9sf": 9,
     "pcs": 13,
+    "ess": 8,
 }
 
 
@@ -6056,6 +6062,95 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             subscales=p.subscales,
             instrument_version=p.instrument_version,
         )
+    if payload.instrument == "ess":
+        # ESS — Johns 1991 Epworth Sleepiness Scale (Sleep
+        # 14(6):540-545).  8 items, 0-3 Likert, total **0-24**,
+        # HIGHER = MORE daytime sleepiness.  Single factor per
+        # Johns 1993 Sleep 16(2):118-125 EFA (Cronbach α = 0.88,
+        # n = 104).
+        #
+        # Construct placement — ESS fills the DAYTIME-SLEEPINESS /
+        # SLEEP-PROPENSITY dimension orthogonal to ISI (Bastien
+        # 2001 — insomnia symptoms).  Sleep disturbance is a
+        # documented addiction-relapse amplifier via three
+        # pathways:
+        #
+        # 1. **Stimulant self-medication for EDS** (Roehrs 2016
+        #    Sleep Med Clin 11(3):379-388) — EDS drives stimulant
+        #    preference; amplifies tolerance / withdrawal /
+        #    relapse cycles.
+        # 2. **Alcohol-disrupted sleep architecture** (Brower 2008
+        #    Alcohol Clin Exp Res 32(4):585-601) — alcohol-
+        #    dependent users report persistent EDS for months
+        #    post-cessation; high ESS in post-acute-withdrawal
+        #    window predicts relapse.
+        # 3. **Sleep-deprivation → prefrontal hypometabolism →
+        #    impulsivity → URGE-WINDOW NARROWING** (Hasler 2012
+        #    Sleep Med Rev 16(1):67-81) — platform-mission
+        #    direct: the 60-180 s intervention window contracts
+        #    when executive function is impaired by EDS.  High
+        #    ESS is a biological risk marker for shortened
+        #    deliberation windows.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: sum of all 8 items, 0-24.
+        # - ``severity``: ``"normal"`` (0-10), ``"mild"`` (11-12),
+        #   ``"moderate"`` (13-15), ``"severe"`` (16-24) per
+        #   Johns 1993 Sleep 16(2):118-125 + Johns 2000 J Sleep
+        #   Res 9(1):5-11 published severity bands.  These are
+        #   published-source cutoffs (CLAUDE.md bar met).
+        # - ``requires_t3``: always False.  No item probes
+        #   ideation.
+        # - **NO** ``positive_screen`` — Johns 1991/1993/2000
+        #   publish severity bands, not a diagnostic screening
+        #   threshold.  Narcolepsy / OSA / idiopathic hypersomnia
+        #   diagnoses require polysomnography, not self-report.
+        #   Same shape as PHQ-9 / GAD-7 / K10 / DASS-21.
+        # - **NO** ``cutoff_used``, ``subscales``, ``index``,
+        #   ``triggering_items``, ``endorsed_item_count``,
+        #   ``t3_reason``.
+        #
+        # Direction: Higher = MORE daytime sleepiness.  No reverse-
+        # keying.  Same direction as PHQ-9 / GAD-7 / AUDIT /
+        # DUDIT / FTND / PSS-10 / DASS-21 / IGDS9-SF / PCS;
+        # OPPOSITE of WHO-5 / BRS / LOT-R / RSES / MAAS /
+        # CD-RISC-10 / WEMWBS.
+        #
+        # Clinical pairing patterns (intervention layer — scorer
+        # just reports):
+        #
+        # - ESS elevated + AUDIT positive — alcohol-disrupted
+        #   sleep cycle; sleep-focused MBCT content (Garland
+        #   2014) adapted for addiction contexts.
+        # - ESS elevated + stimulant-use positive (DAST-10 /
+        #   ASRS-6 positive) — stimulant-as-sleep-compensation
+        #   pattern; sleep-restoration + graded stimulant
+        #   withdrawal.
+        # - ESS elevated + ISI elevated — composite sleep-
+        #   disorder pattern (insomnia + EDS overlap); sleep-
+        #   hygiene T1 content + clinician referral for PSG per
+        #   Johns 2000 clinical-pathway recommendations.
+        # - ESS elevated + PHQ-9 elevated — depression-sleep
+        #   bidirectional loop (Franzen 2008 Dialogues Clin
+        #   Neurosci 10(4):473-481); behavioral-activation +
+        #   sleep-restriction protocol.
+        # - ESS elevated + post-acute-withdrawal window —
+        #   elevated relapse-risk marker (Brower 2008); elevate
+        #   T1 preemptive priority (Whitepaper 04 §T1).
+        #
+        # T3 posture — ESS has NO safety items.  Acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10
+        # item 6.
+        e = score_ess(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="ess",
+            total=e.total,
+            severity=e.severity,
+            requires_t3=False,
+            instrument_version=e.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -6237,6 +6332,7 @@ async def submit_assessment(
         WemwbsInvalid,
         Igds9SfInvalid,
         PcsInvalid,
+        EssInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
