@@ -1,6 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA.
+PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -37,7 +37,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA have no safety items — ``requires_t3`` is always
+  DTCQ-8, URICA, PHQ-2 have no safety items — ``requires_t3`` is always
   False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -114,7 +114,25 @@ Safety routing:
   (precontemplation-dominant profile).  Higher-is-better direction
   (same as WHO-5 / Ruler / DTCQ-8).  No safety item; a negative
   Readiness is a motivation signal, not a crisis signal.  See
-  ``scoring/urica.py``.
+  ``scoring/urica.py``.  PHQ-2 (Kroenke 2003) is the 2-item ultra-
+  short depression pre-screener composed of PHQ-9 items 1
+  (anhedonia) and 2 (depressed mood) — the **daily-EMA partner**
+  to the weekly PHQ-9 full form.  Deliberately excludes PHQ-9
+  item 9 (suicidality) so the daily-EMA surface does not carry
+  an in-line safety-routing interrupt; acute ideation remains
+  gated by the weekly PHQ-9 and by C-SSRS on-demand.  **No
+  validated severity bands** — Kroenke 2003 and the 20+ years of
+  downstream literature treat PHQ-2 as a binary decision gate
+  ("promote to PHQ-9 this week? yes/no"), not a severity measure.
+  Hand-rolling bands (e.g. back-calculated from PHQ-9 thresholds)
+  would violate CLAUDE.md's "Don't hand-roll severity thresholds"
+  rule; the scorer exposes ``total`` + ``positive_screen`` only,
+  and the router maps onto the cutoff-only wire envelope
+  (severity = "positive_screen" / "negative_screen") uniform with
+  PC-PTSD-5 / MDQ / AUDIT-C.  No safety routing — a patient who
+  needs daily depression check-ins AND is at acute risk should be
+  on PHQ-9 or C-SSRS (instrument choice is itself clinical), not
+  on PHQ-2 with an added safety hack.  See ``scoring/phq2.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -189,6 +207,10 @@ from .scoring.pcptsd5 import (
     InvalidResponseError as PcPtsd5Invalid,
     score_pcptsd5,
 )
+from .scoring.phq2 import (
+    InvalidResponseError as Phq2Invalid,
+    score_phq2,
+)
 from .scoring.phq9 import InvalidResponseError as Phq9Invalid, score_phq9
 from .scoring.phq15 import (
     InvalidResponseError as Phq15Invalid,
@@ -236,6 +258,7 @@ Instrument = Literal[
     "readiness_ruler",
     "dtcq8",
     "urica",
+    "phq2",
 ]
 
 
@@ -263,6 +286,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "readiness_ruler": 1,
     "dtcq8": 8,
     "urica": 16,
+    "phq2": 2,
 }
 
 
@@ -370,9 +394,10 @@ class AssessmentResult(BaseModel):
       (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
-      subscales (PHQ-9 / GAD-7 / WHO-5 / AUDIT / AUDIT-C / C-SSRS /
-      PSS-10 / DAST-10 / MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS /
-      Craving VAS / Readiness Ruler / DTCQ-8) emit ``subscales=None``.
+      subscales (PHQ-9 / PHQ-2 / GAD-7 / WHO-5 / AUDIT / AUDIT-C /
+      C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 / ISI / PHQ-15 /
+      PACS / Craving VAS / Readiness Ruler / DTCQ-8) emit
+      ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -877,6 +902,40 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=u.instrument_version,
         )
+    if payload.instrument == "phq2":
+        # Kroenke 2003 — 2-item 0-3 Likert ultra-short depression
+        # pre-screener composed of PHQ-9 items 1 (anhedonia) and 2
+        # (depressed mood).  Total 0-6, positive at >= 3.  **Daily-EMA
+        # partner** to the weekly PHQ-9 full form: when PHQ-2 crosses
+        # the positive cutoff, the clinician workflow recommends
+        # promotion to a full PHQ-9 for severity banding and item-9
+        # safety evaluation.  Wire envelope uses the cutoff-only
+        # semantic (severity = positive_screen / negative_screen)
+        # uniform with PC-PTSD-5 / MDQ / AUDIT-C — NOT the banded
+        # severity envelope used by PHQ-9 itself.  Kroenke 2003
+        # publishes no PHQ-2 severity bands and the downstream
+        # literature is uniform in not endorsing any — back-calculating
+        # bands from PHQ-9 thresholds would violate CLAUDE.md's
+        # "Don't hand-roll severity thresholds" rule.  No safety
+        # routing: PHQ-2 deliberately excludes PHQ-9 item 9
+        # (suicidality), so the daily-EMA surface does not carry an
+        # in-line safety-routing interrupt.  Acute ideation stays
+        # gated by the weekly PHQ-9 / C-SSRS on-demand — a patient
+        # needing daily depression check-ins AND at acute risk should
+        # be on PHQ-9 or C-SSRS, not on PHQ-2 with a safety hack.
+        # See ``scoring/phq2.py``.
+        p2 = score_phq2(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="phq2",
+            total=p2.total,
+            severity=(
+                "positive_screen" if p2.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=p2.positive_screen,
+            instrument_version=p2.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1015,6 +1074,7 @@ async def submit_assessment(
         ReadinessRulerInvalid,
         Dtcq8Invalid,
         UricaInvalid,
+        Phq2Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

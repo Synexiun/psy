@@ -3725,6 +3725,288 @@ class TestUricaRouting:
 
 
 # =============================================================================
+# PHQ-2 (Kroenke 2003) — 2-item ultra-short depression pre-screener
+# =============================================================================
+
+
+class TestPhq2Routing:
+    """PHQ-2 over the wire.
+
+    Router-level contract verification for the 2-item cutoff screen.
+    The scorer's own unit tests exhaustively pin the ``>= 3`` cutoff
+    and item validation; these tests pin:
+    (1) the dispatch branch picks ``score_phq2``,
+    (2) the wire envelope surfaces ``positive_screen`` and carries the
+        Likert-weighted total (0-6) as ``total`` (uniform with PC-PTSD-5
+        / MDQ / AUDIT-C's cutoff-only envelope),
+    (3) ``requires_t3`` is always False — PHQ-2 deliberately excludes
+        PHQ-9 item 9 (suicidality) so the T3 pathway is unreachable
+        from a PHQ-2 submission regardless of score.  A regression
+        that let PHQ-2 fire T3 would defeat the whole point of the
+        2-item ultra-short form (daily-EMA surface without an in-line
+        safety-routing interrupt) — the clinical contract is that
+        acute ideation stays gated by weekly PHQ-9 / on-demand
+        C-SSRS.
+    (4) dispatch ordering: PHQ-2 is handled before the MDQ
+        fallthrough so an MDQ-only field on a PHQ-2 submission is
+        silently ignored (defensive pin against dispatcher
+        reordering).
+    """
+
+    def _post_phq2(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "phq2", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_total_three_at_cutoff_is_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """At the Kroenke 2003 cutoff (total = 3 — e.g. anhedonia
+        "more than half the days" + depressed mood "several days") →
+        the wire response surfaces ``positive_screen=True``.  This is
+        the exact operating point; a fence-post regression would break
+        this case most visibly."""
+        resp = self._post_phq2(client, items=[2, 1])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "phq2"
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "phq2-1.0.0"
+
+    def test_total_two_below_cutoff_is_negative_screen(
+        self, client: TestClient
+    ) -> None:
+        """Just below the cutoff (total = 2) → negative_screen.
+        Kroenke 2003 considered cutoff 2 but rejected it for
+        over-firing on sub-clinical low-mood days; the router must
+        follow the chosen operating point."""
+        resp = self._post_phq2(client, items=[1, 1])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "phq2"
+        assert body["total"] == 2
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_zero_total_is_negative_screen(self, client: TestClient) -> None:
+        """Zero on both items → negative screen.  The degenerate case:
+        a patient with no depressive symptoms in the past 2 weeks."""
+        resp = self._post_phq2(client, items=[0, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_max_total_is_positive_screen(self, client: TestClient) -> None:
+        """Both items "nearly every day" (total = 6) → unambiguous
+        positive screen — canonical major-depression presentation on
+        PHQ-2, routes the patient to full PHQ-9 administration."""
+        resp = self._post_phq2(client, items=[3, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 6
+        assert body["positive_screen"] is True
+
+    def test_single_max_item_hits_cutoff(self, client: TestClient) -> None:
+        """One item maxed (3), the other zero (total = 3) → positive.
+        A patient with "every day depressed mood but no anhedonia" is
+        still a positive screen — the cutoff is on the total, not on
+        per-item thresholds.  Pins the scorer's sum-based gate at the
+        wire layer."""
+        resp = self._post_phq2(client, items=[3, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 3
+        assert body["positive_screen"] is True
+
+    def test_positive_screen_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: even a maximum PHQ-2
+        score (both items "nearly every day") never fires the T3
+        crisis pathway.  PHQ-2 deliberately excludes PHQ-9 item 9
+        (suicidality) — a regression that let PHQ-2 fire T3 would
+        (a) spam the clinical-ops safety queue on daily EMA volume
+        and (b) defeat the design purpose of the 2-item short form
+        (friction-minimizing daily check-in without an in-line
+        safety interrupt).  Acute ideation is gated by weekly
+        PHQ-9 / on-demand C-SSRS."""
+        resp = self._post_phq2(client, items=[3, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        """PHQ-2 has no subscales — the wire envelope must emit
+        ``subscales=None`` (not an empty dict) to match the convention
+        for non-subscale instruments (PHQ-9 / GAD-7 / WHO-5 / etc.).
+        A client renderer keying on ``body["subscales"] is None`` to
+        hide the subscale panel would render an empty panel if this
+        field silently regressed to ``{}``."""
+        resp = self._post_phq2(client, items=[3, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body.get("subscales") is None
+
+    def test_rejects_one_item(self, client: TestClient) -> None:
+        """Wrong item count → 422.  Client-side bug where the UI
+        dropped an item should surface as a validation error, not a
+        silent partial score."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq2", "items": [2]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_three_items(self, client: TestClient) -> None:
+        """Extra item → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq2", "items": [2, 1, 1]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_nine_items_phq9_misroute(
+        self, client: TestClient
+    ) -> None:
+        """A 9-item submission against ``instrument=phq2`` is almost
+        certainly a mis-routed PHQ-9 (a UI bug that passed the full
+        PHQ-9 array but tagged it phq2).  Must 422 with the
+        2-items-expected message rather than partially scoring — a
+        silent partial score here could under-report depression
+        severity and delay a PHQ-9 follow-up."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq2", "items": [0, 0, 0, 0, 0, 0, 0, 0, 0]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Item value > 3 → 422.  PHQ-2 is 0-3 four-point Likert — a
+        4 or 5 is a contract violation (e.g. a UI bug in a 5-point
+        slider)."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq2", "items": [4, 2]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        """Negative item value → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq2", "items": [-1, 2]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """A submission with a user_id shows up in the per-user
+        history with the positive_screen flag captured — the history
+        endpoint relies on the stored record via the repository.
+        Downstream clinician UI renders the positive-screen badge
+        from this persisted field, not from a re-score at read time.
+        """
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq2",
+                "items": [3, 2],
+                "user_id": "user-phq2-1",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-phq2-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "phq2"
+        assert stored.total == 5
+        assert stored.positive_screen is True
+        assert stored.requires_t3 is False
+        # PHQ-2 has no subscales — the stored record carries None, not
+        # an empty dict.  Matches the wire envelope convention.
+        assert stored.subscales is None
+
+    def test_history_projection_surfaces_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """The /history endpoint projects PHQ-2 records with the
+        ``positive_screen`` field populated so a user-facing timeline
+        can render the binary screen badge without a second round-trip
+        to re-score.  PHQ-9 would need the severity band here; PHQ-2
+        renders the screen flag."""
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq2",
+                "items": [3, 3],
+                "user_id": "user-phq2-hist",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        resp = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-phq2-hist"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["instrument"] == "phq2"
+        assert item["total"] == 6
+        assert item["severity"] == "positive_screen"
+        assert item["positive_screen"] is True
+        assert item["requires_t3"] is False
+        assert item["subscales"] is None
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """``concurrent_symptoms`` and ``functional_impairment`` are
+        MDQ-only.  The PHQ-2 dispatch branch is handled before the
+        MDQ fallthrough so if a client mistakenly sends those fields
+        on a PHQ-2 request, the scorer ignores them — a defensive pin
+        against dispatcher-ordering regressions (the MDQ fallthrough
+        is the last branch, so any new instrument added *after* MDQ
+        would silently demand Part 2 / Part 3 validation)."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq2",
+                "items": [2, 1],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "phq2"
+        assert body["positive_screen"] is True
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
