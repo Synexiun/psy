@@ -6,7 +6,7 @@ CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
 MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
-IGDS9-SF, PCS, ESS, SPIN, CUDIT-R, CES-D.
+IGDS9-SF, PCS, ESS, SPIN, CUDIT-R, CES-D, SAS-SV.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -46,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN, CUDIT-R, CES-D have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN, CUDIT-R, CES-D, SAS-SV have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1638,6 +1638,10 @@ from .scoring.cesd import (
     InvalidResponseError as CesdInvalid,
     score_cesd,
 )
+from .scoring.sassv import (
+    InvalidResponseError as SasSvInvalid,
+    score_sas_sv,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1730,6 +1734,7 @@ Instrument = Literal[
     "spin",
     "cuditr",
     "cesd",
+    "sas_sv",
 ]
 
 
@@ -1804,6 +1809,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "spin": 17,
     "cuditr": 8,
     "cesd": 20,
+    "sas_sv": 10,
 }
 
 
@@ -6329,6 +6335,30 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=d.positive_screen,
             instrument_version=d.instrument_version,
         )
+    if payload.instrument == "sas_sv":
+        # SAS-SV — Kwon 2013 Smartphone Addiction Scale - Short Version.
+        #
+        # 10 items, 1-6 Likert.  Total 10-60.  HIGHER = MORE smartphone
+        # addiction.  Sex-stratified cutoffs: male ≥ 31, female ≥ 33,
+        # unspecified ≥ 31 (lower cutoff = more sensitive =
+        # safety-conservatism — mirrors AUDIT-C CUTOFF_UNSPECIFIED).
+        #
+        # cutoff_used (31 or 33) is echoed on the wire so the client can
+        # render "positive at ≥ N" without reimplementing sex → cutoff.
+        #
+        # No T3: SAS-SV measures smartphone addiction, not suicidality.
+        # No subscales: unidimensional per Kwon 2013 CFA.
+        ss = score_sas_sv(payload.items, sex=payload.sex or "unspecified")
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="sas_sv",
+            total=ss.total,
+            severity=ss.severity,
+            requires_t3=False,
+            positive_screen=ss.positive_screen,
+            cutoff_used=ss.cutoff_used,
+            instrument_version=ss.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -6514,6 +6544,7 @@ async def submit_assessment(
         SpinInvalid,
         CuditRInvalid,
         CesdInvalid,
+        SasSvInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

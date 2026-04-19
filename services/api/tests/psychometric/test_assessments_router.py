@@ -30041,3 +30041,357 @@ class TestCesdRouting:
         ).json()
         assert a["total"] == b["total"]
         assert a["positive_screen"] == b["positive_screen"]
+
+
+# ---------------------------------------------------------------------------
+# TestSasSvRouting
+# ---------------------------------------------------------------------------
+
+
+class TestSasSvRouting:
+    """HTTP-layer tests for SAS-SV (Kwon 2013).
+
+    10 items, 1-6 Likert. Total 10-60, HIGHER = MORE smartphone addiction.
+    Sex-stratified cutoffs: male >= 31, female >= 33, unspecified >= 31.
+    Wire shape: positive_screen / negative_screen + cutoff_used.
+    requires_t3=False. No subscales.
+    """
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"sassv-test-{idem_key}"}
+
+    @staticmethod
+    def _floor_items() -> list[int]:
+        return [1] * 10
+
+    @staticmethod
+    def _ceil_items() -> list[int]:
+        return [6] * 10
+
+    @staticmethod
+    def _items(total: int) -> list[int]:
+        """Build a valid 10-item list with the given total (10-60)."""
+        items = [1] * 10
+        remaining = total - 10
+        for i in range(10):
+            add = min(5, remaining)
+            items[i] += add
+            remaining -= add
+            if remaining == 0:
+                break
+        return items
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_sas_sv_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_sas_sv_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "sas_sv"
+
+    def test_sas_sv_total_floor(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("total-floor"),
+        ).json()
+        assert body["total"] == 10
+
+    def test_sas_sv_total_ceil(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._ceil_items()},
+            headers=self._headers("total-ceil"),
+        ).json()
+        assert body["total"] == 60
+
+    def test_sas_sv_severity_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("sev-present"),
+        ).json()
+        assert "severity" in body
+
+    def test_sas_sv_negative_screen_severity_string(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("sev-neg"),
+        ).json()
+        assert body["severity"] == "negative_screen"
+
+    def test_sas_sv_positive_screen_severity_string(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._ceil_items()},
+            headers=self._headers("sev-pos"),
+        ).json()
+        assert body["severity"] == "positive_screen"
+
+    def test_sas_sv_requires_t3_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._ceil_items()},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_sas_sv_no_subscales(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items()},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    # ------------------------------------------------------------------
+    # Sex-stratified cutoffs
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_male_cutoff_31_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(31), "sex": "male"},
+            headers=self._headers("male-31-pos"),
+        ).json()
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 31
+
+    def test_sas_sv_male_below_cutoff_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(30), "sex": "male"},
+            headers=self._headers("male-30-neg"),
+        ).json()
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 31
+
+    def test_sas_sv_female_cutoff_33_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(33), "sex": "female"},
+            headers=self._headers("fem-33-pos"),
+        ).json()
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 33
+
+    def test_sas_sv_female_at_31_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(31), "sex": "female"},
+            headers=self._headers("fem-31-neg"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_sas_sv_female_at_32_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(32), "sex": "female"},
+            headers=self._headers("fem-32-neg"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_sas_sv_female_cutoff_used_is_33(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items(), "sex": "female"},
+            headers=self._headers("fem-cutoff-33"),
+        ).json()
+        assert body["cutoff_used"] == 33
+
+    def test_sas_sv_unspecified_uses_male_cutoff(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "sas_sv",
+                "items": self._items(31),
+                "sex": "unspecified",
+            },
+            headers=self._headers("unspec-31"),
+        ).json()
+        assert body["cutoff_used"] == 31
+        assert body["positive_screen"] is True
+
+    def test_sas_sv_default_sex_unspecified(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(31)},
+            headers=self._headers("default-sex"),
+        ).json()
+        assert body["cutoff_used"] == 31
+        assert body["positive_screen"] is True
+
+    def test_sas_sv_cutoff_used_is_int(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items(), "sex": "male"},
+            headers=self._headers("cutoff-int"),
+        ).json()
+        assert isinstance(body["cutoff_used"], int)
+
+    # ------------------------------------------------------------------
+    # positive_screen bool on wire
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_positive_screen_bool_true(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._ceil_items(), "sex": "male"},
+            headers=self._headers("ps-bool-t"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_sas_sv_positive_screen_bool_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items(), "sex": "male"},
+            headers=self._headers("ps-bool-f"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    # ------------------------------------------------------------------
+    # Item-count validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_9_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": [1] * 9},
+            headers=self._headers("cnt-9"),
+        )
+        assert resp.status_code == 422
+
+    def test_sas_sv_11_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": [1] * 11},
+            headers=self._headers("cnt-11"),
+        )
+        assert resp.status_code == 422
+
+    def test_sas_sv_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-range validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_item_zero_returns_422(self, client: TestClient) -> None:
+        items = [1] * 10
+        items[0] = 0
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": items},
+            headers=self._headers("range-0"),
+        )
+        assert resp.status_code == 422
+
+    def test_sas_sv_item_7_returns_422(self, client: TestClient) -> None:
+        items = [1] * 10
+        items[3] = 7
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": items},
+            headers=self._headers("range-7"),
+        )
+        assert resp.status_code == 422
+
+    def test_sas_sv_negative_item_returns_422(self, client: TestClient) -> None:
+        items = [1] * 10
+        items[5] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_compulsive_male_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(35), "sex": "male"},
+            headers=self._headers("vig-m-comp"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_sas_sv_compulsive_female_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._items(35), "sex": "female"},
+            headers=self._headers("vig-f-comp"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_sas_sv_low_user_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": self._floor_items(), "sex": "male"},
+            headers=self._headers("vig-low"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_sas_sv_total_matches_sum(self, client: TestClient) -> None:
+        items = [1, 2, 3, 4, 5, 6, 5, 4, 3, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": items},
+            headers=self._headers("sum-match"),
+        ).json()
+        assert body["total"] == sum(items)
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_sas_sv_deterministic(self, client: TestClient) -> None:
+        items = [1, 2, 3, 4, 5, 6, 5, 4, 3, 2]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": items, "sex": "male"},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "sas_sv", "items": items, "sex": "male"},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["positive_screen"] == b["positive_screen"]
