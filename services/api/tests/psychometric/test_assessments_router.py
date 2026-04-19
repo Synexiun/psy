@@ -16420,6 +16420,724 @@ class TestStai6Routing:
         assert body["severity"] == "continuous"
 
 
+class TestFnebRouting:
+    """End-to-end routing tests for the FNE-B dispatcher branch.
+
+    Leary 1983 Brief Fear of Negative Evaluation — 12 items, 1-5
+    Likert, total 12-60 (POST-FLIP), single factor, no bands
+    (severity = ``"continuous"``).  **HIGHER = MORE fear of
+    negative evaluation** — uniform with PHQ-9 / GAD-7 / PSS-10 /
+    STAI-6 (lower-is-better direction).  OPPOSITE of WHO-5 / BRS /
+    RSES / FFMQ-15 / MAAS / LOT-R.
+
+    Reverse-keying: items 2, 4, 7, 10 are the four reverse-keyed
+    positions (positively-worded "I am unconcerned / rarely worry /
+    not worried" lead-ins) flipped via ``6 - raw`` before summation.
+    The remaining 8 items (1, 3, 5, 6, 8, 9, 11, 12) are negatively
+    worded and pass through raw.  The wire ``items`` are NOT
+    surfaced by the envelope (consistent with every other reverse-
+    keyed instrument); the wire ``total`` is the POST-FLIP 12-60 sum.
+
+    Diagnostic property (Marsh 1996 acquiescence-bias-control
+    signature): the 8-straight / 4-reverse ASYMMETRIC split yields
+    the LINEAR formula ``total = 4v + 24`` for any all-``v``
+    constant-response vector — all-1s = 28, all-2s = 32, all-3s =
+    36, all-4s = 40, all-5s = 44.  Pinned in FIVE parallel tests
+    because it is the canonical asymmetric-split acquiescence
+    property (contrast with STAI-6's 3/3 symmetric split where
+    every constant → 15, or FFMQ-15's 8/7 split where extremes
+    differ by only 4).  FNE-B's differ-by-16 between raw-all-1 and
+    raw-all-5 is the LARGEST acquiescence gap on the platform —
+    a random endpoint-only responder shifts the score 33% of the
+    12-60 range.  If any constant drifts off ``4v + 24``, reverse-
+    keying at positions 2/4/7/10 has broken.
+
+    Clinical use cases (Heimberg 1995, Hofmann 2008, Marlatt 1985
+    Table 4.1, Caplan 2003):
+    1. Socially-cued relapse detection — high FNE-B entering a
+       social drinking context signals Marlatt 1985 social-pressure
+       relapse risk on a mechanism ORTHOGONAL to craving intensity.
+    2. User-profile differentiation — high FNE-B + elevated AUDIT
+       = "alcohol-as-social-lubrication" profile (exposure +
+       social-skills target); low FNE-B + elevated PSS-10 / STAI-6
+       = "negative-affect-self-medication" profile (DBT distress-
+       tolerance target).  Distinct intervention pathways.
+    3. Digital-avoidance substitution detection — high FNE-B +
+       problematic internet / gaming use is the Caplan 2003
+       compensatory-internet-use signature.
+
+    No bands: Leary 1983 did not publish severity cutpoints.
+    Collins 2005's ``>= 49`` "clinical range" noted in a n=234
+    college sample is secondary-literature post-hoc derivation and
+    not pinnable per CLAUDE.md.  Jacobson-Truax RCI applied to the
+    raw 12-60 total at the trajectory layer.  No T3 gating — no
+    item probes suicidality ("afraid of making mistakes" item 8 is
+    evaluative-apprehension NOT ideation; acute-risk screening
+    stays on C-SSRS / PHQ-9 item 9).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ----------------------------------------------------
+
+    def test_max_fear_extremum_sixty(self, client: TestClient) -> None:
+        """Maximum fear of negative evaluation — raw [5,1,5,1,5,5,1,
+        5,5,1,5,5] agrees maximally with every straight item
+        (1,3,5,6,8,9,11,12 = all 5) and disagrees with every reverse
+        item (2,4,7,10 = all 1).  Post-flip all 5s, total 60.
+        Clinically: severe social-evaluative-anxiety extremum per
+        Collins 2005."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 1, 5, 1, 5, 5, 1, 5, 5, 1, 5, 5],
+            },
+            headers=self._headers("fneb-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "fneb"
+        assert body["total"] == 60
+        assert body["severity"] == "continuous"
+
+    def test_min_fear_extremum_twelve(self, client: TestClient) -> None:
+        """Minimum fear of negative evaluation — raw [1,5,1,5,1,1,5,
+        1,1,5,1,1] disagrees with every straight item (all 1) and
+        agrees with every reverse item (all 5).  Post-flip all 1s,
+        total 12.  Clinically: the socially-secure / low-evaluative-
+        apprehension floor."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 5, 1, 5, 1, 1, 5, 1, 1, 5, 1, 1],
+            },
+            headers=self._headers("fneb-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+
+    # -- Acquiescence-bias signature (asymmetric 8/4 split) ----------------
+
+    def test_acquiescence_all_ones_yields_twenty_eight(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias control — raw all-1s ("not at all
+        characteristic" on every item regardless of valence) yields
+        total 28.  Linear formula: 4×1 + 24 = 28.  Straights
+        contribute 8 (8×1), reverses flip 1→5 contributing 20
+        (4×5).  The asymmetric 8/4 split means this does NOT land
+        at the midpoint — that signature is FNE-B's canonical
+        fingerprint."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [1] * 12},
+            headers=self._headers("fneb-acq-1"),
+        )
+        body = response.json()
+        assert body["total"] == 28
+
+    def test_acquiescence_all_twos_yields_thirty_two(
+        self, client: TestClient
+    ) -> None:
+        """4×2 + 24 = 32.  Straights 16 (8×2), reverses 16
+        (4×(6-2)=4×4)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [2] * 12},
+            headers=self._headers("fneb-acq-2"),
+        )
+        body = response.json()
+        assert body["total"] == 32
+
+    def test_acquiescence_all_threes_yields_thirty_six(
+        self, client: TestClient
+    ) -> None:
+        """4×3 + 24 = 36.  The midpoint of the 12-60 range; this
+        is the ONLY constant vector that lands at the arithmetic
+        midpoint (unlike STAI-6 where all four constants do).
+        Straights 24 (8×3), reverses 12 (4×(6-3)=4×3)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 12},
+            headers=self._headers("fneb-acq-3"),
+        )
+        body = response.json()
+        assert body["total"] == 36
+
+    def test_acquiescence_all_fours_yields_forty(
+        self, client: TestClient
+    ) -> None:
+        """4×4 + 24 = 40.  Straights 32 (8×4), reverses 8
+        (4×(6-4)=4×2)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [4] * 12},
+            headers=self._headers("fneb-acq-4"),
+        )
+        body = response.json()
+        assert body["total"] == 40
+
+    def test_acquiescence_all_fives_yields_forty_four(
+        self, client: TestClient
+    ) -> None:
+        """4×5 + 24 = 44.  Raw all-5s ("extremely characteristic"
+        on every item) yields 44, NOT 60 — because reverses flip
+        5→1.  The differ-by-16 gap with all-1s (28) is the largest
+        acquiescence-bias signature on the platform."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [5] * 12},
+            headers=self._headers("fneb-acq-5"),
+        )
+        body = response.json()
+        assert body["total"] == 44
+
+    def test_acquiescence_differ_by_sixteen_invariant(
+        self, client: TestClient
+    ) -> None:
+        """Pin the acquiescence-bias signature invariant
+        explicitly: all-5s total minus all-1s total equals
+        exactly 16 — the full range of reverse-keying's
+        contribution under 5-point Likert asymmetric 8/4 split
+        (4 reverses × (5-1)=4 range each = 16).  If this invariant
+        breaks, either reverse-keying positions have drifted or
+        the Likert range has changed."""
+        r1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [1] * 12},
+            headers=self._headers("fneb-diff16-1"),
+        ).json()
+        r5 = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [5] * 12},
+            headers=self._headers("fneb-diff16-5"),
+        ).json()
+        assert r5["total"] - r1["total"] == 16
+
+    # -- Envelope fields — no subscales, cutoff_used, positive_screen ------
+
+    def test_envelope_has_no_subscales(self, client: TestClient) -> None:
+        """FNE-B is single-factor (Leary 1983); envelope MUST NOT
+        carry subscales.  BFNE-II (Carleton 2007) attempted a
+        reverse-keyed-only 8-item factor — the platform ships the
+        original 12-item form and does not split."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 12},
+            headers=self._headers("fneb-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_envelope_has_no_cutoff_used(self, client: TestClient) -> None:
+        """Leary 1983 published no cutoff; Collins 2005's ≥49 is
+        secondary-literature and not pinned per CLAUDE.md no-hand-
+        rolled-bands rule."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 12},
+            headers=self._headers("fneb-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_envelope_has_no_positive_screen(self, client: TestClient) -> None:
+        """No categorical screen — FNE-B is a continuous
+        dimensional measure, not a dichotomous screen like
+        AUDIT-C / MDQ / PC-PTSD-5."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 12},
+            headers=self._headers("fneb-no-screen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_envelope_has_no_scaled_score(self, client: TestClient) -> None:
+        """FNE-B reports the raw 12-60 total.  No scaled mapping
+        to another range — contrast with WHO-5 which emits the
+        raw×4 index."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 12},
+            headers=self._headers("fneb-no-scaled"),
+        )
+        body = response.json()
+        assert body.get("scaled_score") is None
+
+    def test_envelope_has_no_triggering_items(self, client: TestClient) -> None:
+        """triggering_items is C-SSRS-only (risk-band audit trail).
+        FNE-B is a continuous dimensional measure; no item is
+        individually-flagging."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [5] * 12},
+            headers=self._headers("fneb-no-triggering"),
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    # -- Severity always continuous ----------------------------------------
+
+    def test_severity_continuous_at_minimum(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 5, 1, 5, 1, 1, 5, 1, 1, 5, 1, 1],
+            },
+            headers=self._headers("fneb-sev-min"),
+        )
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_collins_2005_49(
+        self, client: TestClient
+    ) -> None:
+        """Collins 2005 noted ≥49 as "clinical range" in a social-
+        phobia-student sample.  The platform fires NO band at this
+        threshold — the value 49 in the response is continuous, not
+        banded.  If a severity label appears here, secondary-
+        literature bands have leaked into the scorer in violation of
+        CLAUDE.md."""
+        # Raw [5,2,5,2,4,4,2,4,4,2,4,3]: straights 5+5+4+4+4+4+4+3 = 33,
+        # reverses raw all-2 → flip to 4 each, 4×4 = 16.  Total 49.
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 2, 5, 2, 4, 4, 2, 4, 4, 2, 4, 3],
+            },
+            headers=self._headers("fneb-sev-49"),
+        )
+        body = response.json()
+        assert body["total"] == 49
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_maximum(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 1, 5, 1, 5, 5, 1, 5, 5, 1, 5, 5],
+            },
+            headers=self._headers("fneb-sev-max"),
+        )
+        body = response.json()
+        assert body["total"] == 60
+        assert body["severity"] == "continuous"
+
+    # -- T3 posture --------------------------------------------------------
+
+    def test_item_8_mistakes_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """FNE-B item 8 ("I am frequently afraid of making mistakes")
+        is evaluative-apprehension, NOT suicidal ideation.  Even
+        maxed-out item 8 + all others 1 must never set
+        requires_t3=True.  Active-risk screening stays on C-SSRS /
+        PHQ-9 item 9."""
+        # Raw [1,5,1,5,1,1,5,5,1,5,1,1] — straights all 1 except
+        # item 8 = 5; reverses all 5 flip to 1.  Post-flip
+        # [1,1,1,1,1,1,1,5,1,1,1,1] total = 16.
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 5, 1, 5, 1, 1, 5, 5, 1, 5, 1, 1],
+            },
+            headers=self._headers("fneb-t3-item8"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_max_total_does_not_require_t3(self, client: TestClient) -> None:
+        """Even the 60-extremum never fires T3.  FNE-B has no
+        suicidality item; trauma/affect-regulation / social-anxiety
+        routing happens at the intervention-selection layer, not
+        through the T3 crisis gate."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 1, 5, 1, 5, 5, 1, 5, 5, 1, 5, 5],
+            },
+            headers=self._headers("fneb-t3-max"),
+        )
+        body = response.json()
+        assert body["total"] == 60
+        assert body["requires_t3"] is False
+
+    # -- Reverse-keying wire pins (positions 2, 4, 7, 10) ------------------
+
+    def test_reverse_item_2_flips_independently(
+        self, client: TestClient
+    ) -> None:
+        """Isolated reverse-keying check at position 2.  Raw all 1s
+        except item 2 = 5.  Straights 8×1 = 8.  Reverses: item 2
+        raw 5 → flip to 1 (contributing 1); items 4,7,10 raw 1 →
+        flip to 5 (contributing 15).  Total 8+1+15 = 24.  Compare
+        with all-1s total 28 — adjusting item 2 alone from 1 to 5
+        drops the total by 4 (NOT raises, because reverse)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-rev-pos2"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+
+    def test_reverse_item_4_flips_independently(
+        self, client: TestClient
+    ) -> None:
+        """Position 4 reverse check. Raw all 1s except item 4 = 5.
+        Same drop-by-4 as position 2: all-1s = 28, flipping item 4
+        to raw 5 yields 24."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 1, 1, 5, 1, 1, 1, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-rev-pos4"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+
+    def test_reverse_item_7_flips_independently(
+        self, client: TestClient
+    ) -> None:
+        """Position 7 reverse check."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 1, 1, 1, 1, 1, 5, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-rev-pos7"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+
+    def test_reverse_item_10_flips_independently(
+        self, client: TestClient
+    ) -> None:
+        """Position 10 reverse check."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 1, 1, 1, 1, 1, 1, 1, 1, 5, 1, 1],
+            },
+            headers=self._headers("fneb-rev-pos10"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+
+    def test_straight_item_1_passes_through(self, client: TestClient) -> None:
+        """Sanity: a straight-keyed position (1) shifts in the SAME
+        direction as the raw value.  Raw all 1s total = 28; flip
+        item 1 raw to 5 → total = 28 + 4 = 32."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-str-pos1"),
+        )
+        body = response.json()
+        assert body["total"] == 32
+
+    def test_straight_item_8_passes_through(self, client: TestClient) -> None:
+        """Straight item 8 sanity; parallel to item 1 above."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [1, 1, 1, 1, 1, 1, 1, 5, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-str-pos8"),
+        )
+        body = response.json()
+        assert body["total"] == 32
+
+    # -- Item count traps --------------------------------------------------
+
+    def test_rejects_eleven_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 11},
+            headers=self._headers("fneb-ic-11"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_thirteen_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 13},
+            headers=self._headers("fneb-ic-13"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_six_items_stai6_shape(self, client: TestClient) -> None:
+        """A 6-item payload (STAI-6 shape) must not be accepted for
+        FNE-B — guards against instrument-swapping at the dispatcher."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 6},
+            headers=self._headers("fneb-ic-6"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_zero_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": []},
+            headers=self._headers("fneb-ic-0"),
+        )
+        assert response.status_code == 422
+
+    # -- Item value traps --------------------------------------------------
+
+    def test_rejects_item_value_zero(self, client: TestClient) -> None:
+        """Item min is 1 (Leary 1983 1-5 Likert).  0 is below range;
+        the scorer's range check rejects."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("fneb-iv-0"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_six(self, client: TestClient) -> None:
+        """Item max is 5.  6 is above range."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [6, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("fneb-iv-6"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_negative(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [-1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("fneb-iv-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_far_out_of_range(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [99, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("fneb-iv-99"),
+        )
+        assert response.status_code == 422
+
+    # -- Item type trap ----------------------------------------------------
+
+    def test_rejects_string_items(self, client: TestClient) -> None:
+        """Pydantic's ``list[int]`` coerces numeric strings but
+        rejects non-numeric strings.  Either way, a non-int at the
+        scorer layer (after coercion) is a 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": ["three"] + [3] * 11,
+            },
+            headers=self._headers("fneb-iv-str"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_float_with_decimal(self, client: TestClient) -> None:
+        """Pydantic ``list[int]`` rejects 3.5 as non-integer."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [3.5] + [3] * 11,
+            },
+            headers=self._headers("fneb-iv-fl"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic bool-coercion doc ---------------------------------------
+
+    def test_true_coerced_to_one_is_valid(self, client: TestClient) -> None:
+        """Pydantic's ``list[int]`` coerces JSON ``true`` → 1 BEFORE
+        the scorer sees it.  On FNE-B's 1-5 scale, 1 is a valid
+        response ("not at all characteristic") so True passes the
+        range check.  The scorer never sees a bool — its strict-
+        bool rejection protects C-SSRS / MDQ flows where True would
+        be a semantically-wrong 1."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [True, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-true"),
+        )
+        # True → 1 at position 1 (straight); rest all 1.  Equivalent
+        # to raw all-1s = 28.
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 28
+
+    def test_false_coerced_to_zero_is_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces ``false`` → 0, which is BELOW FNE-B's
+        1-5 range.  The range check at the scorer rejects with
+        422.  Documents that bool coercion is a Pydantic-level
+        behavior and that downstream range validation catches it."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [False, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("fneb-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes ------------------------------------------------
+
+    def test_vignette_social_phobia_clinical(self, client: TestClient) -> None:
+        """Collins 2005 clinical-sample pattern: mostly "extremely
+        characteristic" on straight items, "not at all characteristic"
+        on reverse items.  Raw [5,1,5,1,5,5,1,5,5,1,5,4].  Post-flip
+        [5,5,5,5,5,5,5,5,5,5,5,4] = 59.  Firmly in Collins 2005's
+        ≥49 "clinical range" but the envelope reports severity
+        = continuous."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 1, 5, 1, 5, 5, 1, 5, 5, 1, 5, 4],
+            },
+            headers=self._headers("fneb-vig-phobia"),
+        )
+        body = response.json()
+        assert body["total"] == 59
+        assert body["severity"] == "continuous"
+
+    def test_vignette_leary_1983_student_mean(
+        self, client: TestClient
+    ) -> None:
+        """Leary 1983 Table 2 student-sample mean ≈ 35.  Raw
+        [3,3,3,3,3,3,3,3,2,3,3,3].  Straights (1,3,5,6,8,9,11,12)
+        = 3+3+3+3+3+2+3+3 = 23; reverses (2,4,7,10) raw all 3 →
+        flip to 3 each = 12.  Total 35."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 2, 3, 3, 3],
+            },
+            headers=self._headers("fneb-vig-student"),
+        )
+        body = response.json()
+        assert body["total"] == 35
+        assert body["severity"] == "continuous"
+
+    def test_vignette_community_low(self, client: TestClient) -> None:
+        """Non-clinical respondent with low social-evaluation
+        anxiety: mild disagreement with straight items (2), mild
+        agreement with reverse items (4).  Raw
+        [2,4,2,4,2,2,4,2,2,4,2,2].  Straights 2×8 = 16, reverses
+        flip 4→2 contributing 4×2 = 8.  Total 24 — below even the
+        raw-all-1s 28 floor because the respondent is actively
+        endorsing low-fear reverse items."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [2, 4, 2, 4, 2, 2, 4, 2, 2, 4, 2, 2],
+            },
+            headers=self._headers("fneb-vig-community"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+        assert body["severity"] == "continuous"
+
+    def test_vignette_alcohol_social_lubrication_profile(
+        self, client: TestClient
+    ) -> None:
+        """Marlatt 1985 Table 4.1 social-pressure relapse category:
+        patient drinks to manage social-evaluation anxiety.  High
+        social-evaluation concern with strong agreement on straight
+        items (4) and strong disagreement on reverse items (2).
+        Raw [4,2,4,2,4,4,2,4,4,2,4,4].  Straights 4×8 = 32,
+        reverses flip 2→4 contributing 4×4 = 16.  Total 48.
+        Just below Collins 2005's ≥49 "clinical range" — clinically
+        signals exposure + social-skills-training intervention
+        targeting over DBT distress-tolerance."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [4, 2, 4, 2, 4, 4, 2, 4, 4, 2, 4, 4],
+            },
+            headers=self._headers("fneb-vig-alcohol"),
+        )
+        body = response.json()
+        assert body["total"] == 48
+        assert body["severity"] == "continuous"
+
+    def test_vignette_cbgt_pre_post_within_session_effect(
+        self, client: TestClient
+    ) -> None:
+        """Heimberg 1995 CBGT pre/post social-anxiety-session effect.
+        Pre-session elevated FNE-B (raw maximum pattern → 60),
+        post-session reduced FNE-B (raw all 3s → 36).  Delta 24 is
+        a large within-session effect well above Jacobson-Truax RCI
+        threshold at the trajectory layer — a canonical within-
+        session CBGT target."""
+        pre = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "fneb",
+                "items": [5, 1, 5, 1, 5, 5, 1, 5, 5, 1, 5, 5],
+            },
+            headers=self._headers("fneb-vig-cbgt-pre"),
+        ).json()
+        post = client.post(
+            "/v1/assessments",
+            json={"instrument": "fneb", "items": [3] * 12},
+            headers=self._headers("fneb-vig-cbgt-post"),
+        ).json()
+        assert pre["total"] == 60
+        assert post["total"] == 36
+        assert pre["total"] - post["total"] == 24
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

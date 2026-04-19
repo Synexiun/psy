@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6.
+ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1170,6 +1170,61 @@ Safety routing:
   item probes suicidality; "upset" (item 3) is general
   distress, NOT ideation.  ``items`` field preserves RAW
   pre-flip for audit invariance.  See ``scoring/stai6.py``.
+- FNE-B (Leary 1983): 12 items, 1-5 Likert, 4 reverse-keyed
+  (positions 2, 4, 7, 10).  The original Brief Fear of Negative
+  Evaluation scale — Leary (Personality and Social Psychology
+  Bulletin 1983, 9(3):371-375) derived the 12-item abbreviation
+  from Watson & Friend's (1969) original 30-item FNE with
+  r = 0.96 on n = 164 undergraduates.  Fills the platform's
+  **social-evaluative anxiety gap** — existing anxiety coverage
+  targets generalized worry (GAD-7, PSWQ), state anxiety (STAI-6,
+  OASIS), experiential avoidance (AAQ-II), but none measure the
+  fear-of-judgement construct that drives social-situation
+  avoidance, public-speaking paralysis, and social-anxiety-
+  disorder phenomenology (Heimberg 1995, Hofmann 2008).
+  Clinical load-bearing: (1) social-phobia case-identification
+  and CBGT / CT treatment-targeting (Heimberg 1995 Cognitive-
+  Behavioral Group Therapy for Social Phobia protocol uses
+  FNE as a primary pre/post outcome); (2) addiction-relevant
+  **socially-cued relapse detection** — Marlatt 1985 Table 4.1
+  identifies social-pressure / interpersonal-conflict as a top
+  proximal relapse determinant; FNE-B discriminates the
+  "alcohol-as-social-lubrication" user profile from the
+  "negative-affect-self-medication" profile (distinct
+  intervention strategies: exposure + social-skills training
+  vs affect-regulation + DBT distress-tolerance); (3)
+  digital-avoidance substitution detection — high FNE-B
+  + high CIUS / gaming disorder = social-anxiety-driven
+  escape into online worlds rather than face-to-face
+  engagement (Caplan 2003 compensatory-internet-use model).
+  Items (Leary 1983 Table 1): 1. worry what people think,
+  2. unconcerned opinions (reverse), 3. afraid other won't
+  approve, 4. rarely worry seeming foolish (reverse), 5.
+  afraid make unfavorable impression, 6. afraid others won't
+  approve, 7. unconcerned if disapproved (reverse), 8.
+  frequently afraid of mistakes, 9. others' opinions don't
+  bother me, 10. not worried what say (reverse), 11. worry
+  disapproval, 12. worry say wrong thing.  Post-flip =
+  6 - raw at reverse positions; total = sum of post-flip
+  items, range 12-60.  HIGHER = more fear of negative
+  evaluation (lower-is-better direction, uniform with
+  PHQ-9 / GAD-7 / PSS-10 / STAI-6).  NO bands — severity
+  = "continuous" sentinel; no pinnable Leary 1983
+  cutpoints (Collins 2005 n = 234 college sample mean
+  35.7 SD 8.1 with ≥ 49 = "clinical range" is secondary-
+  literature post-hoc and not pinnable per CLAUDE.md);
+  trajectory layer applies Jacobson-Truax RCI on the
+  raw 12-60 total for clinical-significance.  NO T3 —
+  no item probes suicidality; "afraid of making mistakes"
+  (item 8) is evaluative-apprehension, NOT ideation.
+  Acquiescence-bias asymmetric: 8 straight + 4 reverse
+  items give total = 4v + 24 for any all-v constant
+  vector — all-raw-1 yields 28 and all-raw-5 yields 44
+  (separation of 16, the largest on the platform; a
+  random endpoint-only responder shifts the score 33%
+  of full range, bounded and pinnable).  ``items`` field
+  preserves RAW pre-flip for audit invariance.  See
+  ``scoring/fneb.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1251,6 +1306,10 @@ from .scoring.ffmq15 import (
     FFMQ15_SUBSCALES,
     InvalidResponseError as Ffmq15Invalid,
     score_ffmq15,
+)
+from .scoring.fneb import (
+    InvalidResponseError as FnebInvalid,
+    score_fneb,
 )
 from .scoring.dtcq8 import (
     InvalidResponseError as Dtcq8Invalid,
@@ -1437,6 +1496,7 @@ Instrument = Literal[
     "rses",
     "ffmq15",
     "stai6",
+    "fneb",
 ]
 
 
@@ -1492,6 +1552,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "rses": 10,
     "ffmq15": 15,
     "stai6": 6,
+    "fneb": 12,
 }
 
 
@@ -3769,6 +3830,102 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=s.instrument_version,
         )
+    if payload.instrument == "fneb":
+        # FNE-B — 12-item Brief Fear of Negative Evaluation scale
+        # (Leary, Personality and Social Psychology Bulletin 1983,
+        # 9(3):371-375).  Derived from Watson & Friend's (1969)
+        # original 30-item FNE; Leary's 12-item brief form yielded
+        # r = 0.96 with the full FNE on n = 164 undergraduates and
+        # carries through the same psychometric properties at
+        # one-third the response burden.  Items 2 ("unconcerned
+        # about others' opinions"), 4 ("rarely worry about seeming
+        # foolish"), 7 ("unconcerned even if I know I'm disapproved"),
+        # 10 ("not worried about what others say") are positively
+        # worded and reverse-keyed at scoring time; the remaining
+        # 8 items are negatively worded and pass through raw.
+        # Post-flip = 6 - raw at reverse positions; total is the
+        # 12-60 sum of post-flip values with HIGHER = more fear of
+        # negative evaluation (lower-is-better direction, uniform
+        # with PHQ-9 / GAD-7 / PSS-10 / STAI-6; OPPOSITE of
+        # WHO-5 / BRS / RSES / FFMQ-15 / MAAS / LOT-R).
+        #
+        # The instrument fills the platform's **social-evaluative
+        # anxiety gap**: prior anxiety coverage targets generalized
+        # worry (GAD-7, PSWQ), acute state-anxiety (STAI-6, OASIS),
+        # or experiential avoidance (AAQ-II), but none capture the
+        # fear-of-judgement construct that drives social-situation
+        # avoidance, public-speaking paralysis, and the core
+        # phenomenology of social anxiety disorder (Heimberg 1995
+        # Cognitive-Behavioral Group Therapy for Social Phobia
+        # uses FNE as a primary pre/post outcome; Hofmann 2008
+        # meta-analysis identifies FNE reduction as the
+        # mechanism of change in SAD CBT).
+        #
+        # Three addiction-relevant clinical use cases drive the
+        # measurement on this platform:
+        #   - Socially-cued relapse detection.  Marlatt 1985
+        #     Table 4.1 identifies social-pressure / inter-
+        #     personal-conflict as a top proximal relapse
+        #     determinant (second to negative emotional
+        #     states covered by STAI-6).  A user with high
+        #     FNE-B entering a social drinking context is at
+        #     elevated relapse risk on a mechanism orthogonal
+        #     to craving intensity itself (PACS) — the bandit
+        #     policy surfaces avoidance-coaching or escape-
+        #     planning tool variants rather than craving-
+        #     tolerance variants.
+        #   - User-profile differentiation for treatment
+        #     targeting.  High FNE-B + elevated AUDIT /
+        #     DUDIT identifies the "alcohol-as-social-
+        #     lubrication" user, for whom exposure-based
+        #     social-skills-training is indicated; low FNE-B
+        #     + elevated PSS-10 / STAI-6 identifies the
+        #     "negative-affect-self-medication" user, for
+        #     whom DBT distress-tolerance / affect-regulation
+        #     is indicated.  These are DISTINCT intervention
+        #     pathways confused by craving-intensity alone.
+        #   - Digital-avoidance substitution detection.  High
+        #     FNE-B co-occurring with problematic internet /
+        #     gaming use is the Caplan 2003 compensatory-
+        #     internet-use signature — social-anxiety-driven
+        #     escape into online worlds rather than face-to-
+        #     face engagement.  Intervention targeting
+        #     substitutes in-vivo exposure hierarchies for
+        #     online-only coping.
+        #
+        # No bands — Leary 1983 did not publish severity cut-
+        # points; Collins 2005 n = 234 college sample reports
+        # mean 35.7 SD 8.1 with ≥ 49 noted as "clinical range"
+        # but this is a secondary-literature post-hoc
+        # derivation and not pinnable per CLAUDE.md "no hand-
+        # rolled severity thresholds" rule.  severity =
+        # "continuous" sentinel; clinical-significance lives at
+        # the trajectory layer via Jacobson-Truax RCI on the
+        # raw 12-60 total.  No T3 gating — no item probes
+        # suicidality; "afraid of making mistakes" (item 8) is
+        # evaluative-apprehension, NOT ideation; acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9.  The
+        # envelope is banded+total (no subscales, no
+        # scaled_score, no positive_screen) — same shape as
+        # RSES / PANAS-10-total / STAI-6.  Acquiescence-bias
+        # signature: 8 straight + 4 reverse is ASYMMETRIC, so
+        # any all-v constant vector yields total = 4v + 24 —
+        # all-raw-1 yields 28 and all-raw-5 yields 44
+        # (separation of 16, the largest on the platform; a
+        # random endpoint-only responder shifts the score 33%
+        # of the 12-60 range).  The linear formula 4v + 24 is
+        # pinned in the test suite so regression is immediate
+        # if reverse-keying positions drift.  See
+        # ``scoring/fneb.py``.
+        f = score_fneb(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="fneb",
+            total=f.total,
+            severity=f.severity,
+            requires_t3=False,
+            instrument_version=f.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3935,6 +4092,7 @@ async def submit_assessment(
         RsesInvalid,
         Ffmq15Invalid,
         Stai6Invalid,
+        FnebInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
