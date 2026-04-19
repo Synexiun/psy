@@ -15756,6 +15756,671 @@ class TestFfmq15Routing:
 
 
 # =============================================================================
+# STAI-6 (brief state anxiety) routing — Marteau & Bekker 1992
+# =============================================================================
+
+
+class TestStai6Routing:
+    """End-to-end routing tests for the STAI-6 dispatcher branch.
+
+    Marteau & Bekker 1992 State-Trait Anxiety Inventory brief 6-item
+    short form — 6 items, 1-4 Likert, total 6-24 (POST-FLIP), single
+    factor, no bands (severity = ``"continuous"``).  **HIGHER =
+    MORE state-anxious** — uniform with PHQ-9 / GAD-7 / AUDIT /
+    PSS-10 / PGSI / SHAPS (lower-is-better).  OPPOSITE of WHO-5 /
+    BRS / RSES / FFMQ-15 / MAAS / LOT-R.
+
+    Reverse-keying: items 1, 4, 5 are the three positively-worded
+    state items ("calm", "relaxed", "content") and are flipped via
+    ``5 - raw`` before summation.  Items 2, 3, 6 (negative —
+    "tense", "upset", "worried") pass through raw.  The wire
+    ``items`` are NOT surfaced by the envelope (consistent with
+    every other reverse-keyed instrument — RSES / TAS-20 / PSWQ /
+    LOT-R / BRS / FFMQ-15 / PANAS-10); the wire ``total`` is the
+    POST-FLIP 6-24 sum.
+
+    Diagnostic property (Marsh 1996): the 3-positive / 3-negative
+    SYMMETRIC reverse-keying split means every CONSTANT-response
+    vector yields the midpoint total 15.  Pinned in FOUR parallel
+    tests (all-1s, all-2s, all-3s, all-4s) because it is the
+    canonical acquiescence-bias-control signature — stronger than
+    FFMQ-15's asymmetric 8/7 split (differ-by-4 between extremes)
+    and mirrors RSES's 5-positive / 5-negative balance.  If any
+    constant vector drifts off 15, reverse-keying has broken.
+
+    Clinical use cases (Spielberger 1966/1983 state-vs-trait
+    anxiety distinction):
+    1. Pre/post intervention-session effect measurement — the
+       canonical within-session efficacy metric for behavioral
+       activation / exposure (Craske 2014).
+    2. Trigger-vs-baseline cue-reactivity detection — spike signals
+       exposure-therapy targets vs trait-anxiety protocol targets
+       (Dugas 2010).
+    3. Real-time relapse-risk gating — elevated state anxiety in
+       the hour before a craving episode is Marlatt 1985 pp. 137-
+       142's canonical proximal-relapse precipitant.
+
+    No bands: Marteau 1992 did not publish clinical cutpoints.
+    Kvaal 2005's ≥ 40 scaled cutoff is secondary-literature
+    derivation (HADS-validated) and not pinnable per CLAUDE.md.
+    Jacobson-Truax RCI applied to the raw 6-24 total at the
+    trajectory layer.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ----------------------------------------------------
+
+    def test_max_state_anxiety_pre_surgical_extremum(
+        self, client: TestClient
+    ) -> None:
+        """Maximum state anxiety — raw disagrees maximally with
+        every positive (calm=1, relaxed=1, content=1) and agrees
+        maximally with every negative (tense=4, upset=4, worried=4).
+        Post-flip all 4s, total 24.  Clinically: the pre-surgical
+        extremum per Marteau 1992's n=200 derivation sample."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1, 4, 4, 1, 1, 4]},
+            headers=self._headers("stai6-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "stai6"
+        assert body["total"] == 24
+        assert body["severity"] == "continuous"
+
+    def test_min_state_anxiety_calm_extremum(
+        self, client: TestClient
+    ) -> None:
+        """Minimum state anxiety — raw agrees maximally with every
+        positive (calm=4, relaxed=4, content=4) and disagrees with
+        every negative (tense=1, upset=1, worried=1).  Post-flip all
+        1s, total 6.  Clinically: the non-anxious community-sample
+        floor per Tluczek 2009."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [4, 1, 1, 4, 4, 1]},
+            headers=self._headers("stai6-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "continuous"
+
+    def test_acquiescence_bias_all_ones_yields_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias control (Marsh 1996): raw all-1s
+        ("not at all" on every item regardless of valence) yields
+        total 15 after reverse-keying — NOT 6.  Reverse items flip
+        1->4 (contributing 12), non-reverse pass through (3);
+        12 + 3 = 15.  If this drifts, the 3-positive / 3-negative
+        balance has broken."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1] * 6},
+            headers=self._headers("stai6-acq-ones"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_acquiescence_bias_all_fours_yields_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias control (Marsh 1996): raw all-4s ("very
+        much so" on every item regardless of valence) yields total
+        15 — NOT 24.  Reverse items flip 4->1 (3), non-reverse pass
+        through (12); 3 + 12 = 15.  Mirror of the all-1s pin; the
+        symmetric-reverse-keying guarantee Marteau 1992 built in."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [4] * 6},
+            headers=self._headers("stai6-acq-fours"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_acquiescence_bias_all_twos_yields_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Interior-uniform acquiescence pin: raw all-2s also yields
+        midpoint 15.  Every CONSTANT vector on a 1-4 Likert with
+        3/3 reverse-split lands at the midpoint.  Stronger property
+        than FFMQ-15's asymmetric 8/7 differ-by-4."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-acq-twos"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+
+    def test_acquiescence_bias_all_threes_yields_fifteen(
+        self, client: TestClient
+    ) -> None:
+        """Interior-uniform acquiescence pin (mirror of all-2s).
+        Together the four constant-vector pins (1s, 2s, 3s, 4s) lock
+        down the stronger-than-FFMQ-15 symmetric-reverse property."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [3] * 6},
+            headers=self._headers("stai6-acq-threes"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+
+    def test_wire_total_is_post_flip_not_raw_sum(
+        self, client: TestClient
+    ) -> None:
+        """The wire total is the POST-FLIP sum.  Raw [4,4,4,4,4,4]
+        has raw-sum 24 but post-flip sum 15 — the wire must emit 15
+        to confirm the scorer applied reverse-keying.  (Consistent
+        with RSES / TAS-20 / PSWQ / LOT-R / BRS / FFMQ-15 wire-
+        layer policy: the envelope surfaces post-flip; raw pre-flip
+        is preserved only inside the scorer's ``items`` for audit.)"""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [4] * 6},
+            headers=self._headers("stai6-post-flip"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["total"] != 24
+
+    def test_response_envelope_has_no_subscales(
+        self, client: TestClient
+    ) -> None:
+        """STAI-6 is single-factor by construction (derived from the
+        STAI-S single-factor per Spielberger 1983).  The envelope
+        must NOT surface a subscales dict — it would contradict the
+        derivation."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") in (None, {}, [])
+
+    def test_response_envelope_has_no_cutoff_used(
+        self, client: TestClient
+    ) -> None:
+        """STAI-6 is continuous, not a screen — cutoff_used absent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_response_envelope_has_no_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """STAI-6 is continuous, not a screen — positive_screen
+        absent.  No screen semantic applies; clinical-significance
+        lives at the RCI trajectory layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-no-posscreen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_response_envelope_has_instrument_version(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "stai6-1.0.0"
+
+    def test_response_envelope_has_no_scaled_score(
+        self, client: TestClient
+    ) -> None:
+        """Marteau 1992 recommended a (total × 20) / 6 scaled score
+        mapping to the full STAI-S 20-80 range.  The platform does
+        NOT emit it: non-integer for most inputs, RCI at trajectory
+        layer works on raw total directly, and Kvaal 2005 ≥ 40
+        scaled cutoff is secondary literature not pinnable per
+        CLAUDE.md.  Wire envelope must not expose a scaled_score
+        key."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-no-scaled"),
+        )
+        body = response.json()
+        assert body.get("scaled_score") is None
+
+    def test_severity_always_continuous_regardless_of_total(
+        self, client: TestClient
+    ) -> None:
+        """Severity is the sentinel literal ``"continuous"`` for
+        every STAI-6 response — Marteau 1992 did not publish bands,
+        and inventing them (even using Kvaal 2005's ≥ 40 scaled
+        secondary cutoff) would violate the CLAUDE.md "no hand-
+        rolled severity thresholds" rule."""
+        for items, key in (
+            ([1, 4, 4, 1, 1, 4], "stai6-sev-24"),
+            ([4, 1, 1, 4, 4, 1], "stai6-sev-6"),
+            ([3, 3, 3, 3, 3, 3], "stai6-sev-mid"),
+            ([2, 3, 3, 2, 2, 3], "stai6-sev-18"),
+            ([1, 3, 3, 1, 2, 4], "stai6-sev-21"),
+        ):
+            response = client.post(
+                "/v1/assessments",
+                json={"instrument": "stai6", "items": items},
+                headers=self._headers(key),
+            )
+            assert response.json()["severity"] == "continuous"
+
+    # -- T3 posture -------------------------------------------------------
+
+    def test_never_requires_t3_at_max(self, client: TestClient) -> None:
+        """STAI-6 has NO safety item.  Even at the maximum-anxiety
+        extremum (total 24), requires_t3 is False — elevated state
+        anxiety is a clinical signal but not an ACUTE-RISK signal.
+        C-SSRS / PHQ-9 item 9 remain the T3 sources."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1, 4, 4, 1, 1, 4]},
+            headers=self._headers("stai6-no-t3-max"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+        assert body["requires_t3"] is False
+
+    def test_never_requires_t3_item_3_is_general_distress_not_ideation(
+        self, client: TestClient
+    ) -> None:
+        """Item 3 ("I feel upset") is general state-distress per
+        Spielberger 1983, NOT suicidal ideation.  Maximum agreement
+        on item 3 (raw 4) must not trigger T3 — "upset" in the
+        STAI-S affective lexicon is distress/disturbance, not
+        lethality.  Acute-risk screening stays on C-SSRS + PHQ-9
+        item 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 2, 4, 2, 2, 2]},
+            headers=self._headers("stai6-no-t3-item3"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    # -- Reverse-keying wire-level pins ----------------------------------
+
+    def test_reverse_scoring_position_1_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 1 ("I feel calm") is positive-worded (reverse-
+        keyed).  Raising it from 2 to 3 LOWERS the total by -1
+        (post-flip 3 -> post-flip 2, less anxiety)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-rev-base1"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [3, 2, 2, 2, 2, 2]},
+            headers=self._headers("stai6-rev-raise1"),
+        ).json()["total"]
+        assert raised == base - 1
+
+    def test_reverse_scoring_position_2_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 2 ("I am tense") is negative-worded (non-
+        reverse).  Raising it from 2 to 3 raises the total by +1
+        (post-flip 2 -> post-flip 3, more anxiety)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-rev-base2"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 3, 2, 2, 2, 2]},
+            headers=self._headers("stai6-rev-raise2"),
+        ).json()["total"]
+        assert raised == base + 1
+
+    def test_reverse_scoring_position_3_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 3 ("I feel upset") is negative-worded (non-
+        reverse)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-rev-base3"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 2, 3, 2, 2, 2]},
+            headers=self._headers("stai6-rev-raise3"),
+        ).json()["total"]
+        assert raised == base + 1
+
+    def test_reverse_scoring_position_4_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 4 ("I am relaxed") is positive-worded (reverse-
+        keyed).  Raising it from 2 to 3 LOWERS the total by -1."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-rev-base4"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 2, 2, 3, 2, 2]},
+            headers=self._headers("stai6-rev-raise4"),
+        ).json()["total"]
+        assert raised == base - 1
+
+    def test_reverse_scoring_position_5_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 5 ("I feel content") is positive-worded (reverse-
+        keyed).  Raising it from 2 to 3 LOWERS the total by -1."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-rev-base5"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 2, 2, 2, 3, 2]},
+            headers=self._headers("stai6-rev-raise5"),
+        ).json()["total"]
+        assert raised == base - 1
+
+    def test_reverse_scoring_position_6_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 6 ("I am worried") is negative-worded (non-
+        reverse).  Despite being the most-clinically-salient anxiety
+        descriptor, the mechanical reverse-keying is identical to
+        items 2 and 3 — no special-casing."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 6},
+            headers=self._headers("stai6-rev-base6"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 2, 2, 2, 2, 3]},
+            headers=self._headers("stai6-rev-raise6"),
+        ).json()["total"]
+        assert raised == base + 1
+
+    def test_direction_higher_is_more_anxious(
+        self, client: TestClient
+    ) -> None:
+        """Global direction pin — the maximum-anxiety pattern must
+        yield a strictly higher total than the minimum-anxiety
+        pattern.  If this inverts, the valence map has flipped.
+        Unlike RSES/BRS/FFMQ-15/WHO-5 (higher=better), STAI-6 is
+        LOWER-is-better; anxious > calm at the wire level."""
+        anxious = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1, 4, 4, 1, 1, 4]},
+            headers=self._headers("stai6-dir-anxious"),
+        ).json()["total"]
+        calm = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [4, 1, 1, 4, 4, 1]},
+            headers=self._headers("stai6-dir-calm"),
+        ).json()["total"]
+        assert anxious > calm
+        assert anxious == 24
+        assert calm == 6
+
+    # -- Item-count validation -------------------------------------------
+
+    def test_item_count_5_rejected(self, client: TestClient) -> None:
+        """Trap: someone drops an item and sends 5 — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 5},
+            headers=self._headers("stai6-five-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_7_rejected(self, client: TestClient) -> None:
+        """Trap: someone appends a trailing item — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 7},
+            headers=self._headers("stai6-seven-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_10_rejected(self, client: TestClient) -> None:
+        """Trap: someone confuses STAI-6 (6) with the full STAI-S
+        abbreviation (10) or GAD-7 (7) rounded up — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 10},
+            headers=self._headers("stai6-ten-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_20_rejected(self, client: TestClient) -> None:
+        """Trap: someone submits the full 20-item STAI-S by mistake
+        — 422.  This is the most-likely confusion because STAI-6 is
+        derived from the full 20-item state scale."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2] * 20},
+            headers=self._headers("stai6-twenty-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_empty_rejected(self, client: TestClient) -> None:
+        """Empty items list — 422 at the Pydantic min_length
+        boundary."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": []},
+            headers=self._headers("stai6-empty"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value validation -------------------------------------------
+
+    def test_item_value_0_rejected(self, client: TestClient) -> None:
+        """STAI-6 Likert is 1-4, not 0-4.  Trap: someone applies a
+        PHQ-9 / GAD-7 0-based scale — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [0, 2, 2, 2, 2, 2]},
+            headers=self._headers("stai6-zero-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_5_rejected(self, client: TestClient) -> None:
+        """STAI-6 Likert is 1-4, not 1-5.  Trap: someone applies a
+        BRS / RSES / FFMQ-15 / PANAS-10 1-5 scale — 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [5, 2, 2, 2, 2, 2]},
+            headers=self._headers("stai6-five-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [-1, 2, 2, 2, 2, 2]},
+            headers=self._headers("stai6-negative-item"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_99_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [99, 2, 2, 2, 2, 2]},
+            headers=self._headers("stai6-99-value"),
+        )
+        assert response.status_code == 422
+
+    def test_pydantic_coerces_json_bool_to_int(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``true`` -> int 1 at the wire layer
+        — the scorer-level bool rejection (see
+        ``test_stai6_scoring``) pins Python-layer bool rejection,
+        but the wire-layer Pydantic coercion means a JSON ``true``
+        in items is accepted as equivalent to ``1``.  Documented
+        here (matching the ACEs / RSES / FFMQ-15 wire-layer pins)
+        so any future stricter-validation refactor surfaces this
+        behavior change explicitly.  Uses all-True because True->1
+        is a valid STAI-6 item value."""
+        items: list = [True, True, True, True, True, True]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": items},
+            headers=self._headers("stai6-json-bool"),
+        )
+        assert response.status_code == 201
+        # [1,1,1,1,1,1] is the acquiescence extremum -> total 15.
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_pydantic_coerces_false_to_zero_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Companion to the True->1 pin: JSON ``false`` coerces to
+        int 0, which is BELOW STAI-6's ITEM_MIN=1 and therefore
+        rejected by the range check at 422.  This surfaces a
+        stronger validation property than FFMQ-15 / BRS / RSES
+        (all 0-N or 1-N): STAI-6's tight 1-4 range excludes
+        both ``false->0`` AND ``>4``, giving tighter wire-layer
+        validation than 0-based or wider scales."""
+        items: list = [False, 2, 2, 2, 2, 2]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": items},
+            headers=self._headers("stai6-json-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_clinical_vignette_pre_surgical_elevated_anxiety(
+        self, client: TestClient
+    ) -> None:
+        """Marteau 1992 derivation sample (n = 200 pre-surgical
+        patients): elevated state anxiety.  Raw [1,3,3,1,2,4] — not
+        calm, quite tense, upset, not relaxed, somewhat content,
+        very worried.  Post-flip [4,3,3,4,3,4] = 21.  Consistent
+        with Marteau's mean pre-op state anxiety score."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1, 3, 3, 1, 2, 4]},
+            headers=self._headers("stai6-vignette-presurgery"),
+        )
+        body = response.json()
+        assert body["total"] == 21
+        assert body["severity"] == "continuous"
+
+    def test_clinical_vignette_within_session_delta(
+        self, client: TestClient
+    ) -> None:
+        """The canonical intervention-efficacy use case: pre-session
+        elevated state anxiety, post-session reduced state anxiety.
+        GAD-7 cannot resolve this (its 14-day window averages over
+        the session); STAI-6 pre/post delta IS the metric."""
+        pre = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1, 4, 3, 1, 2, 4]},
+            headers=self._headers("stai6-vignette-pre"),
+        ).json()
+        post = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [3, 2, 2, 3, 3, 2]},
+            headers=self._headers("stai6-vignette-post"),
+        ).json()
+        assert pre["total"] == 22
+        assert post["total"] == 12
+        # Delta >= 10 is a strongly-positive within-session effect
+        # (well above the Jacobson-Truax RCI threshold on a 6-24
+        # scale — RCI cutoff ~ 4.4 per Marteau's reported variance).
+        assert pre["total"] - post["total"] == 10
+
+    def test_clinical_vignette_trigger_reactivity_spike(
+        self, client: TestClient
+    ) -> None:
+        """Marlatt 1985 cue-reactivity scenario.  Baseline low-
+        anxiety measurement, then post-trigger spike.  The hour-
+        before-craving signal that drives the Discipline OS
+        intervention-bandit policy."""
+        baseline = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [4, 1, 1, 4, 3, 2]},
+            headers=self._headers("stai6-vignette-baseline"),
+        ).json()
+        post_trigger = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [1, 3, 2, 2, 2, 3]},
+            headers=self._headers("stai6-vignette-trigger"),
+        ).json()
+        assert baseline["total"] == 8
+        assert post_trigger["total"] == 18
+        # Spike of 10+ points within a brief window is a bandit-
+        # policy predictive signal per Marlatt 1985 pp. 137-142.
+        assert post_trigger["total"] - baseline["total"] >= 10
+
+    def test_clinical_vignette_community_non_clinical(
+        self, client: TestClient
+    ) -> None:
+        """Tluczek 2009 general-population sample: low state-
+        anxiety profile.  Raw [3,2,1,3,3,2] — quite calm, not tense,
+        not upset, relaxed, content, slightly worried.  Post-flip
+        [2,2,1,2,2,2] = 11.  Well below the Marteau 1992 pre-op
+        mean; typical community respondent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [3, 2, 1, 3, 3, 2]},
+            headers=self._headers("stai6-vignette-community"),
+        )
+        body = response.json()
+        assert body["total"] == 11
+        assert body["severity"] == "continuous"
+
+    def test_clinical_vignette_oncology_elevated(
+        self, client: TestClient
+    ) -> None:
+        """Balsamo 2014 oncology-patient profile: elevated state
+        anxiety during treatment.  Raw [2,3,3,2,2,3].  Post-flip
+        [3,3,3,3,3,3] = 18.  Between the Marteau pre-surgical mean
+        and the upper maximum."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "stai6", "items": [2, 3, 3, 2, 2, 3]},
+            headers=self._headers("stai6-vignette-oncology"),
+        )
+        body = response.json()
+        assert body["total"] == 18
+        assert body["severity"] == "continuous"
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 

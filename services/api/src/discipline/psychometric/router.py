@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15.
+ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1129,6 +1129,47 @@ Safety routing:
   (content flows to RSES-linked AVE-substrate handling, not
   acute-risk).  ``items`` field preserves RAW pre-flip for
   audit invariance.  See ``scoring/ffmq15.py``.
+- STAI-6 (Marteau & Bekker 1992): 6 items, 1-4 Likert, 3
+  reverse-keyed (positions 1, 4, 5).  The brief 6-item
+  derivation of the state-anxiety subscale of the full 20-
+  item Spielberger State-Trait Anxiety Inventory (Spielberger
+  1983 Form Y), developed by Marteau & Bekker (British
+  Journal of Clinical Psychology 1992, 31:301-306; n = 200
+  pre-surgical patients; r = 0.94 with full STAI-S).  Fills
+  the platform's **state-vs-trait anxiety distinction gap** —
+  existing anxiety coverage is trait-anchored (GAD-7's 14-
+  day window, GAD-2 same, OASIS's 7-day window, AAQ-II and
+  PSWQ dispositional).  STAI-6 measures **momentary state
+  anxiety** anchored to the present ("how you feel right
+  now, at this moment") per Spielberger's (1966, 1983)
+  seminal state / trait distinction.  Clinical load-
+  bearing: (1) pre/post intervention-session within-session
+  effect measurement (the canonical efficacy metric GAD-7
+  cannot resolve — its 14-day window averages across a
+  single session); (2) trigger-vs-baseline cue reactivity
+  detection (Craske 2014 exposure targets vs Dugas 2010
+  trait-anxiety targets); (3) real-time relapse-risk gating
+  per Marlatt 1985 pp. 137-142 (negative emotional states
+  as the most common proximal relapse precipitant —
+  elevated state anxiety in the hour before a craving
+  episode is a bandit-policy predictive signal).  Items
+  (Marteau 1992 Table 1): 1. calm (reverse), 2. tense,
+  3. upset, 4. relaxed (reverse), 5. content (reverse),
+  6. worried.  Post-flip = 5 - raw at reverse positions;
+  total = sum of post-flip items, range 6-24.  HIGHER =
+  more state-anxious (lower-is-better direction, uniform
+  with PHQ-9 / GAD-7 / AUDIT / PSS-10 / PGSI / SHAPS).  NO
+  scaled score (Marteau 1992 recommended (total × 20) / 6
+  mapping to the full STAI-S 20-80 range; platform does not
+  emit — non-integer for most inputs, adds no clinical info
+  over raw total at the trajectory layer, and Kvaal 2005
+  ≥ 40 scaled cutoff is secondary literature not pinnable
+  per CLAUDE.md).  NO bands — severity = "continuous"
+  sentinel; trajectory layer applies Jacobson-Truax RCI on
+  the raw 6-24 total for clinical-significance.  NO T3 — no
+  item probes suicidality; "upset" (item 3) is general
+  distress, NOT ideation.  ``items`` field preserves RAW
+  pre-flip for audit invariance.  See ``scoring/stai6.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1319,6 +1360,10 @@ from .scoring.sds import (
     Substance as SdsSubstance,
     score_sds,
 )
+from .scoring.stai6 import (
+    InvalidResponseError as Stai6Invalid,
+    score_stai6,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1391,6 +1436,7 @@ Instrument = Literal[
     "panas10",
     "rses",
     "ffmq15",
+    "stai6",
 ]
 
 
@@ -1445,6 +1491,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "panas10": 10,
     "rses": 10,
     "ffmq15": 15,
+    "stai6": 6,
 }
 
 
@@ -3642,6 +3689,86 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=f.instrument_version,
         )
+    if payload.instrument == "stai6":
+        # STAI-6 — 6-item brief state-anxiety scale derived by
+        # Marteau & Bekker (British Journal of Clinical
+        # Psychology 1992, 31:301-306) from the full 20-item
+        # State-Trait Anxiety Inventory (Spielberger 1983 Form
+        # Y).  n = 200 pre-surgical patients; r = 0.94 with the
+        # full STAI-S established the equivalence.  Items 1
+        # (calm), 4 (relaxed), 5 (content) are positively
+        # worded and reverse-keyed at scoring time; items 2
+        # (tense), 3 (upset), 6 (worried) are negatively
+        # worded and pass through raw.  Post-flip = 5 - raw
+        # at reverse positions; total is the 6-24 sum of
+        # post-flip values with HIGHER = more state-anxious
+        # (lower-is-better direction, uniform with PHQ-9 /
+        # GAD-7 / AUDIT / PSS-10 / PGSI / SHAPS; OPPOSITE of
+        # WHO-5 / BRS / RSES / FFMQ-15 / MAAS / LOT-R).  The
+        # instrument fills the platform's **state-vs-trait
+        # anxiety distinction gap** — every prior anxiety
+        # instrument on the platform (GAD-7's 14-day window,
+        # GAD-2 same, OASIS's 7-day window, AAQ-II and PSWQ
+        # dispositional) measures trait-ish anxiety, whereas
+        # STAI-6 measures MOMENTARY state anxiety anchored to
+        # the present ("how you feel right now, at this
+        # moment") per Spielberger's (1966, 1983) seminal
+        # state / trait theoretical distinction.  Three
+        # clinical use cases drive the measurement:
+        #   - Pre/post intervention-session within-session
+        #     effect measurement.  A behavioral-activation /
+        #     exposure session is expected to REDUCE state
+        #     anxiety immediately post-session; GAD-7 cannot
+        #     resolve this signal (its 14-day window averages
+        #     across the session).  STAI-6 pre/post delta is
+        #     the canonical within-session efficacy metric
+        #     for the Discipline OS intervention engine.
+        #   - Trigger-vs-baseline cue reactivity.  Baseline
+        #     STAI-6 vs post-trigger STAI-6 discriminates
+        #     reactive-profile patients (exposure-therapy
+        #     targets per Craske 2014) from chronically-
+        #     anxious patients (trait-anxiety protocol
+        #     targets per Dugas 2010).
+        #   - Real-time relapse-risk gating.  Marlatt 1985
+        #     pp. 137-142 identified negative emotional
+        #     states including elevated state anxiety as the
+        #     MOST COMMON proximal relapse determinant (137-
+        #     relapse sample).  A STAI-6 spike in the hour
+        #     before a reported craving episode feeds the
+        #     intervention-bandit policy as a predictive
+        #     signal.
+        # No scaled score — Marteau 1992 recommended (total ×
+        # 20) / 6 to map to the full STAI-S 20-80 range;
+        # platform does not emit because: (1) non-integer for
+        # most inputs, clashes with CLAUDE.md Latin-digits
+        # rendering; (2) RCI at the trajectory layer works
+        # on the raw total directly; (3) Kvaal 2005 ≥ 40
+        # scaled cutoff is secondary-literature derivation
+        # (validated against HADS), not a primary-source
+        # anchor.  Per CLAUDE.md "no hand-rolled severity
+        # thresholds" rule, severity = "continuous" and
+        # clinical-significance lives at the trajectory
+        # layer via Jacobson-Truax RCI.  No T3 gating — no
+        # item probes suicidality; "upset" (item 3) is
+        # general distress, NOT ideation; acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9.  The
+        # envelope is banded+total (no subscales, no
+        # scaled_score, no positive_screen) — same shape as
+        # OASIS / K10 / RSES / PANAS-10-total.  The 3-
+        # positive / 3-negative symmetric reverse-keying is
+        # Marsh 1996's canonical acquiescence-bias control
+        # design; every constant vector lands at the midpoint
+        # total of 15 (stronger than FFMQ-15's 8/7 asymmetric
+        # differ-by-4 property).  See ``scoring/stai6.py``.
+        s = score_stai6(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="stai6",
+            total=s.total,
+            severity=s.severity,
+            requires_t3=False,
+            instrument_version=s.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3807,6 +3934,7 @@ async def submit_assessment(
         Panas10Invalid,
         RsesInvalid,
         Ffmq15Invalid,
+        Stai6Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
