@@ -7132,6 +7132,477 @@ class TestAaq2Routing:
         assert body["positive_screen"] is True
 
 
+class TestWsasRouting:
+    """WSAS (Mundt 2002) router dispatch.
+
+    Wire contract invariants:
+    - Banded envelope (``severity`` = "subclinical" / "significant" /
+      "severe") uniform with PHQ-9 / GAD-7 / ISI / DAST-10 / PCL-5 /
+      OCI-R / BIS-11 / PHQ-15 / K10 / DUDIT.
+    - No ``cutoff_used`` / ``positive_screen`` — banded instrument,
+      not cutoff (unlike AAQ-II / ASRS-6 / AUDIT-C / SDS / DUDIT /
+      K6 / PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 / MDQ).
+    - ``requires_t3`` is always False — WSAS has no safety item.
+    - ``subscales=None`` — Mundt 2002 CFA validates unidimensional.
+    - ``triggering_items`` is None — WSAS is a banded sum instrument.
+    - NOVEL 0-8 Likert envelope — widest per-item envelope in the
+      package.  Items outside [0, 8] must 422 (9 rejects at the
+      ceiling; ITEM_MIN=0 accepts 0).
+    """
+
+    def test_all_min_is_subclinical(self, client: TestClient) -> None:
+        """Every item at 0 ("Not at all impaired") — total 0, in the
+        subclinical band."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [0, 0, 0, 0, 0],
+                "user_id": "user-wsas-min",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "wsas"
+        assert body["total"] == 0
+        assert body["severity"] == "subclinical"
+        assert body["requires_t3"] is False
+
+    def test_just_below_significant_boundary(self, client: TestClient) -> None:
+        """Total 9 — one below the 10-point significant band boundary."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [2, 2, 2, 2, 1],
+                "user_id": "user-wsas-9",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 9
+        assert body["severity"] == "subclinical"
+
+    def test_at_significant_boundary(self, client: TestClient) -> None:
+        """Total 10 — at the significant-band boundary.  Boundary is
+        ≥, not >."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [2, 2, 2, 2, 2],
+                "user_id": "user-wsas-10",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "significant"
+
+    def test_just_below_severe_boundary(self, client: TestClient) -> None:
+        """Total 19 — one below the 20-point severe band boundary."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [4, 4, 4, 4, 3],
+                "user_id": "user-wsas-19",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 19
+        assert body["severity"] == "significant"
+
+    def test_at_severe_boundary(self, client: TestClient) -> None:
+        """Total 20 — at the severe-band boundary per Mundt 2002."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [4, 4, 4, 4, 4],
+                "user_id": "user-wsas-20",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "severe"
+
+    def test_maxed_severe(self, client: TestClient) -> None:
+        """Ceiling case — every item at 8 ("Very severely impaired")."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [8, 8, 8, 8, 8],
+                "user_id": "user-wsas-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 40
+        assert body["severity"] == "severe"
+
+    def test_no_cutoff_used_on_wire(self, client: TestClient) -> None:
+        """WSAS is banded, not cutoff.  Unlike AAQ-II / ASRS-6 /
+        AUDIT-C / SDS / DUDIT, the wire envelope carries no
+        ``cutoff_used`` value."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [4, 4, 4, 4, 4],
+                "user_id": "user-wsas-no-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_rejects_wrong_item_count(self, client: TestClient) -> None:
+        """WSAS requires exactly 5 items."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [0, 0, 0, 0],  # 4 items
+                "user_id": "user-wsas-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_accepts_zero_item(self, client: TestClient) -> None:
+        """NOVEL 0-8 envelope: 0 ("Not at all impaired") is valid —
+        distinct from AAQ-II where 0 rejects.  ITEM_MIN=0 shared with
+        every 0-indexed instrument in the package."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [0, 0, 0, 0, 0],
+                "user_id": "user-wsas-zero-ok",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_rejects_nine_item(self, client: TestClient) -> None:
+        """NOVEL 0-8 envelope: 9 is out-of-range — ITEM_MAX=8 is the
+        widest per-item ceiling in the package and responses beyond
+        the published scale must reject."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [9, 0, 0, 0, 0],
+                "user_id": "user-wsas-nine",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_accepts_seven_and_eight(self, client: TestClient) -> None:
+        """NOVEL 0-8 envelope: 7 (between "markedly" and "very
+        severely") and 8 ("Very severely impaired") are valid — prior
+        package maximum was AAQ-II's 7; WSAS widens by one.  Pin the
+        ceiling at 8 explicitly rather than inheriting by mistake."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [7, 8, 7, 8, 7],
+                "user_id": "user-wsas-sevens-eights",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 37
+        assert body["severity"] == "severe"
+
+    def test_never_fires_t3(self, client: TestClient) -> None:
+        """All max — no safety flag.  WSAS items probe work / home /
+        social / private / relationships — none referencing
+        suicidality."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [8, 8, 8, 8, 8],
+                "user_id": "user-wsas-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_subscales_is_none(self, client: TestClient) -> None:
+        """Mundt 2002 CFA: unidimensional.  Productive-vs-social
+        split was explicitly rejected.  No subscales surfaced."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [4, 4, 4, 4, 4],
+                "user_id": "user-wsas-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        """WSAS is a banded sum instrument; no per-item firing
+        concept.  Unlike ASRS-6 / C-SSRS, no triggering_items."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [8, 8, 8, 8, 8],
+                "user_id": "user-wsas-triggering",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert not body.get("triggering_items")
+
+    def test_instrument_version_surfaces(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [0, 0, 0, 0, 0],
+                "user_id": "user-wsas-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument_version"] == "wsas-1.0.0"
+
+    def test_persists_to_repository(self, client: TestClient) -> None:
+        """A submission with user_id persists to the history
+        repository with severity band preserved."""
+        user = "user-wsas-persist"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [5, 5, 5, 5, 5],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "wsas"
+        assert rec.total == 25
+        assert rec.severity == "severe"
+
+    def test_history_projects_wsas(self, client: TestClient) -> None:
+        """GET /history surfaces the WSAS result with severity band
+        preserved."""
+        user = "user-wsas-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [3, 3, 3, 3, 3],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "wsas"
+        assert entry["total"] == 15
+        assert entry["severity"] == "significant"
+
+    def test_wsas_and_phq9_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """WSAS (functional impairment) and PHQ-9 (depression severity,
+        symptom measure) cover ORTHOGONAL constructs.  The canonical
+        clinical scenario: PHQ-9=8 (mild symptoms) with WSAS=28
+        (severe functional impairment) — e.g. post-trauma avoidance
+        where symptom intensity is modest but behavioral shutdown is
+        profound.  The wire must preserve both records cleanly so the
+        bandit can read both dimensions and route behavioral-
+        activation / committed-action tools on the functional signal
+        rather than defaulting to cognitive restructuring on the
+        symptom signal alone."""
+        user = "user-wsas-phq9-both"
+        # WSAS — severe functional impairment (total 28).
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [6, 5, 6, 5, 6],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        # PHQ-9 — mild depression (total 8).
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [1, 1, 1, 1, 1, 1, 1, 1, 0],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        assert set(by_instrument) == {"wsas", "phq9"}
+        # Banded instrument pair — both carry severity but no
+        # cutoff_used / positive_screen (neither is a cutoff shape).
+        assert by_instrument["wsas"].total == 28
+        assert by_instrument["wsas"].severity == "severe"
+        assert by_instrument["wsas"].cutoff_used is None
+        assert by_instrument["phq9"].total == 8
+        assert by_instrument["phq9"].severity == "mild"
+        assert by_instrument["phq9"].cutoff_used is None
+
+    def test_wsas_and_aaq2_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """WSAS (functional impairment) and AAQ-II (psychological
+        inflexibility) cover ORTHOGONAL constructs — behavioral
+        outcome vs. process-level avoidance.  Both instruments
+        matter independently: high AAQ-II with preserved WSAS means
+        the patient is avoiding internally while still functioning,
+        while low AAQ-II with high WSAS means they are psychologically
+        flexible but behaviorally disabled.  Both scores must persist
+        cleanly on the timeline for the bandit to read both axes."""
+        user = "user-wsas-aaq2-both"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [5, 6, 5, 5, 6],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aaq2",
+                "items": [4, 4, 4, 4, 4, 4, 4],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 2
+        by_instrument = {r.instrument: r for r in records}
+        # WSAS: banded envelope.
+        assert by_instrument["wsas"].severity == "severe"
+        assert by_instrument["wsas"].cutoff_used is None
+        # AAQ-II: cutoff envelope.
+        assert by_instrument["aaq2"].cutoff_used == 24
+        assert by_instrument["aaq2"].positive_screen is True
+
+    def test_ignores_sex_field(self, client: TestClient) -> None:
+        """WSAS is not sex-keyed — submitting ``sex`` must be ignored
+        without perturbing the banding.  Mundt 2002 published a single
+        set of bands regardless of demographic axis."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [4, 4, 4, 4, 4],
+                "sex": "male",
+                "user_id": "user-wsas-sex-ignored",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "severe"
+
+    def test_ignores_substance_field(self, client: TestClient) -> None:
+        """WSAS is not substance-keyed — substance is SDS-only."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [3, 3, 3, 3, 3],
+                "substance": "cannabis",
+                "user_id": "user-wsas-substance-ignored",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "significant"
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """concurrent_symptoms / functional_impairment are MDQ-only
+        (Part 2 / Part 3 of Hirschfeld 2000).  They must not perturb
+        WSAS scoring even though WSAS's construct name includes
+        'functional impairment' — the fields are instrument-
+        namespaced by the Pydantic contract."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "wsas",
+                "items": [6, 6, 6, 6, 6],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-wsas-mdq-fields",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "wsas"
+        assert body["total"] == 30
+        assert body["severity"] == "severe"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

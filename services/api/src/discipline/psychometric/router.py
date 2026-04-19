@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II.
+GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,7 +38,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -354,6 +354,49 @@ Safety routing:
   feelings") are process-of-avoidance probes, not intent probes —
   acute ideation screening remains PHQ-9 item 9 / C-SSRS.  See
   ``scoring/aaq2.py``.
+  WSAS (Mundt 2002) is the 5-item Work and Social Adjustment Scale —
+  the canonical functional-impairment outcome measure in the UK
+  IAPT / stepped-care pathway, administered alongside PHQ-9 and
+  GAD-7 at every session to track the *functional* arc
+  independently of symptom change (Clark 2011).  Closes the
+  functional-impairment construct gap at the platform assessment
+  layer: where PHQ-9 / GAD-7 / K10 / PCL-5 measure symptom
+  severity and AAQ-II measures the relationship to internal
+  experience, WSAS measures the observable behavioral cost — can
+  the patient work, manage home, sustain relationships?  Two
+  patients with identical PHQ-9 totals can differ sharply on WSAS
+  (PHQ-9=8 with WSAS=28 is a much more urgent clinical picture
+  than PHQ-9=8 with WSAS=4), and the bandit / reporting layer
+  needs the WSAS signal to distinguish these cases and route
+  behavioral-activation / committed-action tool variants when
+  functional restoration is lagging symptom reduction.
+  **First 0-8 Likert instrument in the package** — widest per-item
+  envelope yet (prior widest was AAQ-II's 1-7; predominant
+  envelopes are 0-3 / 0-4 / 0-5 / 1-5).  Mundt 2002 argued the
+  9-point scale reduces ceiling / floor compression and gives
+  sufficient resolution for RCI-grade change detection.
+  ``ITEM_MIN = 0`` is shared with every 0-indexed instrument; the
+  ceiling of 8 is novel and the scorer rejects 9 at the validator.
+  Total 0-40.  **Banded severity** per Mundt 2002 —
+  [0, 10) subclinical, [10, 20) significant, [20, 40] severe.
+  Cut-points at 10 and 20 derived against SCID-diagnosed
+  depressive-episode patients.  Per CLAUDE.md's "don't hand-roll
+  severity thresholds" rule, the scorer ships exactly these three
+  Mundt 2002 bands — splitting "severe" into moderate-severe
+  (20-29) and severe (30-40) is unpublished and is refused.  The
+  router maps onto the banded wire envelope uniform with PHQ-9 /
+  GAD-7 / ISI / DAST-10 / PCL-5 / OCI-R / BIS-11 / PHQ-15 / K10 /
+  DUDIT.  ``cutoff_used`` / ``positive_screen`` are NOT set
+  (banded instruments do not surface a single cutoff).  No
+  subscale exposure: Mundt 2002's confirmatory factor analysis
+  supports a unidimensional structure (a "productive" vs "social"
+  subfactor split was explicitly rejected).  No T3: WSAS has no
+  suicidality item — the five items probe work / home / social /
+  private / relationships, none of which references suicidality,
+  self-harm, or crisis behavior.  A "severe" WSAS is a strong
+  signal for intensive behavioral-activation / committed-action
+  work but is not itself a crisis gate — acute ideation screening
+  remains PHQ-9 item 9 / C-SSRS.  See ``scoring/wsas.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -481,6 +524,10 @@ from .scoring.urica import (
     score_urica,
 )
 from .scoring.who5 import InvalidResponseError as Who5Invalid, score_who5
+from .scoring.wsas import (
+    InvalidResponseError as WsasInvalid,
+    score_wsas,
+)
 from .trajectories import RCI_THRESHOLDS, compute_point
 
 router = APIRouter(prefix="/assessments", tags=["psychometric"])
@@ -522,6 +569,7 @@ Instrument = Literal[
     "dudit",
     "asrs6",
     "aaq2",
+    "wsas",
 ]
 
 
@@ -558,6 +606,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "dudit": 11,
     "asrs6": 6,
     "aaq2": 7,
+    "wsas": 5,
 }
 
 
@@ -697,7 +746,7 @@ class AssessmentResult(BaseModel):
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
       subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / K10 / K6 /
-      SDS / DUDIT / ASRS-6 / AAQ-II / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
+      SDS / DUDIT / ASRS-6 / AAQ-II / WSAS / WHO-5 / AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 /
       MDQ / PC-PTSD-5 / ISI / PHQ-15 / PACS / Craving VAS /
       Readiness Ruler / DTCQ-8) emit ``subscales=None``.
 
@@ -1496,6 +1545,43 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=aq.positive_screen,
             instrument_version=aq.instrument_version,
         )
+    if payload.instrument == "wsas":
+        # Mundt 2002 Work and Social Adjustment Scale — 5-item
+        # functional-impairment measure; the canonical IAPT /
+        # stepped-care functional outcome, administered alongside
+        # PHQ-9 and GAD-7 at every session to track the functional
+        # arc independently of symptom change (Clark 2011).
+        # **First 0-8 Likert instrument in the package** — widest
+        # per-item envelope yet; prior widest was AAQ-II's 1-7.
+        # Mundt 2002's 9-point scale gives sufficient resolution
+        # for RCI-grade change detection.  ``ITEM_MIN = 0`` is
+        # shared with every 0-indexed instrument; the ceiling of
+        # 8 is novel and the scorer rejects 9 at the validator.
+        # Total 0-40.  Banded severity per Mundt 2002 — subclinical
+        # [0, 10), significant [10, 20), severe [20, 40].
+        # Cut-points at 10 and 20 derived against SCID-diagnosed
+        # depressive-episode patients.  Per CLAUDE.md "don't hand-
+        # roll severity thresholds", the scorer ships exactly these
+        # three bands — a moderate-severe/severe split is refused.
+        # Banded wire envelope uniform with PHQ-9 / GAD-7 / ISI /
+        # DAST-10 / PCL-5 / OCI-R / BIS-11 / PHQ-15 / K10 / DUDIT.
+        # No ``cutoff_used`` / ``positive_screen`` (banded, not
+        # cutoff).  No subscales (Mundt 2002 CFA — unidimensional;
+        # productive-vs-social split was explicitly rejected).
+        # No T3 — WSAS items probe work / home / social / private /
+        # relationships, none referencing suicidality.  A severe
+        # WSAS routes behavioral-activation / committed-action tool
+        # variants at the bandit layer, not to the crisis path.
+        # See ``scoring/wsas.py``.
+        ws = score_wsas(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="wsas",
+            total=ws.total,
+            severity=ws.severity,
+            requires_t3=False,
+            instrument_version=ws.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1643,6 +1729,7 @@ async def submit_assessment(
         DuditInvalid,
         Asrs6Invalid,
         Aaq2Invalid,
+        WsasInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
