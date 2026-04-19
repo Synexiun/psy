@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE.
+MSPSS, GSE, CORE-10.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,6 +40,9 @@ Safety routing:
   T3 check per Kroenke 2001).
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
+- CORE-10 runs through its item-6 classifier (any non-zero value on
+  "I made plans to end my life" → T3 per Barkham 2013 safety
+  guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
   DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE have no safety items —
@@ -1578,6 +1581,10 @@ from .scoring.gse import (
     InvalidResponseError as GseInvalid,
     score_gse,
 )
+from .scoring.core10 import (
+    InvalidResponseError as Core10Invalid,
+    score_core10,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1657,6 +1664,7 @@ Instrument = Literal[
     "swls",
     "mspss",
     "gse",
+    "core10",
 ]
 
 
@@ -1718,6 +1726,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "swls": 5,
     "mspss": 12,
     "gse": 10,
+    "core10": 10,
 }
 
 
@@ -4727,6 +4736,119 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=g.instrument_version,
         )
+    if payload.instrument == "core10":
+        # CORE-10 — 10-item Clinical Outcomes in Routine Evaluation
+        # (Barkham, Bewick, Mullin, Gilbody, Connell, Cahill,
+        # Mellor-Clark, Richards, Unsworth & Evans 2013).  Short
+        # form of the 34-item CORE-OM (Evans 2000) designed for
+        # session-by-session routine-outcome monitoring in
+        # psychological therapy, validated on n=1,241 UK NHS IAPT
+        # sample (Cronbach α=0.90; RCI=6).  The primary outcome
+        # measure UK NHS IAPT services administer every session.
+        #
+        # Scorer-layer T3 routing — this is the **third instrument**
+        # with single-item T3 routing (after PHQ-9 item 9 per
+        # Kroenke 2001 and C-SSRS items 4/5/6 per Posner 2011).
+        # CORE-10 item 6 ("I made plans to end my life") is a
+        # planning-level suicidality probe; any non-zero response
+        # (Barkham 2013 safety guidance) triggers requires_t3=True
+        # and populates triggering_items with (6,).  The threshold
+        # is MORE conservative than C-SSRS (which requires
+        # specific item / behavior combinations) and matches the
+        # PHQ-9 item 9 any-non-zero precedent.
+        #
+        # Reverse-keying — Connell & Barkham 2007 pinned items 2
+        # ("someone to turn to for support") and 3 ("able to cope
+        # when things go wrong") as the wellbeing/functioning
+        # items worded in the distress-NEGATIVE direction.  The
+        # scorer flips these (flipped_v = 4 - raw_v) so the total
+        # sums in the "higher = more distress" direction
+        # consistent with PHQ-9 / GAD-7 / PSS-10.  The ``items``
+        # field preserves the RAW (pre-flip) responses for audit
+        # invariance and FHIR R4 export — a clinician can
+        # reconstruct the original 0-4 response pattern.
+        #
+        # Severity bands — Barkham 2013 Table 3 published cutoffs
+        # (NOT hand-rolled per CLAUDE.md non-negotiable #9):
+        #
+        #     healthy:            0-5
+        #     low:                6-10
+        #     mild:               11-14
+        #     moderate:           15-19
+        #     moderate_severe:    20-24
+        #     severe:             25-40
+        #
+        # Clinical cutoff: ≥ 11 (Barkham 2013 Table 3).  A total
+        # ≥ 11 distinguishes clinical-caseness from non-clinical
+        # populations.  The ``positive_screen`` field flags this;
+        # ``cutoff_used`` surfaces the applied cutoff (11) so the
+        # UI can render "positive at ≥ 11".
+        #
+        # Construct placement in the platform's roster:
+        #
+        # - CORE-10 measures GLOBAL PSYCHOLOGICAL DISTRESS as a
+        #   cross-cutting umbrella construct (affective + somatic +
+        #   interpersonal + functional).
+        # - PHQ-9 (Kroenke 2001) measures DSM-IV-specific MDD
+        #   symptom burden.
+        # - GAD-7 (Spitzer 2006) measures GAD-specific worry.
+        # - PSS-10 (Cohen 1983) measures perceived-stress
+        #   appraisal.
+        # - WHO-5 (Bech 1998) measures affective wellbeing.
+        #
+        # The CORE-10 is the **routine-outcome-tracking**
+        # instrument — its session-by-session RCI trajectory is
+        # the backbone of UK-NHS-equivalent outcome reporting.
+        # Complements construct-specific instruments for
+        # case-formulation granularity.
+        #
+        # Clinical pairings the scorer output supports:
+        #
+        # - CORE-10 trajectory + PHQ-9 / GAD-7 session-specific —
+        #   primary RCI routine-outcome + construct-specific
+        #   severity.  Barkham 2013 RCI ≈ 6 points (Jacobson &
+        #   Truax 1991) for reliable-change flagging.
+        # - CORE-10 item 6 + PHQ-9 item 9 both positive —
+        #   convergent suicidality probes.  C-SSRS follow-up at
+        #   clinician-UI layer.  BOTH scorers set requires_t3
+        #   independently.
+        # - CORE-10 severe + WSAS clinically-significant —
+        #   "distressed-AND-impaired" → intensive engagement.
+        # - CORE-10 moderate + readiness-ruler low — ambivalent
+        #   despite moderate distress → MI change talk.
+        # - CORE-10 healthy at follow-up + moderate+ at baseline —
+        #   Barkham 2013 recovery signal; maintenance-oriented
+        #   interventions.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: 0-40 sum AFTER reverse-keying items 2,3.
+        # - ``severity``: Barkham 2013 Table 3 band.
+        # - ``requires_t3``: True if item 6 raw > 0 (Barkham 2013
+        #   safety guidance).
+        # - ``triggering_items``: (6,) when T3 fires, matches
+        #   C-SSRS triggering_items semantics.
+        # - ``positive_screen``: True if total ≥ 11 (clinical
+        #   caseness per Barkham 2013 cutoff).
+        # - ``cutoff_used``: 11 (Barkham 2013).
+        # - No ``subscales`` — CORE-10 is unidimensional routine-
+        #   outcome (Barkham 2013); CORE-OM 34-item four-factor
+        #   structure does NOT propagate to the 10-item short
+        #   form.
+        # - No ``index`` — the total IS the published score.
+        # - No ``scaled_score`` — no transformation applied.
+        c = score_core10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="core10",
+            total=c.total,
+            severity=c.severity,
+            positive_screen=c.positive_screen,
+            cutoff_used=c.cutoff_used,
+            requires_t3=c.requires_t3,
+            triggering_items=list(c.triggering_items) or None,
+            instrument_version=c.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -4899,6 +5021,7 @@ async def submit_assessment(
         SwlsInvalid,
         MspssInvalid,
         GseInvalid,
+        Core10Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

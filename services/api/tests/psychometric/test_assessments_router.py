@@ -20306,6 +20306,560 @@ class TestGseRouting:
         assert followup["severity"] == "continuous"
 
 
+class TestCore10Routing:
+    """End-to-end routing tests for the CORE-10 dispatcher branch.
+
+    Barkham, Bewick, Mullin, Gilbody, Connell, Cahill, Mellor-Clark,
+    Richards, Unsworth & Evans 2013 Clinical Outcomes in Routine
+    Evaluation-10 — 10 items, 0-4 Likert, reverse-keyed items 2 and
+    3 (wellbeing/functioning), unidimensional routine-outcome short
+    form of the 34-item CORE-OM (Evans 2000).  Validated on n=1,241
+    UK NHS IAPT sample: α=0.90, RCI=6.  Published severity bands
+    (Barkham 2013 Table 3):
+
+        healthy:         0-5
+        low:             6-10
+        mild:            11-14    [≥ 11 = Barkham 2013 clinical cutoff]
+        moderate:        15-19
+        moderate_severe: 20-24
+        severe:          25-40
+
+    **Third scorer-layer T3 instrument** (after PHQ-9 item 9 and
+    C-SSRS) — CORE-10 item 6 ("I made plans to end my life") any
+    non-zero response triggers requires_t3=True with
+    triggering_items=(6,).  The threshold matches the PHQ-9 item 9
+    any-non-zero precedent (Kroenke 2001; Simon 2013) and is MORE
+    conservative than C-SSRS (which requires specific item /
+    behavior combinations).
+
+    Feature-rich envelope — CORE-10 is the FIRST instrument in this
+    sprint series to populate the full envelope: total, severity,
+    positive_screen, cutoff_used, requires_t3, triggering_items,
+    items, instrument_version.  Only subscales and index are left
+    null (unidimensional, no scale transformation).
+
+    Clinical use cases:
+    1. UK NHS IAPT routine-outcome trajectory — session-by-session
+       RCI tracking with Barkham 2013 RCI ≈ 6 points for reliable
+       change flagging.
+    2. CORE-10 item 6 + PHQ-9 item 9 convergent positive → C-SSRS
+       follow-up prompt at clinician-UI layer.
+    3. CORE-10 severe (≥ 25) + WSAS clinically-significant (≥ 20)
+       → distressed-AND-impaired profile → intensive engagement.
+    4. CORE-10 moderate + readiness-ruler low → ambivalent despite
+       distress → MI change-talk elicitation.
+
+    Envelope: severity + positive_screen + cutoff_used + T3-
+    routing + triggering_items (no subscales, no scaled_score,
+    no index).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape --------------------------------------------------
+
+    def test_all_zeros_applies_reverse_keying(
+        self, client: TestClient
+    ) -> None:
+        """All raw zeros → items 2,3 flip to 4 each → total 8.
+        Confirms the reverse-keying is applied at the router layer
+        (not silently bypassed)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [0] * 10},
+            headers=self._headers("core10-all-zeros"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "core10"
+        assert body["total"] == 8
+        assert body["severity"] == "low"  # 8 ∈ 6-10
+        assert body["requires_t3"] is False
+
+    def test_reverse_keying_minimum_total_zero(
+        self, client: TestClient
+    ) -> None:
+        """raw=[0,4,4,0,0,0,0,0,0,0] → items 2,3 flip 4→0 → total 0.
+        The MINIMUM achievable total after reverse-keying."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [0, 4, 4, 0, 0, 0, 0, 0, 0, 0],
+            },
+            headers=self._headers("core10-min-zero"),
+        )
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "healthy"
+        assert body["positive_screen"] is False
+
+    def test_reverse_keying_maximum_total_forty(
+        self, client: TestClient
+    ) -> None:
+        """raw=[4,0,0,4,4,4,4,4,4,4] → items 2,3 flip 0→4 → total 40.
+        The MAXIMUM achievable total after reverse-keying.  Also
+        triggers T3 via item 6 = 4."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [4, 0, 0, 4, 4, 4, 4, 4, 4, 4],
+            },
+            headers=self._headers("core10-max-forty"),
+        )
+        body = response.json()
+        assert body["total"] == 40
+        assert body["severity"] == "severe"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is True
+        assert body["triggering_items"] == [6]
+
+    def test_cutoff_used_surfaces_11(
+        self, client: TestClient
+    ) -> None:
+        """Barkham 2013 clinical cutoff = 11 surfaced on every
+        response.  The clinician-UI renders "positive at ≥ 11"."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [2] * 10},
+            headers=self._headers("core10-cutoff"),
+        )
+        body = response.json()
+        assert body["cutoff_used"] == 11
+
+    def test_instrument_version_surfaces(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [2] * 10},
+            headers=self._headers("core10-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "core10-1.0.0"
+
+    def test_envelope_has_no_subscales(
+        self, client: TestClient
+    ) -> None:
+        """CORE-10 is the unidimensional short form of the 4-factor
+        CORE-OM — the factor structure does NOT propagate to the
+        10-item short form."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [2] * 10},
+            headers=self._headers("core10-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_envelope_has_no_index_or_scaled_score(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [2] * 10},
+            headers=self._headers("core10-no-index"),
+        )
+        body = response.json()
+        assert body.get("index") is None
+        assert body.get("scaled_score") is None
+
+    # -- Barkham 2013 severity bands ---------------------------------------
+
+    def test_severity_healthy_at_zero(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [0, 4, 4, 0, 0, 0, 0, 0, 0, 0],
+            },
+            headers=self._headers("core10-band-healthy"),
+        )
+        assert response.json()["severity"] == "healthy"
+
+    def test_severity_healthy_at_five_upper_bound(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 1, 1, 0, 0, 0, 0, 0],
+            },
+            headers=self._headers("core10-band-healthy-5"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["severity"] == "healthy"
+
+    def test_severity_low_at_six(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 1, 1, 0, 0, 0, 1, 0],
+            },
+            headers=self._headers("core10-band-low-6"),
+        )
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "low"
+
+    def test_severity_mild_at_cutoff_11(
+        self, client: TestClient
+    ) -> None:
+        """Barkham 2013 clinical cutoff — first "positive" screen."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 1, 1, 0, 1, 2, 1, 2],
+            },
+            headers=self._headers("core10-band-mild-cutoff"),
+        )
+        body = response.json()
+        assert body["total"] == 11
+        assert body["severity"] == "mild"
+        assert body["positive_screen"] is True
+
+    def test_severity_moderate_at_15(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 2, 2, 0, 2, 2, 2, 2],
+            },
+            headers=self._headers("core10-band-moderate"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "moderate"
+
+    def test_severity_moderate_severe_at_20(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [2] * 10},
+            headers=self._headers("core10-band-modsev-20"),
+        )
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "moderate_severe"
+
+    def test_severity_severe_at_25(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [3, 2, 2, 3, 3, 0, 3, 3, 3, 3],
+            },
+            headers=self._headers("core10-band-severe"),
+        )
+        body = response.json()
+        assert body["total"] == 25
+        assert body["severity"] == "severe"
+
+    # -- Barkham 2013 clinical cutoff boundary -------------------------------
+
+    def test_positive_screen_false_at_total_10(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 1, 1, 0, 1, 1, 1, 2],
+            },
+            headers=self._headers("core10-cutoff-10"),
+        )
+        body = response.json()
+        assert body["total"] == 10
+        assert body["positive_screen"] is False
+
+    def test_positive_screen_true_at_total_11(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 1, 1, 0, 1, 2, 1, 2],
+            },
+            headers=self._headers("core10-cutoff-11"),
+        )
+        body = response.json()
+        assert body["total"] == 11
+        assert body["positive_screen"] is True
+
+    # -- Item 6 T3 routing ---------------------------------------------------
+
+    def test_item_6_zero_no_t3(self, client: TestClient) -> None:
+        """Item 6 = 0 → no T3, triggering_items absent."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [2, 2, 2, 2, 2, 0, 2, 2, 2, 2],
+            },
+            headers=self._headers("core10-t3-item6-zero"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+        # Absence represented as null / missing (model field default
+        # None when the list would be empty).
+        assert body.get("triggering_items") is None
+
+    @pytest.mark.parametrize("v", [1, 2, 3, 4])
+    def test_item_6_any_non_zero_triggers_t3(
+        self, client: TestClient, v: int
+    ) -> None:
+        """Any non-zero response on CORE-10 item 6 → T3 per
+        Barkham 2013 safety guidance.  Matches PHQ-9 item 9 any-
+        non-zero precedent."""
+        raw = [0, 4, 4, 0, 0, v, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": raw},
+            headers=self._headers(f"core10-t3-item6-{v}"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is True
+        assert body["triggering_items"] == [6]
+
+    def test_item_6_t3_fires_at_subclinical_total(
+        self, client: TestClient
+    ) -> None:
+        """Simon 2013 scenario: overall total subclinical (< 11),
+        but item 6 one-off positive.  T3 MUST fire regardless of
+        total.  This is the designed-purpose detection case for
+        session-by-session routine monitoring."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 0, 0, 1, 1, 0, 1, 0],
+            },
+            headers=self._headers("core10-t3-subclinical"),
+        )
+        body = response.json()
+        assert body["total"] == 6  # low band, subclinical
+        assert body["positive_screen"] is False
+        # But T3 still fires on item 6:
+        assert body["requires_t3"] is True
+        assert body["triggering_items"] == [6]
+
+    # -- Item-count validation ---------------------------------------------
+
+    @pytest.mark.parametrize(
+        "bad_count", [1, 2, 5, 7, 8, 9, 11, 12, 20]
+    )
+    def test_wrong_item_count_returns_422(
+        self, client: TestClient, bad_count: int
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [2] * bad_count},
+            headers=self._headers(f"core10-bad-count-{bad_count}"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value validation ---------------------------------------------
+
+    def test_negative_one_returns_422(self, client: TestClient) -> None:
+        items = [2] * 10
+        items[0] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": items},
+            headers=self._headers("core10-val-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_five_returns_422(self, client: TestClient) -> None:
+        items = [2] * 10
+        items[4] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": items},
+            headers=self._headers("core10-val-five"),
+        )
+        assert response.status_code == 422
+
+    # -- Type validation (Pydantic wire-layer behavior) --------------------
+
+    def test_numeric_string_coerces_via_pydantic_lax_mode(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic list[int] lax mode: numeric string "2" → int 2
+        before scorer runs.  All "2"s → total 20."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": ["2"] * 10},
+            headers=self._headers("core10-str-coerce"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 20
+
+    def test_non_numeric_string_returns_422(
+        self, client: TestClient
+    ) -> None:
+        items: list[object] = [2] * 10
+        items[0] = "hello"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": items},
+            headers=self._headers("core10-str-reject"),
+        )
+        assert response.status_code == 422
+
+    def test_bool_true_coerces_to_one(
+        self, client: TestClient
+    ) -> None:
+        """JSON true → int 1 via Pydantic lax mode.  All True → items
+        2,3 flip 1→3; rest raw 1.  Total = 1+3+3+1+1+1+1+1+1+1 = 14.
+        Mild band.  Item 6 = 1 → T3 fires (any-non-zero)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [True] * 10},
+            headers=self._headers("core10-bool-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 14
+        # Item 6 at raw = 1 triggers T3:
+        assert body["requires_t3"] is True
+        assert body["triggering_items"] == [6]
+
+    def test_bool_false_coerces_to_zero(
+        self, client: TestClient
+    ) -> None:
+        """JSON false → int 0 via Pydantic lax mode.  All False →
+        items 2,3 flip 0→4; rest raw 0.  Total = 0+4+4+0+0+0+0+0+0+0 = 8.
+        Low band.  Item 6 = 0 → no T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "core10", "items": [False] * 10},
+            headers=self._headers("core10-bool-false"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 8
+        assert body["severity"] == "low"
+        assert body["requires_t3"] is False
+
+    # -- Clinical vignettes ------------------------------------------------
+
+    def test_vignette_recovered_end_of_therapy(
+        self, client: TestClient
+    ) -> None:
+        """Barkham 2013 end-of-therapy recovered case — healthy
+        band at total ≤ 5."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [1, 3, 3, 0, 0, 0, 1, 0, 1, 0],
+            },
+            headers=self._headers("core10-vig-recovered"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["severity"] == "healthy"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_vignette_iapt_intake_moderate(
+        self, client: TestClient
+    ) -> None:
+        """Typical UK IAPT intake — moderate distress, clinical
+        caseness, no active suicidality."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [2, 2, 2, 1, 1, 0, 2, 1, 2, 2],
+            },
+            headers=self._headers("core10-vig-iapt"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "moderate"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+
+    def test_vignette_severe_distress_no_item_6(
+        self, client: TestClient
+    ) -> None:
+        """Severe-distress profile with item 6 = 0 → severe band,
+        positive screen, but NO T3 at scorer layer (Barkham 2013
+        requires item 6 positive for scorer-layer T3)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [4, 0, 0, 4, 3, 0, 3, 4, 4, 4],
+            },
+            headers=self._headers("core10-vig-severe-no-t3"),
+        )
+        body = response.json()
+        assert body["total"] == 34
+        assert body["severity"] == "severe"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+
+    def test_vignette_acute_suicidality(
+        self, client: TestClient
+    ) -> None:
+        """The CORE-10's designed-purpose detection case — severe
+        distress WITH item-6-positive.  T3 fires, triggering_items
+        audit trail populated."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [4, 0, 0, 4, 3, 3, 3, 4, 4, 4],
+            },
+            headers=self._headers("core10-vig-acute"),
+        )
+        body = response.json()
+        assert body["total"] == 37
+        assert body["severity"] == "severe"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is True
+        assert body["triggering_items"] == [6]
+
+    def test_vignette_rci_recovery_6pt_delta(
+        self, client: TestClient
+    ) -> None:
+        """Barkham 2013 RCI ≈ 6 points — clinically meaningful
+        reliable change.  Trajectory layer computes the delta."""
+        baseline = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [3, 1, 1, 3, 3, 0, 3, 3, 3, 3],
+            },
+            headers=self._headers("core10-traj-baseline"),
+        ).json()
+        followup = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "core10",
+                "items": [2, 2, 2, 2, 2, 0, 3, 3, 3, 2],
+            },
+            headers=self._headers("core10-traj-followup"),
+        ).json()
+        assert baseline["total"] == 27
+        assert followup["total"] == 21
+        assert baseline["total"] - followup["total"] == 6
+        assert baseline["severity"] == "severe"
+        assert followup["severity"] == "moderate_severe"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
