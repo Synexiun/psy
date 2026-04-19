@@ -1,0 +1,102 @@
+{
+  "_meta": {
+    "locale": "fr",
+    "direction": "ltr",
+    "status": "draft",
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "note": "Awaiting native-speaker clinical review before v1.0 launch."
+  },
+  "app": {
+    "name": "Discipline OS",
+    "tagline": "L'instant entre l'envie et l'acte."
+  },
+  "common": {
+    "action": {
+      "save": "Enregistrer",
+      "cancel": "Annuler",
+      "close": "Fermer",
+      "back": "Retour",
+      "next": "Suivant",
+      "continue": "Continuer",
+      "skip": "Passer",
+      "retry": "Réessayer",
+      "delete": "Supprimer"
+    },
+    "state": {
+      "loading": "Chargement",
+      "saving": "Enregistrement",
+      "offline": "Hors ligne",
+      "online": "En ligne",
+      "error": "Une erreur s'est produite"
+    }
+  },
+  "nav": {
+    "home": "Accueil",
+    "assessments": "Évaluations",
+    "journal": "Journal",
+    "patterns": "Tendances",
+    "tools": "Outils",
+    "settings": "Paramètres",
+    "help": "Aide",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter"
+  },
+  "crisis": {
+    "cta": {
+      "primary": "J'ai besoin d'aide maintenant",
+      "secondary": "Voir les ressources d'urgence"
+    },
+    "headline": "Vous n'êtes pas seul·e.",
+    "body": "Si vous êtes en crise, demandez de l'aide. Les numéros ci-dessous sont gratuits et confidentiels.",
+    "callHotline": "Appeler une ligne d'écoute",
+    "callLocal": "Appeler les urgences",
+    "callContact": "Appeler votre contact d'urgence",
+    "useCopingTool": "Essayer d'abord un outil d'adaptation"
+  },
+  "marketing": {
+    "hero": {
+      "headline": "Un soutien entre les séances.",
+      "sub": "Outils d'adaptation fondés sur la recherche, privés par conception, présents quand vous en avez besoin.",
+      "ctaPrimary": "Obtenir l'application",
+      "ctaSecondary": "Comment ça marche"
+    },
+    "pricing": {
+      "title": "Tarifs simples et justes",
+      "freeTitle": "Gratuit",
+      "freeSub": "Outils d'adaptation essentiels, voie de crise, aperçu des tendances.",
+      "plusTitle": "Plus",
+      "plusSub": "Personnalisation, trajectoires étendues, journal vocal, partage clinicien."
+    }
+  },
+  "app": {
+    "welcome": {
+      "title": "Bon retour",
+      "body": "Commencez par un bilan ou ouvrez un outil."
+    },
+    "urge": {
+      "intensityLabel": "À quel point l'envie est-elle forte, là, maintenant ?",
+      "intensityScaleMin": "À peine présente",
+      "intensityScaleMax": "Accablante"
+    }
+  },
+  "assessment": {
+    "phq9": { "name": "PHQ-9", "description": "Dépistage de la dépression" },
+    "gad7": { "name": "GAD-7", "description": "Dépistage de l'anxiété" },
+    "audit": { "name": "AUDIT", "description": "Dépistage de l'usage d'alcool" },
+    "auditC": { "name": "AUDIT-C", "description": "Dépistage bref de l'alcool" },
+    "dast10": { "name": "DAST-10", "description": "Dépistage de l'usage de drogues" },
+    "pss10": { "name": "PSS-10", "description": "Échelle de stress perçu" },
+    "who5": { "name": "WHO-5", "description": "Indice de bien-être" },
+    "dtcq8": { "name": "DTCQ-8", "description": "Tentation / auto-efficacité" },
+    "urica": { "name": "URICA", "description": "Disposition au changement" },
+    "cssrs": { "name": "C-SSRS", "description": "Évaluation du risque suicidaire" }
+  },
+  "severity": {
+    "none": "Aucune",
+    "mild": "Légère",
+    "moderate": "Modérée",
+    "moderatelySevere": "Modérément sévère",
+    "severe": "Sévère"
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "_meta": {
+    "schemaVersion": "1.0.0",
+    "lastReviewedAt": "2026-04-18",
+    "reviewWindowDays": 90,
+    "reviewedBy": "clinical-ops",
+    "note": "Directory is reviewed every 90 days. Entries older than the window block locale launch per Docs/Whitepapers/04_Safety_Framework.md §Freshness gate."
+  },
+  "entries": [
+    {
+      "country": "US",
+      "locale": "en",
+      "emergency": { "label": "Emergency", "number": "911" },
+      "hotlines": [
+        {
+          "id": "us-988",
+          "name": "988 Suicide & Crisis Lifeline",
+          "number": "988",
+          "sms": "988",
+          "web": "https://988lifeline.org",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        },
+        {
+          "id": "us-crisis-text",
+          "name": "Crisis Text Line",
+          "number": null,
+          "sms": "HOME to 741741",
+          "web": "https://www.crisistextline.org",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "UK",
+      "locale": "en",
+      "emergency": { "label": "Emergency", "number": "999" },
+      "hotlines": [
+        {
+          "id": "uk-samaritans",
+          "name": "Samaritans",
+          "number": "116 123",
+          "sms": null,
+          "web": "https://www.samaritans.org",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        },
+        {
+          "id": "uk-shout",
+          "name": "Shout",
+          "number": null,
+          "sms": "SHOUT to 85258",
+          "web": "https://giveusashout.org",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "CA",
+      "locale": "en",
+      "emergency": { "label": "Emergency", "number": "911" },
+      "hotlines": [
+        {
+          "id": "ca-988",
+          "name": "9-8-8 Suicide Crisis Helpline",
+          "number": "988",
+          "sms": "988",
+          "web": "https://988.ca",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "CA",
+      "locale": "fr",
+      "emergency": { "label": "Urgences", "number": "911" },
+      "hotlines": [
+        {
+          "id": "ca-988-fr",
+          "name": "Ligne d'aide en cas de crise de suicide 9-8-8",
+          "number": "988",
+          "sms": "988",
+          "web": "https://988.ca/fr",
+          "hours": "24h / 7j",
+          "cost": "gratuit",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "FR",
+      "locale": "fr",
+      "emergency": { "label": "Urgences", "number": "112" },
+      "hotlines": [
+        {
+          "id": "fr-3114",
+          "name": "3114 — Numéro national de prévention du suicide",
+          "number": "3114",
+          "sms": null,
+          "web": "https://3114.fr",
+          "hours": "24h / 7j",
+          "cost": "gratuit",
+          "verifiedAt": "2026-04-01"
+        },
+        {
+          "id": "fr-sos-amitie",
+          "name": "SOS Amitié",
+          "number": "09 72 39 40 50",
+          "sms": null,
+          "web": "https://www.sos-amitie.com",
+          "hours": "24h / 7j",
+          "cost": "appel local",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "SA",
+      "locale": "ar",
+      "emergency": { "label": "الطوارئ", "number": "999" },
+      "hotlines": [
+        {
+          "id": "sa-mohmental",
+          "name": "خط الاستشارات النفسية — وزارة الصحة",
+          "number": "920033360",
+          "sms": null,
+          "web": "https://www.moh.gov.sa",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "EG",
+      "locale": "ar",
+      "emergency": { "label": "الطوارئ", "number": "122" },
+      "hotlines": [
+        {
+          "id": "eg-mh-hotline",
+          "name": "الخط الساخن للصحة النفسية — الأمانة العامة للصحة النفسية",
+          "number": "08008880700",
+          "sms": null,
+          "web": "https://mhs.mohp.gov.eg",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "AE",
+      "locale": "ar",
+      "emergency": { "label": "الطوارئ", "number": "999" },
+      "hotlines": [
+        {
+          "id": "ae-estijaba",
+          "name": "خط الأمل — دبي (HOPE)",
+          "number": "800-4673",
+          "sms": null,
+          "web": "https://www.dha.gov.ae",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    },
+    {
+      "country": "IR",
+      "locale": "fa",
+      "emergency": { "label": "اورژانس", "number": "115" },
+      "hotlines": [
+        {
+          "id": "ir-omid-behzisti",
+          "name": "خط اورژانس اجتماعی — سازمان بهزیستی",
+          "number": "123",
+          "sms": null,
+          "web": "https://behzisti.ir",
+          "hours": "24/7",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        },
+        {
+          "id": "ir-social-emergency",
+          "name": "خط مشاوره‌ی بهزیستی",
+          "number": "1480",
+          "sms": null,
+          "web": "https://behzisti.ir",
+          "hours": "روزانه",
+          "cost": "free",
+          "verifiedAt": "2026-04-01"
+        }
+      ]
+    }
+  ]
+}

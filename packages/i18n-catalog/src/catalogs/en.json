@@ -1,0 +1,101 @@
+{
+  "_meta": {
+    "locale": "en",
+    "direction": "ltr",
+    "status": "source",
+    "reviewedBy": "source-of-truth",
+    "reviewedAt": "2026-04-18"
+  },
+  "app": {
+    "name": "Discipline OS",
+    "tagline": "The moment between urge and action."
+  },
+  "common": {
+    "action": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "close": "Close",
+      "back": "Back",
+      "next": "Next",
+      "continue": "Continue",
+      "skip": "Skip",
+      "retry": "Retry",
+      "delete": "Delete"
+    },
+    "state": {
+      "loading": "Loading",
+      "saving": "Saving",
+      "offline": "Offline",
+      "online": "Online",
+      "error": "Something went wrong"
+    }
+  },
+  "nav": {
+    "home": "Home",
+    "assessments": "Assessments",
+    "journal": "Journal",
+    "patterns": "Patterns",
+    "tools": "Tools",
+    "settings": "Settings",
+    "help": "Help",
+    "signIn": "Sign in",
+    "signOut": "Sign out"
+  },
+  "crisis": {
+    "cta": {
+      "primary": "I need help now",
+      "secondary": "Show safety resources"
+    },
+    "headline": "You are not alone.",
+    "body": "If you are in crisis, please reach out. The numbers below are free and confidential.",
+    "callHotline": "Call a hotline",
+    "callLocal": "Call local emergency number",
+    "callContact": "Call your emergency contact",
+    "useCopingTool": "Try a coping tool first"
+  },
+  "marketing": {
+    "hero": {
+      "headline": "Support for the moments between sessions.",
+      "sub": "Evidence-based coping tools, private by design, with you when you need them.",
+      "ctaPrimary": "Get the app",
+      "ctaSecondary": "How it works"
+    },
+    "pricing": {
+      "title": "Simple, fair pricing",
+      "freeTitle": "Free",
+      "freeSub": "Core coping tools, crisis path, basic pattern view.",
+      "plusTitle": "Plus",
+      "plusSub": "Personalization, extended trajectories, voice journal, clinician sharing."
+    }
+  },
+  "app": {
+    "welcome": {
+      "title": "Welcome back",
+      "body": "Start with a check-in or open a tool."
+    },
+    "urge": {
+      "intensityLabel": "How strong is the urge, right now?",
+      "intensityScaleMin": "Barely there",
+      "intensityScaleMax": "Overwhelming"
+    }
+  },
+  "assessment": {
+    "phq9": { "name": "PHQ-9", "description": "Depression screener" },
+    "gad7": { "name": "GAD-7", "description": "Anxiety screener" },
+    "audit": { "name": "AUDIT", "description": "Alcohol use screener" },
+    "auditC": { "name": "AUDIT-C", "description": "Brief alcohol use screener" },
+    "dast10": { "name": "DAST-10", "description": "Drug use screener" },
+    "pss10": { "name": "PSS-10", "description": "Perceived stress scale" },
+    "who5": { "name": "WHO-5", "description": "Wellbeing index" },
+    "dtcq8": { "name": "DTCQ-8", "description": "Temptation / self-efficacy" },
+    "urica": { "name": "URICA", "description": "Readiness to change" },
+    "cssrs": { "name": "C-SSRS", "description": "Suicide risk assessment" }
+  },
+  "severity": {
+    "none": "None",
+    "mild": "Mild",
+    "moderate": "Moderate",
+    "moderatelySevere": "Moderately severe",
+    "severe": "Severe"
+  }
+}

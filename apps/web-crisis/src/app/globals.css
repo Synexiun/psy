@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+
+  --color-crisis-500: hsl(0 84% 60%);
+  --color-crisis-600: hsl(0 84% 54%);
+  --color-crisis-50: hsl(0 84% 97%);
+  --color-surface: hsl(0 0% 100%);
+  --color-ink: hsl(222 47% 11%);
+  --color-muted: hsl(215 16% 47%);
+}
+
+html {
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* High-contrast focus ring for keyboard users — critical on crisis pages */
+:focus-visible {
+  outline: 3px solid var(--color-crisis-500);
+  outline-offset: 2px;
+}

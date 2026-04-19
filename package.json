@@ -1,0 +1,22 @@
+{
+  "name": "disciplineos",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Discipline OS — behavioral operating system for the moment between urge and action",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "lint": "pnpm -r --if-present lint",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "clean": "pnpm -r --if-present clean && rimraf node_modules"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.2"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "name": "@disciplineos/i18n-catalog",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Locale catalogs (en, fr, ar, fa) used by Discipline OS web surfaces. See Docs/Technicals/16_Web_Application.md §i18n.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./catalogs/en": "./src/catalogs/en.json",
+    "./catalogs/fr": "./src/catalogs/fr.json",
+    "./catalogs/ar": "./src/catalogs/ar.json",
+    "./catalogs/fa": "./src/catalogs/fa.json"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "check:parity": "node --experimental-strip-types scripts/check-parity.ts"
+  },
+  "devDependencies": {
+    "typescript": "~5.6.2"
+  }
+}

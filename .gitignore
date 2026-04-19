@@ -1,0 +1,98 @@
+# --- Node / pnpm ---
+node_modules/
+.pnpm-store/
+.pnpm-debug.log
+dist/
+build/
+.turbo/
+*.tsbuildinfo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# --- React Native / Expo ---
+apps/mobile/.expo/
+apps/mobile/.expo-shared/
+apps/mobile/ios/Pods/
+apps/mobile/ios/build/
+apps/mobile/ios/DerivedData/
+apps/mobile/ios/*.xcworkspace/xcuserdata/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+apps/mobile/android/local.properties
+apps/mobile/android/.idea/
+apps/mobile/android/captures/
+*.keystore
+!debug.keystore
+
+# --- iOS signing / certs ---
+*.p12
+*.p8
+*.mobileprovision
+*.cer
+
+# --- Terraform ---
+infra/**/.terraform/
+infra/**/*.tfstate
+infra/**/*.tfstate.*
+infra/**/.terraform.lock.hcl.bak
+infra/**/terraform.tfvars
+infra/**/*.auto.tfvars
+infra/**/crash.log
+
+# --- Secrets / env ---
+.env
+.env.*
+!.env.example
+*.secret
+*.pem
+*.key
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs / runtime ---
+*.log
+logs/
+tmp/
+.cache/
+
+# --- Docker ---
+.docker-compose.override.yml
+
+# --- Local data ---
+*.sqlite
+*.sqlite3
+*.db
+local-data/
+
+# --- ML artifacts ---
+*.pth
+*.onnx
+*.tflite
+*.mlmodel
+*.mlpackage
+checkpoints/
+models/*.bin

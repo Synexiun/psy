@@ -1,0 +1,46 @@
+{
+  "name": "@disciplineos/web-app",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Authenticated user surface — mirror of mobile features on web. 4 locales (en, fr, ar, fa). Auth: Clerk + WebAuthn/passkeys.",
+  "scripts": {
+    "dev": "next dev --port 3020",
+    "build": "next build",
+    "start": "next start --port 3020",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:a11y": "playwright test tests/a11y"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.0.0",
+    "@disciplineos/api-client": "workspace:*",
+    "@disciplineos/design-system": "workspace:*",
+    "@disciplineos/i18n-catalog": "workspace:*",
+    "@disciplineos/safety-directory": "workspace:*",
+    "@tanstack/react-query": "^5.56.0",
+    "next": "^15.0.0",
+    "next-intl": "^3.22.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.23.8",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.0",
+    "@playwright/test": "^1.48.0",
+    "@tailwindcss/postcss": "^4.0.0",
+    "@testing-library/react": "^16.0.1",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^9.11.0",
+    "eslint-config-next": "^15.0.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^4.0.0",
+    "typescript": "~5.6.2",
+    "vitest": "^2.1.0"
+  }
+}

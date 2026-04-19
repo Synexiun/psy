@@ -1,0 +1,39 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+  --font-arabic: var(--font-plex-arabic), system-ui, sans-serif;
+  --font-persian: var(--font-vazirmatn), system-ui, sans-serif;
+
+  --color-brand-50: hsl(217 91% 97%);
+  --color-brand-500: hsl(217 91% 60%);
+  --color-brand-600: hsl(217 91% 52%);
+
+  --color-calm-500: hsl(173 58% 39%);
+  --color-crisis-500: hsl(0 84% 60%);
+  --color-crisis-600: hsl(0 84% 54%);
+  --color-crisis-50: hsl(0 84% 97%);
+}
+
+html {
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+html[dir="rtl"] body {
+  font-family: var(--font-arabic), var(--font-sans);
+}
+
+html[lang="fa"] body {
+  font-family: var(--font-persian), var(--font-sans);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

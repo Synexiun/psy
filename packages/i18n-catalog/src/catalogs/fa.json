@@ -1,0 +1,102 @@
+{
+  "_meta": {
+    "locale": "fa",
+    "direction": "rtl",
+    "status": "draft",
+    "reviewedBy": null,
+    "reviewedAt": null,
+    "note": "Draft scaffold. MUST receive Persian native-speaker clinical review before v1.0 launch. Clinical instrument scores use Latin digits; body copy uses Persian wording."
+  },
+  "app": {
+    "name": "Discipline OS",
+    "tagline": "لحظه‌ی بین میل و عمل."
+  },
+  "common": {
+    "action": {
+      "save": "ذخیره",
+      "cancel": "لغو",
+      "close": "بستن",
+      "back": "بازگشت",
+      "next": "بعدی",
+      "continue": "ادامه",
+      "skip": "رد کردن",
+      "retry": "تلاش دوباره",
+      "delete": "حذف"
+    },
+    "state": {
+      "loading": "در حال بارگذاری",
+      "saving": "در حال ذخیره",
+      "offline": "آفلاین",
+      "online": "آنلاین",
+      "error": "مشکلی پیش آمد"
+    }
+  },
+  "nav": {
+    "home": "خانه",
+    "assessments": "ارزیابی‌ها",
+    "journal": "دفترچه",
+    "patterns": "الگوها",
+    "tools": "ابزارها",
+    "settings": "تنظیمات",
+    "help": "راهنما",
+    "signIn": "ورود",
+    "signOut": "خروج"
+  },
+  "crisis": {
+    "cta": {
+      "primary": "همین حالا به کمک نیاز دارم",
+      "secondary": "مشاهده‌ی منابع ایمنی"
+    },
+    "headline": "شما تنها نیستید.",
+    "body": "اگر در بحران هستید، لطفاً کمک بخواهید. شماره‌های زیر رایگان و محرمانه‌اند.",
+    "callHotline": "تماس با خط کمک",
+    "callLocal": "تماس با اورژانس",
+    "callContact": "تماس با مخاطب اضطراری",
+    "useCopingTool": "ابتدا یک ابزار مقابله را امتحان کنید"
+  },
+  "marketing": {
+    "hero": {
+      "headline": "همراه شما در فاصله‌ی میان جلسات درمان.",
+      "sub": "ابزارهای مقابله‌ی مبتنی بر شواهد، با طراحی محرمانه، هر زمان که نیاز داشتید.",
+      "ctaPrimary": "دریافت اپلیکیشن",
+      "ctaSecondary": "چگونه کار می‌کند"
+    },
+    "pricing": {
+      "title": "قیمت‌گذاری ساده و منصفانه",
+      "freeTitle": "رایگان",
+      "freeSub": "ابزارهای اصلی مقابله، مسیر بحران، نمای اولیه‌ی الگوها.",
+      "plusTitle": "پلاس",
+      "plusSub": "شخصی‌سازی، روندهای گسترده، دفترچه‌ی صوتی، اشتراک با درمانگر."
+    }
+  },
+  "app": {
+    "welcome": {
+      "title": "خوش آمدید",
+      "body": "با یک وضعیت‌سنجی شروع کنید یا ابزاری را باز کنید."
+    },
+    "urge": {
+      "intensityLabel": "شدت میل در همین لحظه چقدر است؟",
+      "intensityScaleMin": "تقریباً ناچیز",
+      "intensityScaleMax": "طاقت‌فرسا"
+    }
+  },
+  "assessment": {
+    "phq9": { "name": "PHQ-9", "description": "غربالگری افسردگی" },
+    "gad7": { "name": "GAD-7", "description": "غربالگری اضطراب" },
+    "audit": { "name": "AUDIT", "description": "غربالگری مصرف الکل" },
+    "auditC": { "name": "AUDIT-C", "description": "غربالگری مختصر الکل" },
+    "dast10": { "name": "DAST-10", "description": "غربالگری مصرف مواد" },
+    "pss10": { "name": "PSS-10", "description": "مقیاس استرس ادراک‌شده" },
+    "who5": { "name": "WHO-5", "description": "شاخص بهزیستی" },
+    "dtcq8": { "name": "DTCQ-8", "description": "وسوسه و خودکارآمدی" },
+    "urica": { "name": "URICA", "description": "آمادگی برای تغییر" },
+    "cssrs": { "name": "C-SSRS", "description": "ارزیابی خطر خودکشی" }
+  },
+  "severity": {
+    "none": "هیچ",
+    "mild": "خفیف",
+    "moderate": "متوسط",
+    "moderatelySevere": "متوسط تا شدید",
+    "severe": "شدید"
+  }
+}
