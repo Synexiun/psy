@@ -28868,3 +28868,423 @@ class TestEssRouting:
         assert low["total"] == 0
         assert high["severity"] == "severe"
         assert low["severity"] == "normal"
+
+
+# ============================================================================
+# TestSpinRouting -- Connor 2000 Social Phobia Inventory
+# ============================================================================
+
+
+class TestSpinRouting:
+    """HTTP-layer tests for SPIN (Connor 2000 Social Phobia Inventory).
+
+    17 items, 0-4 Likert, total 0-68, HIGHER = MORE social anxiety.
+    Severity: none (0-20) / mild (21-30) / moderate (31-40) /
+              severe (41-50) / very_severe (51-68).
+    No positive_screen, no subscales, no cutoff_used, requires_t3=False.
+    """
+
+    @staticmethod
+    def _spin_items(total: int) -> list[int]:
+        """Construct a 17-item SPIN list summing to ``total``."""
+        if total < 0 or total > 68:
+            raise ValueError(f"Cannot construct SPIN items for total={total}")
+        items: list[int] = []
+        remaining = total
+        for _ in range(17):
+            v = min(4, remaining)
+            items.append(v)
+            remaining -= v
+        return items
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"spin-test-{idem_key}"}
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_spin_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_spin_envelope_has_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_spin_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "spin"
+
+    def test_spin_envelope_has_total(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [1] * 17},
+            headers=self._headers("env-total"),
+        ).json()
+        assert body["total"] == 17
+
+    def test_spin_envelope_has_severity(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("env-sev"),
+        ).json()
+        assert "severity" in body
+
+    def test_spin_requires_t3_always_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_spin_instrument_version_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("version"),
+        ).json()
+        assert body["instrument_version"] == "spin-1.0.0"
+
+    # ------------------------------------------------------------------
+    # Severity band boundaries
+    # ------------------------------------------------------------------
+
+    @pytest.mark.parametrize("total,expected_severity", [
+        (0, "none"),
+        (20, "none"),
+        (21, "mild"),
+        (30, "mild"),
+        (31, "moderate"),
+        (40, "moderate"),
+        (41, "severe"),
+        (50, "severe"),
+        (51, "very_severe"),
+        (68, "very_severe"),
+    ])
+    def test_severity_band_boundaries(
+        self,
+        client: TestClient,
+        total: int,
+        expected_severity: str,
+    ) -> None:
+        items = self._spin_items(total)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers(f"band-{total}"),
+        ).json()
+        assert body["total"] == total
+        assert body["severity"] == expected_severity
+
+    def test_severity_floor_is_none(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("floor"),
+        ).json()
+        assert body["severity"] == "none"
+        assert body["total"] == 0
+
+    def test_severity_ceiling_is_very_severe(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("ceil"),
+        ).json()
+        assert body["severity"] == "very_severe"
+        assert body["total"] == 68
+
+    def test_boundary_20_is_none_not_mild(self, client: TestClient) -> None:
+        items = self._spin_items(20)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("b20"),
+        ).json()
+        assert body["severity"] == "none"
+
+    def test_boundary_21_is_mild_not_none(self, client: TestClient) -> None:
+        items = self._spin_items(21)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("b21"),
+        ).json()
+        assert body["severity"] == "mild"
+
+    def test_boundary_50_is_severe_not_very_severe(self, client: TestClient) -> None:
+        items = self._spin_items(50)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("b50"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    def test_boundary_51_is_very_severe_not_severe(self, client: TestClient) -> None:
+        items = self._spin_items(51)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("b51"),
+        ).json()
+        assert body["severity"] == "very_severe"
+
+    # ------------------------------------------------------------------
+    # Envelope audit -- absent fields
+    # ------------------------------------------------------------------
+
+    def test_no_positive_screen_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("no-ps"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_no_subscales_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [2] * 17},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [2] * 17},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_no_endorsed_item_count_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [3] * 17},
+            headers=self._headers("no-endorsed"),
+        ).json()
+        assert body.get("endorsed_item_count") is None
+
+    def test_no_index_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [1] * 17},
+            headers=self._headers("no-idx"),
+        ).json()
+        assert body.get("index") is None
+
+    def test_no_triggering_items_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("no-trig"),
+        ).json()
+        assert body.get("triggering_items") is None
+
+    def test_no_t3_reason_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("no-t3r"),
+        ).json()
+        assert body.get("t3_reason") is None
+
+    # ------------------------------------------------------------------
+    # Item validation -- wrong count
+    # ------------------------------------------------------------------
+
+    def test_spin_16_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [1] * 16},
+            headers=self._headers("cnt-16"),
+        )
+        assert resp.status_code == 422
+
+    def test_spin_18_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [1] * 18},
+            headers=self._headers("cnt-18"),
+        )
+        assert resp.status_code == 422
+
+    def test_spin_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item validation -- range
+    # ------------------------------------------------------------------
+
+    def test_item_above_4_returns_422(self, client: TestClient) -> None:
+        items = [1] * 17
+        items[3] = 5
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("range-hi"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_negative_returns_422(self, client: TestClient) -> None:
+        items = [1] * 17
+        items[0] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_4_accepted_at_max(self, client: TestClient) -> None:
+        items = [4] * 17
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("range-4ok"),
+        )
+        assert resp.status_code == 201
+
+    # ------------------------------------------------------------------
+    # JSON type coercion
+    # ------------------------------------------------------------------
+
+    def test_json_false_zero_accepted_for_spin(self, client: TestClient) -> None:
+        items: list = [1] * 17
+        items[0] = False
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("false-ok"),
+        )
+        assert resp.status_code == 201
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_healthy_control_total_none(self, client: TestClient) -> None:
+        items = [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0]
+        assert len(items) == 17
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("vig-ctrl"),
+        ).json()
+        assert body["severity"] == "none"
+        assert body["total"] <= 20
+
+    def test_alcohol_self_medication_severe(self, client: TestClient) -> None:
+        items = self._spin_items(46)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("vig-buckner"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    def test_shame_post_relapse_escalation_very_severe(
+        self, client: TestClient
+    ) -> None:
+        items = self._spin_items(55)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("vig-stewart"),
+        ).json()
+        assert body["severity"] == "very_severe"
+
+    def test_moderate_social_phobia_public_speaking(
+        self, client: TestClient
+    ) -> None:
+        items = self._spin_items(36)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("vig-moderate"),
+        ).json()
+        assert body["severity"] == "moderate"
+
+    def test_avoidance_isolation_escalation_severe(
+        self, client: TestClient
+    ) -> None:
+        items = self._spin_items(43)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("vig-morris"),
+        ).json()
+        assert body["severity"] == "severe"
+
+    def test_ceiling_very_severe(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("vig-ceil"),
+        ).json()
+        assert body["total"] == 68
+        assert body["severity"] == "very_severe"
+
+    # ------------------------------------------------------------------
+    # Stability / RCI
+    # ------------------------------------------------------------------
+
+    def test_same_items_same_result_deterministic(
+        self, client: TestClient
+    ) -> None:
+        items = self._spin_items(34)
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
+        assert a["instrument_version"] == b["instrument_version"]
+
+    def test_direction_higher_equals_more_social_anxiety(
+        self, client: TestClient
+    ) -> None:
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [4] * 17},
+            headers=self._headers("dir-high"),
+        ).json()
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "spin", "items": [0] * 17},
+            headers=self._headers("dir-low"),
+        ).json()
+        assert high["total"] > low["total"]
+        assert high["total"] == 68
+        assert low["total"] == 0
+        assert high["severity"] == "very_severe"
+        assert low["severity"] == "none"

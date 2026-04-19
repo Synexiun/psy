@@ -6,7 +6,7 @@ CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
 MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
-IGDS9-SF, PCS, ESS.
+IGDS9-SF, PCS, ESS, SPIN.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -46,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1626,6 +1626,10 @@ from .scoring.ess import (
     InvalidResponseError as EssInvalid,
     score_ess,
 )
+from .scoring.spin import (
+    InvalidResponseError as SpinInvalid,
+    score_spin,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1715,6 +1719,7 @@ Instrument = Literal[
     "igds9sf",
     "pcs",
     "ess",
+    "spin",
 ]
 
 
@@ -1786,6 +1791,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "igds9sf": 9,
     "pcs": 13,
     "ess": 8,
+    "spin": 17,
 }
 
 
@@ -6151,6 +6157,73 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=e.instrument_version,
         )
+    if payload.instrument == "spin":
+        # SPIN — Connor 2000 Social Phobia Inventory.
+        #
+        # Connor KM et al. 2000 British Journal of Psychiatry 176:
+        # 379-386.  17 items, 0-4 Likert, total 0-68.
+        # HIGHER = MORE social anxiety.
+        #
+        # Severity bands (Connor 2000 Table 4 + Davidson 2004 J Clin
+        # Psychiatry 65 Suppl 14:7-12):
+        #
+        #   0-20   no social phobia
+        #   21-30  mild social phobia
+        #   31-40  moderate social phobia
+        #   41-50  severe social phobia
+        #   51-68  very severe social phobia
+        #
+        # Platform relevance — social anxiety is a documented
+        # addiction self-medication pathway (Buckner 2008 Drug Alcohol
+        # Depend 93(3):1-8; Morris 2005 Clin Psychol Rev 25(6):
+        # 734-760; Stewart 1998 Addict Behav 23(5):669-680):
+        #
+        # 1. Stimulant/alcohol self-medication for anticipatory fear
+        #    and post-event processing — Buckner 2008.
+        # 2. Avoidance → isolation → pre-loading escalation —
+        #    Morris 2005.
+        # 3. Fear-of-negative-evaluation → shame → post-relapse
+        #    escalation cycle — Stewart 1998.
+        #
+        # No positive_screen (Connor 2000 / Davidson 2004 publish
+        # severity bands; SAD diagnosis requires structured clinical
+        # interview).  Follows PHQ-9 / GAD-7 / K10 / DASS-21 / ESS
+        # precedent: severity bands without positive_screen.
+        #
+        # No subscales — unidimensional per Connor 2000 EFA
+        # (Cronbach α = 0.94).
+        #
+        # Clinical pairing patterns:
+        # - SPIN elevated + AUDIT / DUDIT positive → social-anxiety-
+        #   driven use; CBT-SA + MI approach (Buckner 2008).
+        # - SPIN elevated + ESS elevated → avoidance-driven sleep-
+        #   schedule disruption / nocturnal rumination.
+        # - SPIN elevated + PHQ-9 elevated → social anxiety +
+        #   depression bidirectional loop (Fehm 2005 Soc Psychiatry
+        #   Psychiatr Epidemiol 43(4):257-265); BA + exposure.
+        # - SPIN elevated + ACEs elevated → trauma-rooted social
+        #   threat hypervigilance; trauma-informed protocol.
+        # - SPIN elevated + ASRS-6 positive → ADHD + rejection-
+        #   sensitive dysphoria (Biederman 2006 Biol Psychiatry
+        #   60(10):1098-1105).
+        #
+        # Validated translations: fr (Radomsky 2006 Clin Psychol
+        # Psychother 13:126-136), ar (Beidas 2015 Cogn Behav Pract
+        # 22(1):5-19), fa (Abdollahi 2015 Iran J Psychiatry Clin
+        # Psychol 21(1):27-36).
+        #
+        # T3 posture — SPIN has NO safety items.  Acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10
+        # item 6.
+        s = score_spin(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="spin",
+            total=s.total,
+            severity=s.severity,
+            requires_t3=False,
+            instrument_version=s.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -6333,6 +6406,7 @@ async def submit_assessment(
         Igds9SfInvalid,
         PcsInvalid,
         EssInvalid,
+        SpinInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
