@@ -1597,3 +1597,575 @@ class TestHistoryEndpoint:
         items = hist.json()["items"]
         assert len(items) == 1
         assert items[0]["assessment_id"] == first.json()["assessment_id"]
+
+
+# =============================================================================
+# Trajectory from history
+# =============================================================================
+
+
+def _save_record(
+    *,
+    assessment_id: str,
+    user_id: str,
+    instrument: str,
+    total: int,
+    created_at: Any,
+    index: int | None = None,
+    severity: str = "mild",
+    raw_items: tuple[int, ...] | None = None,
+    triggering_items: tuple[int, ...] | None = None,
+) -> None:
+    """Directly persist a record with a pinned ``created_at``.
+
+    The HTTP ``POST /v1/assessments`` path stamps records with
+    ``datetime.now(timezone.utc)``, which is fine for most tests but
+    makes deterministic chronology assertions fragile (two back-to-
+    back submissions land microseconds apart).  Trajectory tests need
+    a pinned baseline-vs-later ordering, so they bypass the HTTP layer
+    and write to the repository directly.  The by-user / by-id
+    indices are exercised through the repository's own test suite;
+    this helper only exists to produce a predictable timeline."""
+    from discipline.psychometric.repository import (
+        AssessmentRecord,
+        get_assessment_repository,
+    )
+
+    get_assessment_repository().save(
+        AssessmentRecord(
+            assessment_id=assessment_id,
+            user_id=user_id,
+            instrument=instrument,
+            total=total,
+            severity=severity,
+            requires_t3=False,
+            raw_items=raw_items if raw_items is not None else (0,) * 9,
+            created_at=created_at,
+            index=index,
+            triggering_items=triggering_items,
+        )
+    )
+
+
+class TestTrajectoryHistoryEndpoint:
+    """``GET /v1/assessments/trajectory/{instrument}`` — reads the
+    user's repository records, filters by instrument, sorts oldest-
+    first, uses the earliest as baseline, and annotates every
+    subsequent record with an RCI direction per Jacobson & Truax 1991.
+
+    Instruments without a validated RCI threshold (C-SSRS, DAST-10,
+    unknown strings) still return the time series but every point's
+    direction is ``insufficient_data`` and ``rci_threshold`` is null."""
+
+    def test_missing_user_id_header_rejected(
+        self, client: TestClient
+    ) -> None:
+        """No identity → no timeline.  FastAPI's required-header missing
+        path produces 422; our explicit empty-string guard returns 401.
+        Either is acceptable — the point is the request does NOT
+        succeed."""
+        resp = client.get("/v1/assessments/trajectory/phq9")
+        assert resp.status_code in (401, 422)
+
+    def test_empty_user_id_header_returns_401(
+        self, client: TestClient
+    ) -> None:
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": ""},
+        )
+        assert resp.status_code == 401
+
+    def test_empty_history_returns_empty_series(
+        self, client: TestClient
+    ) -> None:
+        """A user with no records returns threshold + null baseline +
+        empty points.  UI renders 'collect a first reading' prompt
+        instead of erroring."""
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "brand-new-user"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {
+            "instrument": "phq9",
+            "rci_threshold": 5.2,
+            "baseline": None,
+            "points": [],
+        }
+
+    def test_single_record_is_baseline_with_empty_points(
+        self, client: TestClient
+    ) -> None:
+        """One record → it's the baseline; points is empty because
+        RCI needs two readings by definition."""
+        post = _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],  # total=8
+        )
+        assert post.status_code == 201
+        baseline_id = post.json()["assessment_id"]
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["instrument"] == "phq9"
+        assert body["rci_threshold"] == 5.2
+        assert body["baseline"]["assessment_id"] == baseline_id
+        assert body["baseline"]["score"] == 8
+        assert body["points"] == []
+
+    def test_two_records_below_threshold_no_reliable_change(
+        self, client: TestClient
+    ) -> None:
+        """PHQ-9 from 5 to 7: |Δ|=2 < 5.2 → no_reliable_change.
+        Delta is still echoed (the arithmetic result is meaningful
+        even when the RCI classifier says 'below threshold')."""
+        from datetime import datetime, timezone
+
+        _save_record(
+            assessment_id="a1",
+            user_id="user-1",
+            instrument="phq9",
+            total=5,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="a2",
+            user_id="user-1",
+            instrument="phq9",
+            total=7,
+            created_at=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["baseline"]["assessment_id"] == "a1"
+        assert body["baseline"]["score"] == 5
+        assert len(body["points"]) == 1
+        p = body["points"][0]
+        assert p["assessment_id"] == "a2"
+        assert p["score"] == 7
+        assert p["delta"] == 2
+        assert p["direction"] == "no_reliable_change"
+
+    def test_phq9_improvement_across_threshold(
+        self, client: TestClient
+    ) -> None:
+        """PHQ-9 15 → 8: Δ=-7, |Δ|≥5.2, lower-is-better → improvement."""
+        from datetime import datetime, timezone
+
+        _save_record(
+            assessment_id="a1",
+            user_id="user-1",
+            instrument="phq9",
+            total=15,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="a2",
+            user_id="user-1",
+            instrument="phq9",
+            total=8,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["baseline"]["score"] == 15
+        assert len(body["points"]) == 1
+        p = body["points"][0]
+        assert p["delta"] == -7
+        assert p["direction"] == "improvement"
+
+    def test_phq9_deterioration_across_threshold(
+        self, client: TestClient
+    ) -> None:
+        """PHQ-9 3 → 10: Δ=+7, |Δ|≥5.2, lower-is-better → deterioration."""
+        from datetime import datetime, timezone
+
+        _save_record(
+            assessment_id="a1",
+            user_id="user-1",
+            instrument="phq9",
+            total=3,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="a2",
+            user_id="user-1",
+            instrument="phq9",
+            total=10,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["points"][0]["direction"] == "deterioration"
+
+    def test_who5_uses_index_not_raw_total(
+        self, client: TestClient
+    ) -> None:
+        """WHO-5 RCI threshold (17) is on the *index* scale (0-100),
+        not the raw total (0-25).  A trajectory computed against raw
+        totals would silently compress deltas by 4× and misclassify
+        every clinically meaningful change.  This is a correctness
+        bar, not a stylistic preference."""
+        from datetime import datetime, timezone
+
+        # Raw 5 → index 20; raw 10 → index 40.  Δ on index = 20 ≥ 17,
+        # higher-is-better → improvement.  On raw scale |Δ| = 5 (way
+        # below 17), a buggy implementation would return
+        # no_reliable_change.
+        _save_record(
+            assessment_id="w1",
+            user_id="user-1",
+            instrument="who5",
+            total=5,
+            index=20,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            raw_items=(1, 1, 1, 1, 1),
+        )
+        _save_record(
+            assessment_id="w2",
+            user_id="user-1",
+            instrument="who5",
+            total=10,
+            index=40,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            raw_items=(2, 2, 2, 2, 2),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/who5",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        # Baseline score is the INDEX (20), not the raw total (5).
+        assert body["baseline"]["score"] == 20
+        p = body["points"][0]
+        assert p["score"] == 40
+        assert p["delta"] == 20
+        assert p["direction"] == "improvement"
+
+    def test_cssrs_has_no_rci_threshold(self, client: TestClient) -> None:
+        """C-SSRS has no published RCI threshold — the endpoint still
+        returns the time series (clients can render the raw chart) but
+        every direction is ``insufficient_data`` and ``delta`` is null
+        (matches trajectories.py contract)."""
+        from datetime import datetime, timezone
+
+        _save_record(
+            assessment_id="c1",
+            user_id="user-1",
+            instrument="cssrs",
+            total=2,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            raw_items=(1, 1, 0, 0, 0, 0),
+            triggering_items=(1, 2),
+        )
+        _save_record(
+            assessment_id="c2",
+            user_id="user-1",
+            instrument="cssrs",
+            total=0,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            raw_items=(0, 0, 0, 0, 0, 0),
+            triggering_items=(),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/cssrs",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["rci_threshold"] is None
+        assert body["baseline"]["score"] == 2
+        assert len(body["points"]) == 1
+        p = body["points"][0]
+        assert p["score"] == 0
+        assert p["delta"] is None
+        assert p["direction"] == "insufficient_data"
+
+    def test_dast10_has_no_rci_threshold(self, client: TestClient) -> None:
+        """DAST-10 has no validated RCI threshold — same
+        insufficient_data semantics as C-SSRS."""
+        from datetime import datetime, timezone
+
+        _save_record(
+            assessment_id="d1",
+            user_id="user-1",
+            instrument="dast10",
+            total=6,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            raw_items=(1, 1, 1, 0, 1, 0, 1, 1, 0, 0),
+        )
+        _save_record(
+            assessment_id="d2",
+            user_id="user-1",
+            instrument="dast10",
+            total=1,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            raw_items=(0, 0, 1, 0, 0, 0, 0, 0, 0, 0),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/dast10",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["rci_threshold"] is None
+        assert body["points"][0]["direction"] == "insufficient_data"
+        assert body["points"][0]["delta"] is None
+
+    def test_instrument_filtering_excludes_other_instruments(
+        self, client: TestClient
+    ) -> None:
+        """A phq9 trajectory must not include gad7 records.  Without
+        filtering, a cross-instrument 'composite' trajectory would be
+        clinically meaningless — PHQ-9 and GAD-7 have different scale
+        ranges and different RCI thresholds."""
+        from datetime import datetime, timezone
+
+        _save_record(
+            assessment_id="p1",
+            user_id="user-1",
+            instrument="phq9",
+            total=10,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="g1",
+            user_id="user-1",
+            instrument="gad7",
+            total=12,
+            created_at=datetime(2026, 4, 5, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="p2",
+            user_id="user-1",
+            instrument="phq9",
+            total=4,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["baseline"]["assessment_id"] == "p1"
+        assert len(body["points"]) == 1
+        assert body["points"][0]["assessment_id"] == "p2"
+
+    def test_multi_user_isolation(self, client: TestClient) -> None:
+        """User A's phq9 trajectory is empty if A has no phq9 records,
+        even if user B has a long phq9 series.  Privacy boundary."""
+        from datetime import datetime, timezone
+
+        for i in range(3):
+            _save_record(
+                assessment_id=f"b-{i}",
+                user_id="user-B",
+                instrument="phq9",
+                total=i * 5,
+                created_at=datetime(2026, 4, 1 + i, tzinfo=timezone.utc),
+            )
+
+        # user-A has no records.
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-A"},
+        )
+        body = resp.json()
+        assert body["baseline"] is None
+        assert body["points"] == []
+
+        # user-B sees their full series.
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-B"},
+        )
+        body = resp.json()
+        assert body["baseline"]["assessment_id"] == "b-0"
+        assert len(body["points"]) == 2
+
+    def test_chronological_sort_ignores_insertion_order(
+        self, client: TestClient
+    ) -> None:
+        """Records saved out of chronological order must still sort
+        oldest-first.  The *earliest* by ``created_at`` is the
+        baseline — not the first-saved."""
+        from datetime import datetime, timezone
+
+        # Saved in: middle, first, last.  Expected trajectory order:
+        # first (baseline) → middle → last.
+        _save_record(
+            assessment_id="mid",
+            user_id="user-1",
+            instrument="phq9",
+            total=10,
+            created_at=datetime(2026, 4, 8, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="first",
+            user_id="user-1",
+            instrument="phq9",
+            total=15,
+            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+        )
+        _save_record(
+            assessment_id="last",
+            user_id="user-1",
+            instrument="phq9",
+            total=3,
+            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+        )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["baseline"]["assessment_id"] == "first"
+        assert [p["assessment_id"] for p in body["points"]] == [
+            "mid",
+            "last",
+        ]
+
+    def test_unknown_instrument_returns_empty_series(
+        self, client: TestClient
+    ) -> None:
+        """A nonsense path param yields an empty series with
+        ``rci_threshold=None`` and ``baseline=None``.  Matches the
+        POST /trajectory contract: unknown instruments fall through
+        rather than 422-ing so client charting code doesn't need
+        per-instrument branches."""
+        resp = client.get(
+            "/v1/assessments/trajectory/nonsense",
+            headers={"X-User-Id": "user-1"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["instrument"] == "nonsense"
+        assert body["rci_threshold"] is None
+        assert body["baseline"] is None
+        assert body["points"] == []
+
+    def test_path_param_is_lowercased(self, client: TestClient) -> None:
+        """Casing in the path segment is normalized so callers don't
+        need to know the canonical form.  Mirrors the POST /trajectory
+        normalization."""
+        post = _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="phq9",
+            items=[0, 0, 0, 0, 0, 0, 0, 0, 0],
+        )
+        assert post.status_code == 201
+
+        resp = client.get(
+            "/v1/assessments/trajectory/PHQ9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["instrument"] == "phq9"
+        assert body["baseline"] is not None
+        assert body["rci_threshold"] == 5.2
+
+    def test_thresholds_static_route_still_wins(
+        self, client: TestClient
+    ) -> None:
+        """Route-registration order guard: ``GET /trajectory/thresholds``
+        must still return the static threshold map, not be captured by
+        the parameterized ``/trajectory/{instrument}`` handler.  A
+        regression here would make the threshold lookup return a
+        404-equivalent 'trajectory for user thresholds' which is
+        nonsense."""
+        resp = client.get("/v1/assessments/trajectory/thresholds")
+        assert resp.status_code == 200
+        body = resp.json()
+        # The thresholds endpoint returns a flat dict; the trajectory
+        # endpoint returns an envelope with baseline/points/etc.
+        assert "phq9" in body
+        assert body["phq9"] == 5.2
+        assert "baseline" not in body  # not the trajectory shape
+
+    def test_replay_via_idempotency_does_not_duplicate_trajectory(
+        self, client: TestClient
+    ) -> None:
+        """A retried POST under the same Idempotency-Key must not add
+        a phantom trajectory point.  The repository-persist runs only
+        on a fresh cache-miss; the replay returns the cached response
+        without re-saving."""
+        headers = {"Idempotency-Key": "traj-replay-key"}
+        body = {
+            "instrument": "phq9",
+            "items": [1, 1, 1, 1, 1, 1, 1, 1, 0],
+            "user_id": "user-1",
+        }
+        first = client.post("/v1/assessments", json=body, headers=headers)
+        assert first.status_code == 201
+        second = client.post("/v1/assessments", json=body, headers=headers)
+        assert second.status_code == 201
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body_json = resp.json()
+        # One record → baseline only, no points (a duplicate would
+        # have produced a second record and thus one point).
+        assert body_json["baseline"] is not None
+        assert body_json["points"] == []
+
+    def test_full_trajectory_four_points_under_threshold(
+        self, client: TestClient
+    ) -> None:
+        """Four sequential phq9 readings that drift gently: every Δ
+        against the baseline stays under 5.2 so every direction is
+        ``no_reliable_change``.  Guards against a regression where
+        the handler compares to the PREVIOUS reading instead of the
+        baseline."""
+        from datetime import datetime, timezone
+
+        totals = [10, 11, 9, 12]
+        for i, total in enumerate(totals):
+            _save_record(
+                assessment_id=f"r{i}",
+                user_id="user-1",
+                instrument="phq9",
+                total=total,
+                created_at=datetime(
+                    2026, 4, 1 + i, tzinfo=timezone.utc
+                ),
+            )
+
+        resp = client.get(
+            "/v1/assessments/trajectory/phq9",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = resp.json()
+        assert body["baseline"]["score"] == 10
+        assert len(body["points"]) == 3
+        for p in body["points"]:
+            assert p["direction"] == "no_reliable_change"
+        # Deltas are against the baseline 10, not the prior reading.
+        deltas = [p["delta"] for p in body["points"]]
+        assert deltas == [1, -1, 2]

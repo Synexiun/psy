@@ -685,3 +685,187 @@ async def history(
         for r in records
     ]
     return AssessmentHistoryResponse(items=items, limit=limit, total=total)
+
+
+# =============================================================================
+# Trajectory from history — reads the repository, builds an RCI-annotated series
+# =============================================================================
+
+
+class TrajectoryHistoryBaseline(BaseModel):
+    """The earliest recorded reading for this instrument — the baseline
+    against which every later reading is compared.
+
+    Surfaced as a distinct shape (rather than the first entry in
+    ``points``) so the chart renderer can visually distinguish the
+    baseline (flat horizontal reference line) from subsequent readings
+    (trajectory points).  A ``null`` baseline means the user has no
+    records for this instrument yet — the client renders a 'collect a
+    first reading' prompt, not an error state.
+    """
+
+    assessment_id: str
+    score: float
+    created_at: str
+
+
+class TrajectoryHistoryPoint(BaseModel):
+    """One reading strictly after the baseline, annotated with its
+    reliable-change interpretation.
+
+    ``delta`` is ``None`` when the instrument has no validated RCI
+    threshold (C-SSRS, DAST-10, unknown instruments) — matching the
+    :mod:`discipline.psychometric.trajectories` contract that a missing
+    threshold suppresses the arithmetic delta as well.  A future UI
+    sprint that wants raw deltas for non-RCI instruments can add them
+    as a separate field without breaking this contract.
+    """
+
+    assessment_id: str
+    score: float
+    created_at: str
+    delta: float | None
+    direction: TrajectoryDirection
+
+
+class TrajectoryHistoryResponse(BaseModel):
+    """Time series for one instrument across the user's timeline.
+
+    ``rci_threshold`` is the per-instrument |Δ| that counts as reliable
+    change.  ``null`` for instruments without a validated threshold
+    (C-SSRS, DAST-10) — in which case every point's ``direction`` is
+    ``insufficient_data``.  The series is still returned with real
+    scores and timestamps so a non-annotated chart can still render.
+
+    Zero-record and one-record cases intentionally return HTTP 200
+    rather than 404: 'this user has no readings yet' is a successful
+    state the UI needs to render, not a not-found error.
+    """
+
+    instrument: str
+    rci_threshold: float | None
+    baseline: TrajectoryHistoryBaseline | None
+    points: list[TrajectoryHistoryPoint]
+
+
+_WHO5_INSTRUMENT = "who5"
+
+
+def _rci_score_for(record: AssessmentRecord) -> float:
+    """Pick the value that aligns with the RCI threshold scale.
+
+    The published WHO-5 reliable-change threshold (17 points) is on the
+    *index* scale (0-100), not the raw total (0-25).  Every other
+    instrument is scored on the same scale as its RCI threshold (PHQ-9
+    total matches the 5.2 threshold, etc.).  Rendering a WHO-5
+    trajectory against raw totals would silently compress deltas by 4×
+    and misclassify every clinically meaningful change as
+    ``no_reliable_change``.
+    """
+    if record.instrument == _WHO5_INSTRUMENT and record.index is not None:
+        return float(record.index)
+    return float(record.total)
+
+
+@router.get(
+    "/trajectory/{instrument}",
+    response_model=TrajectoryHistoryResponse,
+    status_code=200,
+    tags=["psychometric"],
+)
+async def trajectory_from_history(
+    instrument: str,
+    x_user_id: str = Header(..., alias="X-User-Id"),
+) -> TrajectoryHistoryResponse:
+    """Build the user's RCI-annotated trajectory for one instrument.
+
+    Reads the authenticated user's records via the in-memory assessment
+    repository, filters to this instrument, sorts oldest-first, treats
+    the earliest record as the baseline per Jacobson & Truax 1991, and
+    computes a reliable-change annotation for every subsequent record.
+
+    Baseline shape (clinical contract):
+    - Zero records for this instrument → ``baseline=None``, empty
+      ``points``.
+    - One record → baseline populated, empty ``points``.  RCI needs
+      two readings by definition.
+    - Two or more records → baseline + one point per subsequent record.
+
+    Instruments without a validated RCI threshold (C-SSRS, DAST-10,
+    unknown strings) return ``rci_threshold=None`` and every point's
+    ``direction`` is ``insufficient_data``.  This mirrors
+    :func:`discipline.psychometric.trajectories.compute_point` so the
+    GET endpoint is a drop-in for the POST /trajectory path when both
+    baseline and current scores are known.
+
+    Authentication mirrors ``/history`` — missing or empty
+    ``X-User-Id`` is 401.  The path parameter is stripped + lowercased
+    so callers don't need to know the canonical casing.
+
+    Route registration: this route is declared AFTER
+    ``GET /trajectory/thresholds`` so the static-literal route wins —
+    a request to ``/trajectory/thresholds`` returns the threshold table,
+    not a trajectory for a user named 'thresholds'.
+    """
+    if not x_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth.missing_user_id",
+                "message": "X-User-Id header required.",
+            },
+        )
+
+    instrument = instrument.strip().lower()
+    repo = get_assessment_repository()
+    # History is normally paginated at 50, but trajectory is an analytics
+    # view across the full timeline.  10 000 covers ~200 years of weekly
+    # check-ins per instrument — safely past any real retention window.
+    all_records = repo.history_for(x_user_id, limit=10000)
+    for_instrument = [r for r in all_records if r.instrument == instrument]
+    # Repository returns newest-first; trajectories need oldest-first so
+    # the earliest reading is the baseline.
+    for_instrument.sort(key=lambda r: r.created_at)
+
+    threshold = RCI_THRESHOLDS.get(instrument)
+
+    if not for_instrument:
+        return TrajectoryHistoryResponse(
+            instrument=instrument,
+            rci_threshold=threshold,
+            baseline=None,
+            points=[],
+        )
+
+    baseline_record = for_instrument[0]
+    baseline_score = _rci_score_for(baseline_record)
+    baseline = TrajectoryHistoryBaseline(
+        assessment_id=baseline_record.assessment_id,
+        score=baseline_score,
+        created_at=baseline_record.created_at.isoformat(),
+    )
+
+    points: list[TrajectoryHistoryPoint] = []
+    for record in for_instrument[1:]:
+        score = _rci_score_for(record)
+        point = compute_point(
+            instrument=instrument,
+            current=score,
+            baseline=baseline_score,
+        )
+        points.append(
+            TrajectoryHistoryPoint(
+                assessment_id=record.assessment_id,
+                score=score,
+                created_at=record.created_at.isoformat(),
+                delta=point.delta,
+                direction=point.direction,
+            )
+        )
+
+    return TrajectoryHistoryResponse(
+        instrument=instrument,
+        rci_threshold=threshold,
+        baseline=baseline,
+        points=points,
+    )
