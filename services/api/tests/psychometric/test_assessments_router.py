@@ -29685,3 +29685,359 @@ class TestCuditRRouting:
         assert high["total"] > low["total"]
         assert high["total"] == 36
         assert low["total"] == 0
+
+
+# ============================================================================
+# TestCesdRouting -- Radloff 1977 CES-D Depression Scale
+# ============================================================================
+
+
+class TestCesdRouting:
+    """HTTP-layer tests for CES-D (Radloff 1977).
+
+    20 items, 0-3 Likert; items 4/8/12/16 reverse-scored (3-raw).
+    Total 0-60, HIGHER = MORE depressive symptoms.
+    Positive screen at total >= 16.
+    Wire shape: positive_screen / negative_screen.
+    requires_t3=False. No subscales, no cutoff_used.
+    """
+
+    @staticmethod
+    def _scored_total(items: list[int]) -> int:
+        reverse_pos = {4, 8, 12, 16}
+        return sum(
+            (3 - v) if (i + 1) in reverse_pos else v
+            for i, v in enumerate(items)
+        )
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"cesd-test-{idem_key}"}
+
+    @staticmethod
+    def _min_items() -> list[int]:
+        """Return 20-item list that scores total=0 (max positively-worded)."""
+        reverse_pos = {4, 8, 12, 16}
+        return [3 if (i + 1) in reverse_pos else 0 for i in range(20)]
+
+    @staticmethod
+    def _max_items() -> list[int]:
+        """Return 20-item list that scores total=60."""
+        reverse_pos = {4, 8, 12, 16}
+        return [0 if (i + 1) in reverse_pos else 3 for i in range(20)]
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_cesd_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_cesd_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_cesd_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "cesd"
+
+    def test_cesd_envelope_has_positive_screen(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("env-ps"),
+        ).json()
+        assert "positive_screen" in body
+
+    def test_cesd_requires_t3_always_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [3] * 20},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_cesd_instrument_version(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("version"),
+        ).json()
+        assert body["instrument_version"] == "cesd-1.0.0"
+
+    # ------------------------------------------------------------------
+    # Reverse-scored total
+    # ------------------------------------------------------------------
+
+    def test_all_zeros_total_is_12(self, client: TestClient) -> None:
+        # Reversed items (4,8,12,16) at raw=0 score 3 each → 12.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("zero-12"),
+        ).json()
+        assert body["total"] == 12
+
+    def test_min_total_is_0(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": self._min_items()},
+            headers=self._headers("min-0"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_max_total_is_60(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": self._max_items()},
+            headers=self._headers("max-60"),
+        ).json()
+        assert body["total"] == 60
+
+    def test_all_threes_total_is_48(self, client: TestClient) -> None:
+        # [3]*20: 16 forward × 3 + 4 reversed × 0 = 48.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [3] * 20},
+            headers=self._headers("ceil-48"),
+        ).json()
+        assert body["total"] == 48
+
+    def test_total_matches_helper(self, client: TestClient) -> None:
+        items = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1,
+                 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]
+        expected = self._scored_total(items)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("total-match"),
+        ).json()
+        assert body["total"] == expected
+
+    # ------------------------------------------------------------------
+    # Positive screen boundary
+    # ------------------------------------------------------------------
+
+    def test_total_below_16_negative(self, client: TestClient) -> None:
+        # total = 15 → negative_screen.
+        # [0]*20 = 12; add 3 more via forward items.
+        items = [0] * 20
+        items[0] = 1
+        items[1] = 1
+        items[2] = 1
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("ps-neg"),
+        ).json()
+        assert body["total"] == 15
+        assert body["positive_screen"] is False
+        assert body["severity"] == "negative_screen"
+
+    def test_total_at_16_positive(self, client: TestClient) -> None:
+        items = [0] * 20
+        items[0] = 1
+        items[1] = 1
+        items[2] = 1
+        items[4] = 1
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("ps-at"),
+        ).json()
+        assert body["total"] == 16
+        assert body["positive_screen"] is True
+        assert body["severity"] == "positive_screen"
+
+    def test_min_total_is_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": self._min_items()},
+            headers=self._headers("ps-min"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_max_total_is_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": self._max_items()},
+            headers=self._headers("ps-max"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    # ------------------------------------------------------------------
+    # Envelope audit -- absent/present fields
+    # ------------------------------------------------------------------
+
+    def test_no_subscales_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [1] * 20},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [1] * 20},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_no_index_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [1] * 20},
+            headers=self._headers("no-idx"),
+        ).json()
+        assert body.get("index") is None
+
+    def test_no_triggering_items_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [2] * 20},
+            headers=self._headers("no-trig"),
+        ).json()
+        assert body.get("triggering_items") is None
+
+    # ------------------------------------------------------------------
+    # Item validation
+    # ------------------------------------------------------------------
+
+    def test_19_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [1] * 19},
+            headers=self._headers("cnt-19"),
+        )
+        assert resp.status_code == 422
+
+    def test_21_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [1] * 21},
+            headers=self._headers("cnt-21"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_above_3_returns_422(self, client: TestClient) -> None:
+        items = [1] * 20
+        items[5] = 4
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("range-hi"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_negative_returns_422(self, client: TestClient) -> None:
+        items = [1] * 20
+        items[0] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_3_accepted(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [3] * 20},
+            headers=self._headers("range-3ok"),
+        )
+        assert resp.status_code == 201
+
+    def test_reversed_item_above_3_returns_422(self, client: TestClient) -> None:
+        # Reversed items still validate 0-3 raw range.
+        items = [1] * 20
+        items[3] = 4  # item 4 (reversed) raw=4 → invalid
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("rev-hi"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # JSON coercion
+    # ------------------------------------------------------------------
+
+    def test_json_false_accepted(self, client: TestClient) -> None:
+        items: list = [1] * 20
+        items[0] = False  # Pydantic lax: false → 0, valid for 0-3
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("false-ok"),
+        )
+        assert resp.status_code == 201
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_healthy_control_low_depression(self, client: TestClient) -> None:
+        # All-zero: total=12, below cutoff.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": [0] * 20},
+            headers=self._headers("vig-ctrl"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_depression_addiction_loop_positive(self, client: TestClient) -> None:
+        # Franken 2006: depression mediates craving; CES-D caseness.
+        items = []
+        for i in range(20):
+            items.append(1 if (i + 1) in {4, 8, 12, 16} else 2)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("vig-franken"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_severe_depression_all_forward_high(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": self._max_items()},
+            headers=self._headers("vig-severe"),
+        ).json()
+        assert body["total"] == 60
+        assert body["positive_screen"] is True
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_deterministic(self, client: TestClient) -> None:
+        items = [0, 1, 2, 3, 1, 2, 0, 1, 2, 3,
+                 0, 1, 2, 3, 1, 2, 0, 1, 2, 3]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "cesd", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["positive_screen"] == b["positive_screen"]

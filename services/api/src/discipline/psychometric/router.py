@@ -6,7 +6,7 @@ CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
 MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
-IGDS9-SF, PCS, ESS, SPIN, CUDIT-R.
+IGDS9-SF, PCS, ESS, SPIN, CUDIT-R, CES-D.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -46,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN, CUDIT-R have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN, CUDIT-R, CES-D have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1634,6 +1634,10 @@ from .scoring.cuditr import (
     InvalidResponseError as CuditRInvalid,
     score_cuditr,
 )
+from .scoring.cesd import (
+    InvalidResponseError as CesdInvalid,
+    score_cesd,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1725,6 +1729,7 @@ Instrument = Literal[
     "ess",
     "spin",
     "cuditr",
+    "cesd",
 ]
 
 
@@ -1798,6 +1803,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "ess": 8,
     "spin": 17,
     "cuditr": 8,
+    "cesd": 20,
 }
 
 
@@ -6280,6 +6286,49 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=c.positive_screen,
             instrument_version=c.instrument_version,
         )
+    if payload.instrument == "cesd":
+        # CES-D — Radloff 1977 Center for Epidemiologic Studies
+        # Depression Scale.
+        #
+        # Radloff LS 1977 Applied Psychological Measurement
+        # 1(3):385-401.  20 items, 0-3 Likert (frequency in past
+        # week).  Items 4, 8, 12, 16 are REVERSE-SCORED (3 - raw).
+        # Total = sum of scored items; range 0-60.  HIGHER = MORE
+        # depressive symptoms.
+        #
+        # Positive screen: total ≥ 16 (Radloff 1977 validated
+        # cutoff against structured interview criteria across
+        # n = 2514; Weissman 1977 Am J Epidemiol 106(3):203-214).
+        #
+        # Platform relevance:
+        # 1. Depression ↔ addiction bidirectional loop — Franken
+        #    2006 Drug Alcohol Depend 85(1):85-92: CES-D mediates
+        #    negative affect → craving; trajectory predicts lapse.
+        # 2. Complements PHQ-9 with different factor emphasis:
+        #    CES-D stronger on somatic loading (sleep, appetite);
+        #    PHQ-9 stronger on anhedonia loading.
+        # 3. 4 reversed items (4,8,12,16) are positive-affect
+        #    probes — their trajectory (raw increasing = less
+        #    reversed = lower contribution) provides early wellbeing
+        #    gain signal.
+        #
+        # Wire shape: positive_screen / negative_screen (cutoff-
+        # only; no severity bands — Radloff 1977 validates one
+        # threshold).  Uniform with PHQ-2 / GAD-2 / CUDIT-R /
+        # AUDIT-C / PC-PTSD-5 / MDQ / OASIS.
+        #
+        # No subscales (unidimensional per Radloff 1977 EFA).
+        # No T3: CES-D measures depressive symptoms, not ideation.
+        d = score_cesd(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="cesd",
+            total=d.total,
+            severity=d.severity,
+            requires_t3=False,
+            positive_screen=d.positive_screen,
+            instrument_version=d.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -6464,6 +6513,7 @@ async def submit_assessment(
         EssInvalid,
         SpinInvalid,
         CuditRInvalid,
+        CesdInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
