@@ -22,9 +22,10 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
+from discipline.psychometric.repository import get_assessment_repository
 from discipline.shared.http import mark_phi_boundary
 from discipline.shared.logging import LogStream, get_stream_logger
 
@@ -35,9 +36,12 @@ from .enterprise import (
 )
 from .fhir_bundle import BundleType, assemble_bundle
 from .fhir_observation import (
+    CssrsObservationSpec,
     LOINC_CODES,
     ObservationSpec,
     UnsupportedInstrumentError,
+    render_bundle,
+    render_cssrs_bundle,
 )
 from .user_export import (
     EmptyExportError,
@@ -413,15 +417,194 @@ async def request_user_export(payload: UserExportRequest) -> dict[str, object]:
     }
 
 
-@router.get("/fhir/observations")
-async def fhir_observations() -> dict[str, str]:
-    """Stub — single-instrument FHIR R4 observation read.
+_CSSRS_RISK_VALUES = frozenset({"none", "low", "moderate", "acute"})
 
-    The live export surface is ``POST /reports/fhir/clinician-bundle``;
-    this GET will land later for single-Observation reads (less common
-    workflow but useful for diff/sync tools).
+
+@router.get(
+    "/fhir/observations/{assessment_id}",
+    status_code=200,
+    summary="Single FHIR R4 Observation for one assessment (PHI surface)",
+    dependencies=[Depends(mark_phi_boundary)],
+)
+async def get_fhir_observation(
+    assessment_id: str,
+    x_clinician_id: str = Header(..., alias="X-Clinician-Id"),
+    x_correlation_id: str | None = Header(
+        default=None, alias="X-Correlation-Id"
+    ),
+) -> dict[str, object]:
+    """Render one stored assessment as a FHIR R4 Observation.
+
+    Why this endpoint exists:
+    The POST ``/reports/fhir/clinician-bundle`` surface produces a
+    full Bundle over a date range.  This GET is the complement — a
+    diff/sync tool or an EHR integration that needs to re-fetch a
+    single Observation by id (e.g. after a failed push, or to verify
+    a stored hash) reads it here without reassembling the Bundle.
+
+    Authorization (temporary shape):
+    - ``X-Clinician-Id`` header carries the clinician identity.  In
+      production this is the Clerk session's ``sessionClaims.sub``
+      restricted to users whose role claim includes ``"clinician"``
+      (see CLAUDE.md §web-clinician).  The header-form here is a stub
+      for that integration.
+    - A missing or empty ``X-Clinician-Id`` yields a 401.  Patient-
+      portal callers do NOT read from this endpoint; they read through
+      their own ``/v1/assessments/history`` surface, which omits raw
+      items and the FHIR wrapping.
+
+    PHI surface per Rule #11:
+    - Sets ``X-Phi-Boundary: 1`` via the ``mark_phi_boundary``
+      dependency.
+    - Emits ``phi.access.attempt`` and ``phi.access.ok`` / ``.error``
+      events to the audit stream (HMAC-Merkle chained, 6-year
+      retention), mirroring the clinician-bundle pattern so the
+      cross-reference with the app-stream request log works for both
+      surfaces.
+
+    Dispatch:
+    - ``cssrs`` → ``render_cssrs_bundle`` (categorical
+      valueCodeableConcept path).
+    - Every other supported instrument → ``render_bundle``
+      (numeric valueInteger path).
+
+    Errors:
+    - 404 when the assessment_id is unknown (or empty).  We audit the
+      miss so a probing enumeration attempt is visible in the trail.
+    - 422 when the stored instrument has no pinned LOINC code (future
+      instrument added to the scorer but not yet registered in
+      fhir_observation.LOINC_CODES).
     """
-    return {"status": "not_implemented"}
+    if not x_clinician_id:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth.missing_clinician_id",
+                "message": "X-Clinician-Id header required.",
+            },
+        )
+    if not assessment_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "not_found",
+                "message": "assessment_id must be non-empty",
+            },
+        )
+
+    # Record the access intent BEFORE the lookup.  A 404 still emits a
+    # ``phi.access.error`` event so an attacker enumerating assessment
+    # ids shows up in the audit trail — the attempt is the auditable
+    # fact, not just the successful read.
+    _audit.info(
+        "phi.access.attempt",
+        actor_id=x_clinician_id,
+        actor_role="clinician",
+        resource="fhir.observation",
+        resource_id=assessment_id,
+        correlation_id=x_correlation_id,
+    )
+
+    repo = get_assessment_repository()
+    record = repo.get_by_id(assessment_id)
+    if record is None:
+        _audit.warning(
+            "phi.access.error",
+            actor_id=x_clinician_id,
+            resource="fhir.observation",
+            resource_id=assessment_id,
+            error="not_found",
+            correlation_id=x_correlation_id,
+        )
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "not_found",
+                "message": f"no assessment with id {assessment_id!r}",
+            },
+        )
+
+    patient_reference = f"Patient/{record.user_id}"
+
+    try:
+        if record.instrument == "cssrs":
+            # C-SSRS record severity is a Literal risk level; assert
+            # defensively so a future record-shape change that stored
+            # a different string surfaces here with a clean 422 rather
+            # than a 500 from the frozen-dataclass validator.
+            if record.severity not in _CSSRS_RISK_VALUES:
+                raise ValueError(
+                    f"stored C-SSRS severity {record.severity!r} is not a "
+                    f"known risk level; expected one of {sorted(_CSSRS_RISK_VALUES)}"
+                )
+            cssrs_spec = CssrsObservationSpec(
+                patient_reference=patient_reference,
+                risk_level=record.severity,  # type: ignore[arg-type]
+                effective=record.created_at,
+                triggering_items=(
+                    record.triggering_items
+                    if record.triggering_items is not None
+                    else ()
+                ),
+                requires_t3=record.requires_t3,
+            )
+            resource = render_cssrs_bundle(cssrs_spec)
+        else:
+            obs_spec = ObservationSpec(
+                patient_reference=patient_reference,
+                instrument=record.instrument,
+                score=record.total,
+                effective=record.created_at,
+                safety_item_positive=record.requires_t3,
+            )
+            resource = render_bundle(obs_spec)
+    except UnsupportedInstrumentError as exc:
+        _audit.warning(
+            "phi.access.error",
+            actor_id=x_clinician_id,
+            resource="fhir.observation",
+            resource_id=assessment_id,
+            error="unsupported_instrument",
+            detail=str(exc),
+            correlation_id=x_correlation_id,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "validation.unsupported_instrument",
+                "message": str(exc),
+                "supported_instruments": sorted(LOINC_CODES.keys()),
+            },
+        ) from exc
+    except ValueError as exc:
+        _audit.warning(
+            "phi.access.error",
+            actor_id=x_clinician_id,
+            resource="fhir.observation",
+            resource_id=assessment_id,
+            error="validation_error",
+            detail=str(exc),
+            correlation_id=x_correlation_id,
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "validation.invalid_payload",
+                "message": str(exc),
+            },
+        ) from exc
+
+    _audit.info(
+        "phi.access.ok",
+        actor_id=x_clinician_id,
+        actor_role="clinician",
+        subject_id=record.user_id,
+        resource="fhir.observation",
+        resource_id=assessment_id,
+        instrument=record.instrument,
+        correlation_id=x_correlation_id,
+    )
+    return resource
 
 
 @router.post(
