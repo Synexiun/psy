@@ -13076,6 +13076,385 @@ class TestAcesRouting:
         assert response.json()["instrument"] == "aces"
 
 
+class TestPgsiRouting:
+    """End-to-end routing tests for the PGSI dispatcher branch.
+
+    Ferris & Wynne 2001 Problem Gambling Severity Index — 9 items,
+    0-3 Likert, total 0-27, four bands (non_problem / low_risk /
+    moderate_risk / problem_gambler).  The platform's FIRST
+    behavioral-addiction severity-banded instrument — wire envelope
+    matches AUDIT / PHQ-9 / GAD-7 / PSS-10 / ISI banded-severity
+    shape.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    def test_min_all_zeros_non_problem(self, client: TestClient) -> None:
+        """General-population non-problem gambler — no endorsements."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [0] * 9},
+            headers=self._headers("pgsi-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "pgsi"
+        assert body["total"] == 0
+        assert body["severity"] == "non_problem"
+
+    def test_max_all_threes_problem_gambler(
+        self, client: TestClient
+    ) -> None:
+        """Full severity — all 9 items at Almost always (3).  Total
+        27, problem_gambler band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [3] * 9},
+            headers=self._headers("pgsi-max"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 27
+        assert body["severity"] == "problem_gambler"
+
+    def test_band_boundary_total_0_non_problem(
+        self, client: TestClient
+    ) -> None:
+        """Band boundary: total 0 must be non_problem."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [0] * 9},
+            headers=self._headers("pgsi-band-0"),
+        )
+        assert response.json()["severity"] == "non_problem"
+
+    def test_band_boundary_total_1_low_risk(
+        self, client: TestClient
+    ) -> None:
+        """Band boundary: total 1 must be low_risk (non-problem ends
+        at 0)."""
+        items = [1, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-band-1"),
+        )
+        assert response.json()["severity"] == "low_risk"
+
+    def test_band_boundary_total_2_low_risk(
+        self, client: TestClient
+    ) -> None:
+        """Band boundary: total 2 is upper bound of low_risk."""
+        items = [2, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-band-2"),
+        )
+        assert response.json()["severity"] == "low_risk"
+
+    def test_band_boundary_total_3_moderate_risk(
+        self, client: TestClient
+    ) -> None:
+        """Band boundary: total 3 crosses to moderate_risk."""
+        items = [3, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-band-3"),
+        )
+        assert response.json()["severity"] == "moderate_risk"
+
+    def test_band_boundary_total_7_moderate_risk(
+        self, client: TestClient
+    ) -> None:
+        """Band boundary: total 7 is upper bound of moderate_risk."""
+        items = [3, 3, 1, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-band-7"),
+        )
+        body = response.json()
+        assert body["total"] == 7
+        assert body["severity"] == "moderate_risk"
+
+    def test_band_boundary_total_8_problem_gambler(
+        self, client: TestClient
+    ) -> None:
+        """Band boundary: total 8 is Ferris 2001 operating point for
+        DSM-IV pathological-gambling concurrent validity (kappa =
+        0.83)."""
+        items = [3, 3, 2, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-band-8"),
+        )
+        body = response.json()
+        assert body["total"] == 8
+        assert body["severity"] == "problem_gambler"
+
+    def test_no_cutoff_used_on_wire(self, client: TestClient) -> None:
+        """PGSI is banded, not screen.  cutoff_used absent/None on
+        wire (uniform with PHQ-9 / GAD-7 / AUDIT)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [3] * 9},
+            headers=self._headers("pgsi-no-cutoff"),
+        )
+        body = response.json()
+        assert "cutoff_used" not in body or body.get("cutoff_used") is None
+
+    def test_no_positive_screen_on_wire(self, client: TestClient) -> None:
+        """PGSI is banded — no positive_screen field (uniform with
+        PHQ-9 / GAD-7 / AUDIT / PSS-10 / ISI)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [3] * 9},
+            headers=self._headers("pgsi-no-pos"),
+        )
+        body = response.json()
+        assert (
+            "positive_screen" not in body
+            or body.get("positive_screen") is None
+        )
+
+    def test_no_subscales_on_wire(self, client: TestClient) -> None:
+        """Ferris 2001 retained unidimensional structure by design."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [3] * 9},
+            headers=self._headers("pgsi-no-subs"),
+        )
+        body = response.json()
+        assert "subscales" not in body or body.get("subscales") is None
+
+    def test_no_t3_at_severe_problem_gambler(
+        self, client: TestClient
+    ) -> None:
+        """Even at PGSI = 27 (full-severity problem gambler),
+        requires_t3 is False.  Problem-gambler suicide-risk elevation
+        (Moghaddam 2015: 3.4x) is profile-level, not per-PGSI-item."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [3] * 9},
+            headers=self._headers("pgsi-no-t3-max"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    def test_item_9_guilt_not_safety_routed(
+        self, client: TestClient
+    ) -> None:
+        """Item 9 ("felt guilty about the way you gamble") at Almost
+        always is NOT a safety item — affect/problem-awareness only."""
+        items = [0, 0, 0, 0, 0, 0, 0, 0, 3]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-guilt-no-t3"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        """Version string pinned for FHIR Observation export."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [0] * 9},
+            headers=self._headers("pgsi-version"),
+        )
+        assert response.json()["instrument_version"] == "pgsi-1.0.0"
+
+    def test_item_count_8_rejected(self, client: TestClient) -> None:
+        """8 items — one short of Ferris 2001 9-item structure."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [0] * 8},
+            headers=self._headers("pgsi-count-8"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_10_rejected(self, client: TestClient) -> None:
+        """10 items — AUDIT / DAST-10 / PSS-10 adjacent trap."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [0] * 10},
+            headers=self._headers("pgsi-count-10"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_7_rejected(self, client: TestClient) -> None:
+        """7 items — GAD-7 / ISI adjacent trap."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": [0] * 7},
+            headers=self._headers("pgsi-count-7"),
+        )
+        assert response.status_code == 422
+
+    def test_item_range_value_4_rejected(self, client: TestClient) -> None:
+        """Value 4 is out of 0-3 Likert range — must 422."""
+        items = [4, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-range-4"),
+        )
+        assert response.status_code == 422
+
+    def test_item_range_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        items = [-1, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pgsi", "items": items},
+            headers=self._headers("pgsi-range-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_history_projection_includes_pgsi(
+        self, client: TestClient
+    ) -> None:
+        """PGSI submissions appear in /history with the banded
+        severity shape."""
+        user_id = "user-pgsi-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pgsi",
+                "items": [3] * 9,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "pgsi-hist-1",
+                "X-User-Id": user_id,
+            },
+        )
+        response = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user_id},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        pgsi_items = [
+            item for item in body["items"] if item["instrument"] == "pgsi"
+        ]
+        assert len(pgsi_items) >= 1
+        pgsi_entry = pgsi_items[0]
+        assert pgsi_entry["total"] == 27
+        assert pgsi_entry["severity"] == "problem_gambler"
+
+    def test_coexists_with_aces_and_audit_c(
+        self, client: TestClient
+    ) -> None:
+        """PGSI + ACEs + AUDIT-C — the integrated behavioral-addiction
+        enrollment triad.  A patient positive on all three represents
+        the trauma-driven dual-addiction profile indicated for
+        integrated concurrent treatment (Petry 2005; Najavits 2002;
+        Hodgins 2010)."""
+        user_id = "user-triad-2"
+
+        ac = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aces",
+                "items": [1] * 4 + [0] * 6,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "triad2-aces",
+                "X-User-Id": user_id,
+            },
+        )
+        pg = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pgsi",
+                "items": [3] * 9,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "triad2-pgsi",
+                "X-User-Id": user_id,
+            },
+        )
+        au = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "audit_c",
+                "items": [3, 3, 3],
+                "sex": "male",
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "triad2-audit-c",
+                "X-User-Id": user_id,
+            },
+        )
+        assert ac.status_code == 201
+        assert pg.status_code == 201
+        assert au.status_code == 201
+        assert ac.json()["instrument"] == "aces"
+        assert pg.json()["instrument"] == "pgsi"
+        assert au.json()["instrument"] == "audit_c"
+        assert pg.json()["severity"] == "problem_gambler"
+
+    def test_ignores_mdq_fields(self, client: TestClient) -> None:
+        """PGSI dispatched BEFORE the MDQ fallthrough — polymorphic
+        MDQ fields must not affect PGSI dispatch."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "pgsi",
+                "items": [3] * 9,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers=self._headers("pgsi-ignore-extra"),
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument"] == "pgsi"
+
+    def test_phq9_banded_unaffected(self, client: TestClient) -> None:
+        """Regression pin: after PGSI branch added, PHQ-9 banded
+        routing still works identically."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [3] * 9},
+            headers=self._headers("pgsi-phq9-check"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "phq9"
+        assert body["total"] == 27
+        assert body["severity"] == "severe"
+
+    def test_each_item_position_contributes_at_max(
+        self, client: TestClient
+    ) -> None:
+        """Direction semantics on the wire — each item position adds
+        exactly 3 at max (no reverse scoring in Ferris 2001)."""
+        for position in range(9):
+            items = [0] * 9
+            items[position] = 3
+            response = client.post(
+                "/v1/assessments",
+                json={"instrument": "pgsi", "items": items},
+                headers=self._headers(f"pgsi-pos-{position}"),
+            )
+            assert response.status_code == 201
+            body = response.json()
+            assert body["total"] == 3, (
+                f"position {position} did not contribute 3 "
+                f"(got {body['total']})"
+            )
+            assert body["severity"] == "moderate_risk"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

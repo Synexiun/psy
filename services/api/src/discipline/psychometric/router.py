@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs.
+ACEs, PGSI.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -842,6 +842,45 @@ Safety routing:
   content warning, opt-out, and post-administration resources
   — a UI-layer concern, NOT a scorer-layer concern.  See
   ``scoring/aces.py``.
+- PGSI (Ferris & Wynne 2001): 9 items, 0-3 Likert.  The platform's
+  FIRST BEHAVIORAL-ADDICTION instrument — every prior scorer
+  targets substance use (AUDIT / DAST-10 / DUDIT / SDS / PACS /
+  DTCQ-8 / URICA / Craving VAS) or an internalizing / regulatory
+  dimension (PHQ-9 / GAD-7 / PSS-10 / OCI-R / PCL-5 / SHAPS /
+  MAAS / DERS-16 / ACEs).  PGSI expands the scope to
+  **compulsive-behavior cycles that are not substance-mediated**
+  — the exact 60-180 s urge-to-action window the product
+  intervenes on, applied to a non-substance reinforcer.
+  Clinically load-bearing: gambling co-occurs with SUD at 10-20%
+  population (Lorains 2011 meta-analysis) and 35-60% clinical
+  (Petry 2005 NESARC).  Gambling disorder was reclassified from
+  DSM-IV "Impulse Control Disorders NEC" to DSM-5 "Substance-
+  Related and Addictive Disorders" (APA 2013; Petry 2013) because
+  the behavioral-addiction mechanics (intermittent variable-ratio
+  reinforcement; ventral-striatum reward-cue sensitization Potenza
+  2003 fMRI; tolerance; chasing-losses analogue to Marlatt 1985
+  abstinence-violation effect) are indistinguishable from SUD
+  mechanics.  Total = sum of 9 items, 0-27.  **Four-band
+  severity** per Ferris & Wynne 2001 §5 Table 5.1: 0
+  ``non_problem``, 1-2 ``low_risk``, 3-7 ``moderate_risk``,
+  8-27 ``problem_gambler``.  Operating point at >= 8 has kappa
+  = 0.83 against DSM-IV pathological-gambling diagnosis (Ferris
+  2001 n = 3,120 Canadian community sample; Currie 2013
+  confirmed at n = 12,229 across 4 Canadian population surveys;
+  Williams & Volberg 2014 recommended no revision).  Wire
+  envelope matches AUDIT / PHQ-9 / GAD-7 / PSS-10 / ISI banded-
+  severity shape — severity carries the band label;
+  ``cutoff_used`` / ``positive_screen`` / ``subscales`` NOT set.
+  Ferris 2001 retained unidimensional structure by design (9
+  items extracted from a 31-item pool via factor analysis
+  precisely to preserve single-factor severity).  Higher-is-
+  worse direction (uniform with PHQ-9 / GAD-7 / SHAPS / ACEs).
+  No T3 — items 5 ("might have a problem") and 9 ("felt guilty")
+  are problem-awareness / affect items, NOT suicide-ideation /
+  self-harm items; the well-established problem-gambler suicide-
+  risk elevation (Moghaddam 2015: 3.4x attempt risk) is handled
+  at the PROFILE level (PGSI + PHQ-9 + C-SSRS), not via per-
+  PGSI-item T3 triggering.  See ``scoring/pgsi.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -966,6 +1005,10 @@ from .scoring.pcl5 import (
     InvalidResponseError as Pcl5Invalid,
     score_pcl5,
 )
+from .scoring.pgsi import (
+    InvalidResponseError as PgsiInvalid,
+    score_pgsi,
+)
 from .scoring.pcptsd5 import (
     InvalidResponseError as PcPtsd5Invalid,
     score_pcptsd5,
@@ -1071,6 +1114,7 @@ Instrument = Literal[
     "maas",
     "shaps",
     "aces",
+    "pgsi",
 ]
 
 
@@ -1119,6 +1163,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "maas": 15,
     "shaps": 14,
     "aces": 10,
+    "pgsi": 9,
 }
 
 
@@ -2849,6 +2894,79 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             cutoff_used=ACES_POSITIVE_CUTOFF,
             instrument_version=ac.instrument_version,
         )
+    if payload.instrument == "pgsi":
+        # Ferris & Wynne 2001 Problem Gambling Severity Index — 9-item
+        # 0-3 Likert, banded severity per Canadian Problem Gambling
+        # Index.  The platform's FIRST behavioral-addiction instrument:
+        # every prior scorer targets substance-use (AUDIT / DAST / DUDIT
+        # / SDS / PACS / DTCQ / URICA / Craving VAS) or an internalizing
+        # / regulatory dimension (PHQ-9 / GAD-7 / PSS-10 / OCI-R / PCL-5
+        # / SHAPS / MAAS / DERS-16 / ACEs).  PGSI expands the scope to
+        # compulsive-behavior cycles that are not substance-mediated —
+        # the exact 60-180 s urge-to-action window the product
+        # intervenes on, applied to a non-substance reinforcer.
+        # Gambling co-occurs with SUD at 10-20% population (Lorains
+        # 2011) and 35-60% clinical (Petry 2005 NESARC).  Gambling
+        # disorder was reclassified from DSM-IV "Impulse Control
+        # Disorders NEC" to DSM-5 "Substance-Related and Addictive
+        # Disorders" (APA 2013; Petry 2013) because the behavioral-
+        # addiction mechanics (intermittent variable-ratio reinforcement
+        # Skinner 1957; ventral-striatum reward-cue sensitization
+        # Potenza 2003 fMRI; tolerance; chasing-losses analogue to
+        # Marlatt 1985 abstinence-violation effect) are indistinguishable
+        # from SUD mechanics.
+        # Profile pairings with instruments already shipped:
+        #   - AUDIT-C/DUDIT + PGSI → dual-addiction profile (Petry
+        #     2005) → integrated concurrent treatment, not sequential;
+        #   - ACEs + PGSI → trauma-driven behavioral-addiction profile
+        #     (Felitti 2003 includes gambling in ACE dose-response;
+        #     Hodgins 2010) → TIC sequencing applies identically;
+        #   - BIS-11 + PGSI → impulsivity-driven gambling profile
+        #     (Steel 1998; Alessi 2003) → DBT distress-tolerance /
+        #     implementation-intention over exposure-centric;
+        #   - SHAPS + PGSI → anhedonic-compulsive-gambler profile
+        #     (Blaszczynski 2002 Pathway 2 emotionally-vulnerable
+        #     subtype) → BA + gambling-specific CBT;
+        #   - PHQ-9 + PGSI → depressed-gambler profile (Kessler 2008
+        #     38% MDD comorbidity) → concurrent mood + gambling
+        #     treatment.
+        # **Novel wire shape on this platform**: first BEHAVIORAL-
+        # ADDICTION severity-banded instrument.  AUDIT is also 4-
+        # banded (Saunders 1993 low-risk / increasing / high / possible-
+        # dependence) but targets substance use; PGSI is the first
+        # non-substance banded instrument.  Wire envelope matches the
+        # AUDIT / PHQ-9 / GAD-7 / PSS-10 / ISI banded-severity shape —
+        # severity carries one of "non_problem" / "low_risk" /
+        # "moderate_risk" / "problem_gambler" (Ferris 2001 Table 5.1
+        # population-derived operating points with kappa = 0.83 vs
+        # DSM-IV pathological-gambling diagnosis at the >=8 cutoff;
+        # Currie 2013 confirmed the cut-points across n = 12,229).
+        # cutoff_used / positive_screen NOT set — banded, not screen.
+        # subscales NOT set — Ferris 2001 retained unidimensional
+        # structure by design (9 items extracted from 31-item pool
+        # via factor analysis to preserve single-factor severity).
+        # Higher-is-worse direction (same as PHQ-9 / GAD-7 / SHAPS /
+        # ACEs) — rising total = worsening gambling-problem severity;
+        # trajectory RCI direction logic must register PGSI in the
+        # higher-is-worse partition, NOT with WHO-5 / MAAS / CD-RISC-
+        # 10 / LOT-R / BRS / DTCQ-8.
+        # No T3 — PGSI has no safety item.  Items 5 ("might have a
+        # problem") and 9 ("felt guilty") are problem-awareness /
+        # affect items, NOT suicide-ideation / self-harm items.
+        # The well-established problem-gambler suicide-risk
+        # elevation (Moghaddam 2015 meta-analysis: 3.4x attempt
+        # risk) is handled at the PROFILE level (PGSI + PHQ-9 +
+        # C-SSRS), not via per-PGSI-item T3 triggering.  See
+        # ``scoring/pgsi.py``.
+        pg = score_pgsi(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pgsi",
+            total=pg.total,
+            severity=pg.severity,
+            requires_t3=False,
+            instrument_version=pg.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3008,6 +3126,7 @@ async def submit_assessment(
         MaasInvalid,
         ShapsInvalid,
         AcesInvalid,
+        PgsiInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
