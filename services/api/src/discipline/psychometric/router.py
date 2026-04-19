@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS.
+ACEs, PGSI, BRS, SCOFF.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -927,6 +927,55 @@ Safety routing:
   retest r = 0.69 at 3 months, Smith 2008 §3.2) — paired with
   Jacobson & Truax 1991 RCI for clinically-significant-change
   computation at the 3-month follow-up.  See ``scoring/brs.py``.
+- SCOFF (Morgan, Reid & Lacey 1999 BMJ): 5 items, binary yes/no.
+  Rapid primary-care screen for anorexia nervosa / bulimia
+  nervosa.  Acronym is a mnemonic for the 5 question cues —
+  **S**ick (self-induced vomiting), **C**ontrol (loss of
+  control over eating), **O**ne (>= 1 stone / 6.35 kg loss in
+  3 months), **F**at (perceive self as fat when others say
+  thin), **F**ood (food dominates life).  Fills a clearly-
+  missed clinical domain — every prior instrument covers
+  substance use, internalizing / regulatory dimensions,
+  trauma, a behavioral addiction (PGSI), or resilience (CD-
+  RISC-10 / BRS).  Eating disorders co-occur with SUD at
+  25-50% in clinical samples (Hudson 2007 NCS-R 23.7%
+  lifetime; Krug 2008 European multi-site n = 879 at 45%
+  lifetime SUD in AN/BN) and share substantial behavioral-
+  addiction mechanics (restraint-binge cycle in BN parallels
+  abstinence-violation effect; reward-prediction-error
+  dysfunction in AN parallels SUD anhedonia profiles — Kaye
+  2013).  Cutoff >= 2 positive items per Morgan 1999 §3
+  Table 2 (sens 100% / spec 87.5% vs DSM-III-R AN/BN); Cotton
+  2003 primary-care replication n = 233 (sens 100% / spec
+  89.6%); Solmi 2015 meta-analysis 25 studies n = 26,488
+  (pooled AUC 0.89).  Morgan 1999 specifically REJECTED the
+  >= 1 threshold (spec 69% — unacceptable false-positive
+  burden for primary care).  Wire envelope matches AUDIT-C /
+  PC-PTSD-5 / SHAPS / ACEs binary-screen shape — total
+  carries the positive-item count, severity carries
+  "positive_screen" / "negative_screen", cutoff_used = 2.
+  No subscales (5 clinical-consensus cues, not factor-
+  partitioned).  No bands (SCOFF is a screen, not severity
+  — a count of 5 is not "more severe" than 2 in a banded
+  sense; both are above-threshold positive screens
+  requiring specialist assessment).  No T3 — item 1 "make
+  yourself Sick" explicitly means PURGING BEHAVIOR (self-
+  induced vomiting per Morgan 1999 Background §1), NOT self-
+  harm.  Acute-risk screening stays on C-SSRS / PHQ-9 item 9.
+  Item 3 ("lost more than one stone in 3 months") is a
+  medical-risk indicator but NOT an acute-safety indicator
+  at the scorer level — severe positive SCOFF triggers the
+  downstream ED-assessment pathway (EDE-Q 2.0 per Fairburn
+  1994; EDE interview per Cooper & Fairburn 1987), not the
+  T3 suicide-response protocol.  LOCALE-SENSITIVE item 3:
+  Morgan 1999 uses imperial stones (UK publication); non-UK
+  locales must present a validated-translation version with
+  culturally-appropriate mass unit (6.35 kg for EU/SI
+  locales, 14 lb for US locale — Kutz 2020 validated
+  non-English adaptations and the kg substitution).  Scorer
+  is locale-agnostic (only sees the yes/no response); the
+  administration-UI must present the culturally-appropriate
+  translation.  See ``scoring/scoff.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1085,6 +1134,11 @@ from .scoring.rrs10 import (
     InvalidResponseError as Rrs10Invalid,
     score_rrs10,
 )
+from .scoring.scoff import (
+    InvalidResponseError as ScoffInvalid,
+    SCOFF_POSITIVE_CUTOFF,
+    score_scoff,
+)
 from .scoring.scssf import (
     InvalidResponseError as ScsSfInvalid,
     score_scssf,
@@ -1166,6 +1220,7 @@ Instrument = Literal[
     "aces",
     "pgsi",
     "brs",
+    "scoff",
 ]
 
 
@@ -1216,6 +1271,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "aces": 10,
     "pgsi": 9,
     "brs": 6,
+    "scoff": 5,
 }
 
 
@@ -3101,6 +3157,96 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=br.instrument_version,
         )
+    if payload.instrument == "scoff":
+        # Morgan, Reid & Lacey 1999 SCOFF — 5-item binary yes/no
+        # eating-disorder screen.  Fills a clearly-missed clinical
+        # domain: every prior instrument covers substance use
+        # (AUDIT / AUDIT-C / DAST / DUDIT / SDS / PACS / DTCQ /
+        # URICA / Craving VAS), an internalizing / regulatory
+        # dimension (PHQ-9 / GAD-7 / PSS-10 / OCI-R / PCL-5 /
+        # SHAPS / MAAS / DERS-16), trauma (ACEs / PC-PTSD-5), a
+        # behavioral addiction (PGSI), or resilience (CD-RISC-10
+        # / BRS).  None cover disordered eating.
+        # Clinical load: eating disorders co-occur with SUD at
+        # 25-50% in clinical samples (Hudson 2007 NCS-R: 23.7%
+        # lifetime AN/BN comorbidity among SUD; Krug 2008
+        # European multi-site n = 879: 45% lifetime SUD among
+        # AN/BN).  The behavioral-addiction mechanics overlap
+        # substantially (restraint-binge cycle in BN parallels
+        # abstinence-violation effect in SUD; reward-prediction-
+        # error dysfunction in AN parallels SUD anhedonia
+        # profiles; compulsive cue-driven behavior patterns
+        # converge — Kaye 2013 neurobiological review).  The
+        # platform's 60-180 s urge-to-action intervention window
+        # applies identically to binge-eating urges as to
+        # substance-use urges (Jansen 2016 binge-cue reactivity
+        # review).
+        # Profile pairings with instruments already shipped:
+        #   - SCOFF+ alone → primary ED pathway (CBT-E per
+        #     Fairburn 2008 for BN/BED; specialist AN care per
+        #     APA 2006);
+        #   - SCOFF+ AND AUDIT+/DUDIT+ → co-occurring ED/SUD
+        #     profile (Krug 2008 45% comorbidity) → concurrent
+        #     integrated treatment per Harrop & Marlatt 2010,
+        #     NOT substance-first-then-ED sequencing;
+        #   - SCOFF+ AND PHQ-9 item-3 positive (appetite
+        #     change) → resolves the ED-vs-MDD ambiguity in
+        #     the bidirectional PHQ-9 appetite item;
+        #   - SCOFF+ AND ACEs >= 4 → trauma-driven ED profile
+        #     (Brewerton 2007 meta-analysis: childhood abuse is
+        #     a consistent ED risk factor) → trauma-informed
+        #     sequencing per van der Kolk 2014;
+        #   - SCOFF+ AND BIS-11 high → impulsive binge-purge
+        #     profile (Claes 2005) → DBT-adapted-for-ED per
+        #     Safer 2009;
+        #   - SCOFF+ AND OCI-R high → obsessive-compulsive-type
+        #     restriction profile (Godier 2014 AN-OCD overlap)
+        #     → intervention framing differs from impulsive
+        #     binge profile.
+        # Wire envelope matches AUDIT-C / PC-PTSD-5 / SHAPS /
+        # ACEs binary-screen shape — total carries the positive-
+        # item count (0-5), severity carries "positive_screen" /
+        # "negative_screen", cutoff_used = SCOFF_POSITIVE_CUTOFF
+        # (= 2 per Morgan 1999).  NO bands — SCOFF is a screen,
+        # not a severity instrument (a count of 5 is not "more
+        # severe" than 2 in a banded sense; both are above-
+        # threshold positive screens requiring specialist
+        # assessment).  Clinical follow-up (EDE-Q 2.0 per
+        # Fairburn 1994; EDE interview per Cooper & Fairburn
+        # 1987) is the severity instrument.  NO subscales — 5
+        # clinical-consensus cues, not factor-partitioned.
+        # No T3 — item 1 "make yourself Sick" explicitly means
+        # PURGING BEHAVIOR (self-induced vomiting per Morgan
+        # 1999 Background §1), NOT self-harm.  Acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9.  Item 3
+        # ("lost more than one stone in 3 months") is a medical-
+        # risk indicator but NOT an acute-safety indicator at
+        # the scorer level — a severe positive SCOFF triggers
+        # the downstream ED-assessment pathway, not the T3
+        # suicide-response protocol.
+        # LOCALE-SENSITIVE NOTE: Morgan 1999 item 3 uses imperial
+        # stones (UK publication).  Non-UK locales present a
+        # validated-translation version with culturally-
+        # appropriate mass unit (6.35 kg for EU/SI locales, 14 lb
+        # for US locale — Kutz 2020 multi-language meta-
+        # analysis validated the kg substitution).  The scorer
+        # is locale-agnostic (only sees the yes/no response);
+        # the administration-UI must present the culturally-
+        # appropriate translation.  See ``scoring/scoff.py``.
+        sc = score_scoff(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="scoff",
+            total=sc.total,
+            severity=(
+                "positive_screen" if sc.positive_screen
+                else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=sc.positive_screen,
+            cutoff_used=SCOFF_POSITIVE_CUTOFF,
+            instrument_version=sc.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3262,6 +3408,7 @@ async def submit_assessment(
         AcesInvalid,
         PgsiInvalid,
         BrsInvalid,
+        ScoffInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

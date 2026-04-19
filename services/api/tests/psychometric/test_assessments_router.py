@@ -13813,6 +13813,285 @@ class TestBrsRouting:
 
 
 # =============================================================================
+# SCOFF (eating-disorder screen) routing — Morgan, Reid & Lacey 1999
+# =============================================================================
+
+
+class TestScoffRouting:
+    """End-to-end routing tests for the SCOFF dispatcher branch.
+
+    Morgan 1999 BMJ — 5-item binary yes/no eating-disorder screen
+    (S-C-O-F-F mnemonic).  Cutoff >= 2 positive items (sens 100%
+    / spec 87.5% vs DSM-III-R AN/BN in original n = 116; Cotton
+    2003 primary-care n = 233 replication sens 100% / spec 89.6%;
+    Solmi 2015 meta-analysis n = 26,488 AUC 0.89).
+
+    Wire envelope matches AUDIT-C / PC-PTSD-5 / SHAPS / ACEs
+    binary-screen shape: positive_screen + cutoff_used.  No bands,
+    no subscales.  No T3 (item 1 "Sick" is purging behavior per
+    Morgan 1999 Background §1, not self-harm).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    def test_all_zeros_negative_screen(self, client: TestClient) -> None:
+        """Control-sample pattern — no positive items."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0, 0, 0, 0, 0]},
+            headers=self._headers("scoff-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "scoff"
+        assert body["total"] == 0
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 2
+
+    def test_all_ones_positive_screen(self, client: TestClient) -> None:
+        """Full positive endorsement."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("scoff-max"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 5
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 2
+
+    def test_single_positive_below_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """Morgan 1999 REJECTED the >= 1 threshold.  A single
+        positive item is below the operating point."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 0, 0, 0, 0]},
+            headers=self._headers("scoff-one"),
+        )
+        body = response.json()
+        assert body["total"] == 1
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_cutoff_boundary_exactly_two(
+        self, client: TestClient
+    ) -> None:
+        """The clinically-validated operating point (sens 100%,
+        spec 87.5% vs DSM-III-R AN/BN)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 0, 0, 0]},
+            headers=self._headers("scoff-two"),
+        )
+        body = response.json()
+        assert body["total"] == 2
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_three_positive(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 1, 0, 0]},
+            headers=self._headers("scoff-three"),
+        )
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+
+    def test_four_positive(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 1, 1, 0]},
+            headers=self._headers("scoff-four"),
+        )
+        body = response.json()
+        assert body["total"] == 4
+        assert body["severity"] == "positive_screen"
+
+    def test_each_position_contributes_one(
+        self, client: TestClient
+    ) -> None:
+        """Position-agnostic contribution — each position adds
+        exactly 1 when endorsed.  Rules out reverse-keying or
+        position-weighted bugs."""
+        for position in range(5):
+            items = [0] * 5
+            items[position] = 1
+            response = client.post(
+                "/v1/assessments",
+                json={"instrument": "scoff", "items": items},
+                headers=self._headers(f"scoff-pos-{position}"),
+            )
+            assert response.status_code == 201
+            body = response.json()
+            assert body["total"] == 1, (
+                f"position {position + 1} contributed "
+                f"{body['total']} instead of 1"
+            )
+
+    def test_response_envelope_cutoff_used(
+        self, client: TestClient
+    ) -> None:
+        """cutoff_used field on the wire response must carry the
+        Morgan 1999 operating point (2)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 0, 0, 0]},
+            headers=self._headers("scoff-cutoff-echo"),
+        )
+        body = response.json()
+        assert body["cutoff_used"] == 2
+
+    def test_response_envelope_has_no_subscales(
+        self, client: TestClient
+    ) -> None:
+        """5 clinical-consensus cues — unidimensional by design."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0, 0, 0, 0, 0]},
+            headers=self._headers("scoff-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") in (None, {}, [])
+
+    def test_response_envelope_has_instrument_version(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0, 0, 0, 0, 0]},
+            headers=self._headers("scoff-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "scoff-1.0.0"
+
+    def test_never_requires_t3(self, client: TestClient) -> None:
+        """SCOFF has no safety item — requires_t3 is always False,
+        even at full-positive (severe ED) pattern."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 1, 1, 1]},
+            headers=self._headers("scoff-no-t3-max"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+
+    def test_item_1_sick_no_safety_routing(
+        self, client: TestClient
+    ) -> None:
+        """Item 1 "make yourself Sick" is PURGING BEHAVIOR per
+        Morgan 1999 Background §1 — explicitly self-induced
+        vomiting, NOT self-harm.  No T3 trigger from item 1
+        alone."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 0, 0, 0, 0]},
+            headers=self._headers("scoff-sick-only"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_item_count_validation_four_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0, 0, 0, 0]},
+            headers=self._headers("scoff-four-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_six_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("scoff-six-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_ten_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone confuses SCOFF (5) with ACEs (10)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0] * 10},
+            headers=self._headers("scoff-ten-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_nine_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone confuses SCOFF (5) with PHQ-9 (9)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0] * 9},
+            headers=self._headers("scoff-nine-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_two_rejected(self, client: TestClient) -> None:
+        """SCOFF is binary — 2 is not "more endorsement", it is
+        invalid."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [2, 0, 0, 0, 0]},
+            headers=self._headers("scoff-two-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [-1, 0, 0, 0, 0]},
+            headers=self._headers("scoff-negative-value"),
+        )
+        assert response.status_code == 422
+
+    def test_clinical_vignette_bulimia_nervosa(
+        self, client: TestClient
+    ) -> None:
+        """BN-typical positive pattern: purging (S), loss of
+        control (C), food preoccupation (F2), body image (F1)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [1, 1, 0, 1, 1]},
+            headers=self._headers("scoff-bn-vignette"),
+        )
+        body = response.json()
+        assert body["total"] == 4
+        assert body["positive_screen"] is True
+
+    def test_clinical_vignette_anorexia_nervosa(
+        self, client: TestClient
+    ) -> None:
+        """AN-typical positive pattern: weight loss (O), body
+        image distortion (F1), food preoccupation (F2)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "scoff", "items": [0, 0, 1, 1, 1]},
+            headers=self._headers("scoff-an-vignette"),
+        )
+        body = response.json()
+        assert body["total"] == 3
+        assert body["positive_screen"] is True
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
