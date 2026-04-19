@@ -3,7 +3,8 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B.
+ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
+UCLA-3.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +41,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1225,6 +1226,55 @@ Safety routing:
   of full range, bounded and pinnable).  ``items`` field
   preserves RAW pre-flip for audit invariance.  See
   ``scoring/fneb.py``.
+- UCLA-3 (Hughes 2004): 3 items, 1-3 Likert, ZERO reverse-keyed
+  items.  Brief form of the UCLA Loneliness Scale derived by
+  Hughes, Waite, Hawkley & Cacioppo (Research on Aging 2004,
+  26(6):655-672) from Russell's 1980 full 20-item UCLA-R.
+  Validated in the Health and Retirement Study (HRS) cohort
+  (n = 2,101) with r = 0.82 against the full UCLA-R-20.
+  Fills the platform's **loneliness / perceived-isolation
+  gap** — clinically distinct from FNE-B (social-evaluative
+  anxiety = fear of judgement) because UCLA-3 measures the
+  orthogonal construct (actual perceived isolation).  A user
+  can be high UCLA-3 with low FNE-B (widowed retiree, intact
+  social skills but absent network) or vice versa (social-
+  anxiety patient with many acquaintances but high
+  evaluative apprehension).  The pair differentiates CAUSE
+  of social under-engagement: high FNE-B low UCLA-3 →
+  exposure + social-skills (Heimberg 1995), low FNE-B high
+  UCLA-3 → structural social-contact building / befriending
+  / peer-support, both elevated → combined protocol.
+  Clinical load-bearing: (1) widowhood / bereavement relapse
+  risk per Keyes 2012 (2.4× AUD-incidence elevation in the
+  2-year post-widowhood window, mediated by loneliness);
+  (2) retirement-trigger relapse detection per Satre 2004
+  (structural social loss at retirement as proximal trigger,
+  orthogonal to craving intensity); (3) Marlatt 1985 pp.
+  137-142 negative-emotional-states proximal relapse
+  precipitant (loneliness sub-type alongside depression and
+  anhedonia); (4) Holt-Lunstad 2010 meta-analytic mortality-
+  risk stratification (loneliness HR ≈ 1.26, effect-size
+  comparable to smoking or obesity).  Items (Hughes 2004
+  Table 1, verbatim): 1. lack companionship, 2. feel left
+  out, 3. feel isolated from others.  All three are
+  NEGATIVELY worded — Hughes 2004 deliberately omits Marsh
+  1996 balanced-wording acquiescence control to preserve
+  r = 0.82 equivalence with the full UCLA-R-20.  Total =
+  raw sum (no flipping), range 3-9.  HIGHER = more lonely
+  (lower-is-better direction).  NO bands — Hughes 2004
+  published no cutpoints; Steptoe 2013 HRS-cohort tercile
+  splits (3 / 4-5 / 6-9) are sample-descriptive and NOT
+  pinned per CLAUDE.md.  NO T3 — no item probes
+  suicidality; "feel isolated" (item 3) is a subjective-
+  connection construct, NOT ideation.  Clinician-UI
+  surfaces high UCLA-3 as C-SSRS-follow-up context per
+  Calati 2019 (k=40 meta-analysis) but assessment itself
+  does not set ``requires_t3``.  Acquiescence gap = 6 (the
+  full 3-9 range × endpoint exposure), the highest
+  endpoint-exposure on the platform — trade-off Hughes 2004
+  made for brevity.  Linear signature: total = 3v for every
+  all-v constant vector.  ``items`` field = raw input
+  (identity under no-reverse-keying).  See ``scoring/ucla3.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1423,6 +1473,10 @@ from .scoring.stai6 import (
     InvalidResponseError as Stai6Invalid,
     score_stai6,
 )
+from .scoring.ucla3 import (
+    InvalidResponseError as Ucla3Invalid,
+    score_ucla3,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1497,6 +1551,7 @@ Instrument = Literal[
     "ffmq15",
     "stai6",
     "fneb",
+    "ucla3",
 ]
 
 
@@ -1553,6 +1608,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "ffmq15": 15,
     "stai6": 6,
     "fneb": 12,
+    "ucla3": 3,
 }
 
 
@@ -3926,6 +3982,108 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=f.instrument_version,
         )
+    if payload.instrument == "ucla3":
+        # UCLA-3 — 3-item brief loneliness scale derived by
+        # Hughes, Waite, Hawkley & Cacioppo (Research on Aging
+        # 2004, 26(6):655-672) from Russell's 1980 full 20-item
+        # UCLA Loneliness Scale (Revised).  Validated in the
+        # Health and Retirement Study cohort (n = 2,101) with
+        # r = 0.82 against the full UCLA-R-20 — preserves the
+        # core social-isolation construct at one-seventh the
+        # response burden.  Items 1 (lack companionship), 2
+        # (feel left out), 3 (feel isolated from others) are
+        # ALL negatively worded; ZERO reverse-keyed positions,
+        # so raw sum = scored total.  This is the only
+        # multi-item platform instrument with no reverse-keying
+        # at all — Hughes 2004 deliberately omits Marsh 1996
+        # balanced-wording acquiescence-bias control because
+        # adding it would invalidate the r = 0.82 UCLA-R-20
+        # equivalence.  The trade-off is documented: UCLA-3
+        # carries the highest acquiescence-bias exposure on
+        # the platform (constant-v vectors yield total = 3v,
+        # so endpoint-only responders shift the score the full
+        # 75% of the 3-9 range).
+        #
+        # The instrument fills the platform's **loneliness /
+        # perceived-isolation gap**, which is clinically
+        # DISTINCT from the fear-of-judgement construct FNE-B
+        # measures.  A user can be HIGH UCLA-3 with LOW FNE-B
+        # (a recently-widowed retiree has intact social skills
+        # and no evaluation anxiety — the network simply does
+        # not exist) or LOW UCLA-3 with HIGH FNE-B (a socially-
+        # anxious adolescent may have abundant peer contact
+        # while reporting severe fear-of-judgement).  The pair
+        # differentiates CAUSE of social under-engagement and
+        # therefore differentiates intervention targeting:
+        #   - High FNE-B, low UCLA-3 → exposure + social-skills
+        #     training (Heimberg 1995 CBGT protocol).
+        #   - Low FNE-B, high UCLA-3 → structural social-contact
+        #     building (befriending, peer-support groups).
+        #   - Both elevated → combined protocol, network
+        #     absent AND avoidance of rebuilding it.
+        #
+        # Four addiction-relevant clinical use cases drive the
+        # measurement on this platform:
+        #   - Widowhood / bereavement relapse risk.  Keyes 2012
+        #     documented a 2.4× elevation in alcohol-use-
+        #     disorder incidence in the 2-year post-widowhood
+        #     window, mediated by loneliness.  High UCLA-3 in
+        #     a user with an alcohol-use history flags a
+        #     contextual relapse risk that craving-intensity
+        #     measures (PACS, Craving VAS) do not surface.
+        #   - Retirement-trigger relapse detection.  Satre
+        #     2004 identified structural social loss at
+        #     retirement as a proximal trigger; UCLA-3
+        #     captures the onset of the structural change
+        #     while STAI-6 / GAD-7 may not elevate if the
+        #     user does not subjectively interpret the
+        #     change as threatening.
+        #   - Marlatt 1985 negative-emotional-states proximal
+        #     relapse precipitant (pp. 137-142; 35% of the
+        #     137-relapse sample).  Loneliness is a sub-type
+        #     within this category alongside depression
+        #     (PHQ-9) and anhedonia (SHAPS); UCLA-3 captures
+        #     the socially-driven sub-type specifically.
+        #   - Longitudinal mortality-risk stratification.
+        #     Holt-Lunstad 2010 meta-analysis (k = 148, n ≈
+        #     308,849) showed loneliness independently predicts
+        #     mortality with HR ≈ 1.26 — effect size comparable
+        #     to smoking or obesity.  Improving UCLA-3 over
+        #     6-month telemetry windows is a clinically-
+        #     meaningful outcome independent of relapse-event
+        #     count.
+        #
+        # No bands — Hughes 2004 published no primary-source
+        # cutpoints; Steptoe 2013 tercile splits (3 / 4-5 /
+        # 6-9) are HRS-sample descriptive derivations and
+        # excluded per CLAUDE.md "no hand-rolled severity
+        # thresholds" rule.  severity = "continuous"; Jacobson-
+        # Truax RCI at the trajectory layer supplies clinical-
+        # significance judgement on the raw 3-9 total.
+        #
+        # No T3 gating — no item probes suicidality; "feel
+        # isolated from others" (item 3) is a subjective-
+        # connection construct, NOT ideation.  Clinical note:
+        # loneliness IS an established suicide risk factor
+        # (Calati 2019 meta-analysis, k = 40) — the platform
+        # surfaces high UCLA-3 to the clinician UI as C-SSRS-
+        # follow-up context, but the assessment itself does
+        # not set requires_t3.  Active-risk screening stays on
+        # C-SSRS / PHQ-9 item 9.
+        #
+        # Envelope: banded+total (no subscales, scaled_score,
+        # positive_screen, cutoff_used, triggering_items) —
+        # same shape as RSES / STAI-6 / FNE-B / PANAS-10-total.
+        # See ``scoring/ucla3.py``.
+        u = score_ucla3(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="ucla3",
+            total=u.total,
+            severity=u.severity,
+            requires_t3=False,
+            instrument_version=u.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -4093,6 +4251,7 @@ async def submit_assessment(
         Ffmq15Invalid,
         Stai6Invalid,
         FnebInvalid,
+        Ucla3Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

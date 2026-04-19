@@ -17138,6 +17138,552 @@ class TestFnebRouting:
         assert pre["total"] - post["total"] == 24
 
 
+class TestUcla3Routing:
+    """End-to-end routing tests for the UCLA-3 dispatcher branch.
+
+    Hughes 2004 Three-Item Loneliness Scale — 3 items, 1-3 Likert,
+    NO reverse keying (unique on the platform), total 3-9, single
+    factor, no bands (severity = ``"continuous"``).  **HIGHER =
+    MORE lonely** — uniform with PHQ-9 / GAD-7 / AUDIT / PSS-10 /
+    STAI-6 / FNE-B / SHAPS (lower-is-better).
+
+    The ZERO-reverse-keying design is Hughes 2004's explicit
+    trade-off: adding Marsh 1996 balanced-wording acquiescence
+    control would invalidate the r = 0.82 equivalence with the
+    full UCLA-R-20.  Consequence: the acquiescence signature is
+    the trivial linear formula ``total = 3v`` for any all-v
+    constant vector, and the endpoint-only-responder gap is the
+    full 75% of the 3-9 range (all-3s minus all-1s = 6).  This
+    is the highest endpoint-exposure on the platform.
+
+    Clinically DISTINCT from FNE-B — UCLA-3 measures actual
+    perceived isolation, FNE-B measures fear of being judged.
+    High UCLA-3 with low FNE-B (widowed retiree) or vice versa
+    (socially-anxious adolescent with peer network) dissociates
+    in the wild.  Intervention targeting differs accordingly
+    (structural contact-building vs exposure + social-skills).
+
+    Clinical use cases:
+    1. Widowhood / bereavement relapse-risk window (Keyes 2012,
+       2.4× AUD-incidence elevation over 2 years post-widowhood).
+    2. Retirement-trigger relapse detection (Satre 2004, social-
+       structure loss as proximal trigger).
+    3. Marlatt 1985 negative-emotional-states proximal precipitant
+       (pp. 137-142, loneliness sub-type).
+    4. Holt-Lunstad 2010 mortality-risk stratification (HR 1.26).
+
+    No T3 — Calati 2019 documents loneliness as a suicide risk
+    factor, but the platform surfaces high UCLA-3 as C-SSRS-
+    follow-up context at the clinician-UI layer and does NOT set
+    the T3 flag on the assessment itself.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ----------------------------------------------------
+
+    def test_max_loneliness_extremum_nine(self, client: TestClient) -> None:
+        """Hughes 2004 top-of-range: "Often" on all three items.
+        Raw [3, 3, 3].  No reverse keying, so total = 9.
+        Holt-Lunstad 2010 mortality-HR ≈ 1.26 territory."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "ucla3"
+        assert body["total"] == 9
+        assert body["severity"] == "continuous"
+
+    def test_min_loneliness_extremum_three(self, client: TestClient) -> None:
+        """Community low-loneliness floor: "Hardly ever" on all
+        three.  Raw [1, 1, 1] = total 3.  Hughes 2004 HRS bottom
+        tercile."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 1]},
+            headers=self._headers("ucla3-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "continuous"
+
+    def test_midpoint_six(self, client: TestClient) -> None:
+        """Raw [2, 2, 2] = 6.  The arithmetic midpoint of the 3-9
+        range; clinically the retirement-transition profile (Satre
+        2004)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-mid"),
+        )
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "continuous"
+
+    # -- Acquiescence signature — linear total = 3v ------------------------
+
+    def test_acquiescence_all_ones_yields_three(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=1: total = 3×1 = 3.  No reverse-keying
+        offset, unlike FNE-B (4v+24 = 28) or STAI-6 (constant 15)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 1]},
+            headers=self._headers("ucla3-acq-1"),
+        )
+        body = response.json()
+        assert body["total"] == 3
+
+    def test_acquiescence_all_twos_yields_six(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=2: total = 3×2 = 6."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-acq-2"),
+        )
+        body = response.json()
+        assert body["total"] == 6
+
+    def test_acquiescence_all_threes_yields_nine(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=3: total = 3×3 = 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-acq-3"),
+        )
+        body = response.json()
+        assert body["total"] == 9
+
+    def test_acquiescence_gap_is_six(self, client: TestClient) -> None:
+        """Pin the endpoint-exposure: all-3s minus all-1s = 6,
+        which is the full 3-9 range.  A random endpoint-only
+        responder shifts the score 75% of full range — highest
+        endpoint-exposure on the platform.  Invariant documents
+        the Hughes 2004 design trade-off (no reverse-keying for
+        r=0.82 UCLA-R-20 equivalence)."""
+        r_low = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 1]},
+            headers=self._headers("ucla3-gap-1"),
+        ).json()
+        r_high = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-gap-3"),
+        ).json()
+        assert r_high["total"] - r_low["total"] == 6
+
+    # -- Envelope fields — no subscales/cutoff/screen/scaled/trigger -------
+
+    def test_envelope_has_no_subscales(self, client: TestClient) -> None:
+        """Hughes 2004 factor-analytic derivation confirmed single
+        factor; envelope MUST NOT carry subscales."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_envelope_has_no_cutoff_used(self, client: TestClient) -> None:
+        """Hughes 2004 published no cutpoints; Steptoe 2013 tercile
+        splits are sample-descriptive and NOT pinned per CLAUDE.md."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_envelope_has_no_positive_screen(self, client: TestClient) -> None:
+        """No categorical screen — UCLA-3 is a continuous
+        dimensional measure."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-no-screen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_envelope_has_no_scaled_score(self, client: TestClient) -> None:
+        """UCLA-3 reports the raw 3-9 total; no scaled mapping to
+        another range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-no-scaled"),
+        )
+        body = response.json()
+        assert body.get("scaled_score") is None
+
+    def test_envelope_has_no_triggering_items(
+        self, client: TestClient
+    ) -> None:
+        """triggering_items is C-SSRS-only (risk-band audit trail).
+        UCLA-3 is continuous; no item individually flags."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-no-triggering"),
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    # -- Severity always continuous ----------------------------------------
+
+    def test_severity_continuous_at_minimum(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 1]},
+            headers=self._headers("ucla3-sev-min"),
+        )
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_steptoe_upper_tercile(
+        self, client: TestClient
+    ) -> None:
+        """Steptoe 2013 upper-tercile boundary is 6; ELSA cohort
+        analyses use >= 6 as the "lonely" indicator.  Platform
+        MUST fire NO band here — Steptoe 2013 is sample-
+        descriptive, not a primary-source cutpoint."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-sev-steptoe"),
+        )
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_maximum(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-sev-max"),
+        )
+        body = response.json()
+        assert body["total"] == 9
+        assert body["severity"] == "continuous"
+
+    # -- T3 posture --------------------------------------------------------
+
+    def test_maximum_total_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Raw [3, 3, 3] = total 9 is the maximum-loneliness
+        extremum.  Calati 2019 documents loneliness as a suicide
+        risk factor, but the platform surfaces this to the
+        clinician UI as C-SSRS-follow-up context — the assessment
+        itself MUST NOT set requires_t3.  Active-risk screening
+        stays on C-SSRS / PHQ-9 item 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-t3-max"),
+        )
+        body = response.json()
+        assert body["total"] == 9
+        assert body["requires_t3"] is False
+
+    def test_isolated_item_alone_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Item 3 ("feel isolated") at max with items 1/2 at min.
+        Raw [1, 1, 3] = 5.  "Isolated" is a subjective-connection
+        construct, NOT suicidal ideation.  MUST NOT set T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 3]},
+            headers=self._headers("ucla3-t3-isolated"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    # -- No-reverse-keying wire pins ---------------------------------------
+
+    def test_items_pass_through_unchanged_item1(
+        self, client: TestClient
+    ) -> None:
+        """UCLA-3 has ZERO reverse-keying.  Raising item 1 from 1
+        to 3 with others at 1 raises the total by exactly 2 (the
+        raw Likert step × 1 item).  Contrast FNE-B reverse-item
+        positions which DROP the total by 4 when raised."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 1]},
+            headers=self._headers("ucla3-pass-1-base"),
+        ).json()
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 1, 1]},
+            headers=self._headers("ucla3-pass-1-raised"),
+        ).json()
+        assert raised["total"] - base["total"] == 2
+
+    def test_items_pass_through_unchanged_item2(
+        self, client: TestClient
+    ) -> None:
+        """Item 2 (feel left out) pass-through check."""
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 3, 1]},
+            headers=self._headers("ucla3-pass-2"),
+        ).json()
+        assert raised["total"] == 5
+
+    def test_items_pass_through_unchanged_item3(
+        self, client: TestClient
+    ) -> None:
+        """Item 3 (feel isolated) pass-through check."""
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 3]},
+            headers=self._headers("ucla3-pass-3"),
+        ).json()
+        assert raised["total"] == 5
+
+    # -- Item count traps --------------------------------------------------
+
+    def test_rejects_two_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2]},
+            headers=self._headers("ucla3-ic-2"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_four_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2, 2]},
+            headers=self._headers("ucla3-ic-4"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_zero_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": []},
+            headers=self._headers("ucla3-ic-0"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_twenty_items_full_ucla_r20(
+        self, client: TestClient
+    ) -> None:
+        """Guards against accidental full UCLA-R-20 administration
+        being routed through the brief-form scorer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2] * 20},
+            headers=self._headers("ucla3-ic-20"),
+        )
+        assert response.status_code == 422
+
+    # -- Item value traps --------------------------------------------------
+
+    def test_rejects_item_value_zero(self, client: TestClient) -> None:
+        """UCLA-3 is 1-3 Likert; 0 is below range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [0, 2, 2]},
+            headers=self._headers("ucla3-iv-0"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_four(self, client: TestClient) -> None:
+        """UCLA-3 is 1-3 Likert; 4 is above range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [4, 2, 2]},
+            headers=self._headers("ucla3-iv-4"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_negative(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [-1, 2, 2]},
+            headers=self._headers("ucla3-iv-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_five_point_likert_value(
+        self, client: TestClient
+    ) -> None:
+        """Guards against accidental FNE-B 1-5 or STAI-6 1-4 Likert
+        value being routed through UCLA-3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [5, 2, 2]},
+            headers=self._headers("ucla3-iv-5"),
+        )
+        assert response.status_code == 422
+
+    # -- Item type trap ----------------------------------------------------
+
+    def test_rejects_string_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": ["two", 2, 2]},
+            headers=self._headers("ucla3-iv-str"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_float_with_decimal(self, client: TestClient) -> None:
+        """Pydantic ``list[int]`` rejects 2.5 as non-integer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2.5, 2, 2]},
+            headers=self._headers("ucla3-iv-fl"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic bool-coercion doc ---------------------------------------
+
+    def test_true_coerced_to_one_is_valid(self, client: TestClient) -> None:
+        """Pydantic's ``list[int]`` coerces JSON ``true`` → 1 BEFORE
+        the scorer sees it.  On UCLA-3's 1-3 scale, 1 is a valid
+        response ("Hardly ever") so True passes.  Equivalent to raw
+        all-1s = 3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [True, 1, 1]},
+            headers=self._headers("ucla3-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+
+    def test_false_coerced_to_zero_is_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces ``false`` → 0, which is BELOW UCLA-3's
+        1-3 range.  Range check rejects with 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [False, 1, 1]},
+            headers=self._headers("ucla3-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes ------------------------------------------------
+
+    def test_vignette_widowhood_profile(self, client: TestClient) -> None:
+        """Keyes 2012 widowhood profile: strong "lack companionship"
+        (lost spouse), moderate "left out" (couple-centric social
+        invitations), moderate isolation (routine disrupted).
+        Raw [3, 2, 2] = 7.  Signals the 2-year post-widowhood
+        AUD-incidence window."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 2, 2]},
+            headers=self._headers("ucla3-vig-widow"),
+        )
+        body = response.json()
+        assert body["total"] == 7
+        assert body["severity"] == "continuous"
+
+    def test_vignette_retirement_isolation(self, client: TestClient) -> None:
+        """Satre 2004 retirement-transition profile: moderate
+        across all three items.  Raw [2, 2, 2] = 6.  Signals
+        retirement-trigger relapse-risk window."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 2, 2]},
+            headers=self._headers("ucla3-vig-retire"),
+        )
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "continuous"
+
+    def test_vignette_socially_connected_baseline(
+        self, client: TestClient
+    ) -> None:
+        """Community low-loneliness baseline.  Raw [1, 1, 1] = 3.
+        Hughes 2004 HRS bottom tercile."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [1, 1, 1]},
+            headers=self._headers("ucla3-vig-baseline"),
+        )
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "continuous"
+
+    def test_vignette_severe_isolation_extremum(
+        self, client: TestClient
+    ) -> None:
+        """Hughes 2004 HRS top-tercile extremum.  Raw [3, 3, 3] = 9.
+        Holt-Lunstad 2010 mortality-HR ≈ 1.26 territory.  Surfaces
+        to clinician UI for C-SSRS follow-up per Calati 2019 but
+        does NOT set requires_t3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-vig-severe"),
+        )
+        body = response.json()
+        assert body["total"] == 9
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_post_bereavement_group_delta(
+        self, client: TestClient
+    ) -> None:
+        """12-week bereavement-support-group intervention: pre-
+        treatment widowhood profile (7), post-treatment connection-
+        rebuilt (4).  Delta 3 is a meaningful within-participant
+        change on the 3-9 range (50% of the 6-point range).
+        Jacobson-Truax RCI at the trajectory layer determines
+        clinical significance."""
+        pre = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 2, 2]},
+            headers=self._headers("ucla3-vig-pre"),
+        ).json()
+        post = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [2, 1, 1]},
+            headers=self._headers("ucla3-vig-post"),
+        ).json()
+        assert pre["total"] == 7
+        assert post["total"] == 4
+        assert pre["total"] - post["total"] == 3
+
+    def test_vignette_fne_b_dissociation_high_ucla3_low_fne(
+        self, client: TestClient
+    ) -> None:
+        """Widowed retiree with intact social skills — expected
+        LOW FNE-B, HIGH UCLA-3.  UCLA-3 alone = 9 documents the
+        structural-isolation construct orthogonal to evaluation-
+        anxiety.  Intervention target: structural social-contact
+        building (befriending, peer-support), NOT exposure."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ucla3", "items": [3, 3, 3]},
+            headers=self._headers("ucla3-vig-dissoc"),
+        )
+        body = response.json()
+        assert body["total"] == 9
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
