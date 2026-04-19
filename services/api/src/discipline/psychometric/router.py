@@ -4,8 +4,8 @@ PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
-UCLA-3, CIUS,
-SWLS.
+UCLA-3, CIUS, SWLS,
+MSPSS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -42,7 +42,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1569,6 +1569,11 @@ from .scoring.swls import (
     InvalidResponseError as SwlsInvalid,
     score_swls,
 )
+from .scoring.mspss import (
+    InvalidResponseError as MspssInvalid,
+    MSPSS_SUBSCALES,
+    score_mspss,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1646,6 +1651,7 @@ Instrument = Literal[
     "ucla3",
     "cius",
     "swls",
+    "mspss",
 ]
 
 
@@ -1705,6 +1711,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "ucla3": 3,
     "cius": 14,
     "swls": 5,
+    "mspss": 12,
 }
 
 
@@ -4402,6 +4409,191 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=s.instrument_version,
         )
+    if payload.instrument == "mspss":
+        # MSPSS — 12-item Multidimensional Scale of Perceived Social
+        # Support (Zimet, Dahlem, Zimet & Farley, Journal of Personality
+        # Assessment 1988, 52(1):30-41).  Most widely-used self-report
+        # instrument for **perceived adequacy of social support** — a
+        # subjective-cognitive construct distinct from objective network
+        # size or contact frequency.  Zimet 1988 explicitly designed it
+        # to measure support *as perceived by the respondent* across
+        # three conceptually distinct sources (Significant Other,
+        # Family, Friends), because perceived-support correlates with
+        # health outcomes better than objective-support measures per
+        # Cohen & Wills 1985 stress-buffering hypothesis (PsyBull
+        # 98(2):310-357).
+        #
+        # Fills a **perceived-social-support dimension gap** in the
+        # platform's roster.  Prior instruments touch social-adjacent
+        # constructs but do not measure perceived support adequacy:
+        # - UCLA-3 (Sprint 70) measures LONELINESS — subjective
+        #   deficit-experience.  Correlates with MSPSS (r ≈ -0.45 per
+        #   Zimet 1988) but not redundant: adequate-perceived-support
+        #   with loneliness = poor-quality contacts; inadequate-
+        #   support without loneliness = self-reliant temperament.
+        # - FNE-B (Sprint 69) measures FEAR OF NEGATIVE EVALUATION —
+        #   social-anxiety cognition about being judged.  Distal
+        #   antecedent of withdrawal; does not measure perceived
+        #   support quality.
+        # - SWLS (Sprint 72) measures GLOBAL LIFE SATISFACTION —
+        #   cognitive-evaluative judgment integrating across domains
+        #   INCLUDING social support but not isolating it.
+        # - MSPSS measures PERCEIVED SOCIAL SUPPORT — "when I need
+        #   emotional / tangible / informational support, do I believe
+        #   I have people who will provide it, and across which
+        #   sources?"  The **buffering-capacity** construct that
+        #   mediates relapse-risk-under-stress.
+        #
+        # For relapse-prevention, perceived social support is a
+        # documented treatment-outcome mediator.  Beattie & Longabaugh
+        # 1999 (Addictive Behaviors 24(5):593-606; n = 225 AUD)
+        # found perceived friends-support post-treatment was the
+        # strongest predictor of 3-year outcomes among network
+        # variables — exceeding drinking-friend density, sponsor
+        # contact frequency, and AA attendance hours.  Groh, Jason &
+        # Keys 2008 (Clinical Psychology Review 28:430-450) 24-study
+        # review concluded perceived-support is a more reliable
+        # predictor of sustained abstinence than structural-network
+        # variables.  Mechanism: the **subjective belief** that help
+        # is available reduces cortisol reactivity and urge-to-escape-
+        # via-substance during stress episodes, independent of
+        # whether help is actually mobilized.
+        #
+        # **Multi-subscale envelope.**  Zimet 1988 factor analysis
+        # (n = 275 undergraduates) confirmed a three-factor solution
+        # with eigenvalues 6.1, 1.3, 1.1 — distinct factors, not a
+        # unidimensional general factor with rotated noise.  The
+        # three subscales are NOT interchangeable and MUST be surfaced
+        # separately to clinicians:
+        # - Significant Other (items 1, 2, 5, 10): partner / romantic
+        #   / uniquely-close-attachment support.
+        # - Family (items 3, 4, 8, 11): family-of-origin or chosen-
+        #   family support.
+        # - Friends (items 6, 7, 9, 12): peer-network support.
+        # Summing all three into a single total and discarding the
+        # partition would collapse three independent clinical
+        # signals into one, contradicting the factor structure
+        # Zimet 1988 engineered the instrument to provide.  The
+        # platform resolves this via:
+        # - total = 12-84 sum across all items.  The envelope's
+        #   single-number summary for trajectory RCI.
+        # - subscales = {"significant_other": so_sum, "family":
+        #   fam_sum, "friends": fr_sum} preserves all three
+        #   dimensions.  Clinicians MUST read subscales via the
+        #   subscales dict — the total alone is insufficient to
+        #   distinguish partner-dependent, family-only, peer-only,
+        #   diffuse-deficit, or distributed-support profiles (see
+        #   ``scoring/mspss.py`` module docstring for worked
+        #   examples and intervention-matching rationale).
+        #
+        # Profile-based intervention matching:
+        # - Significant Other only elevated → partner-rupture relapse
+        #   risk; diversify support sources (sponsor, peer groups,
+        #   Al-Anon/Nar-Anon).
+        # - Family elevated, Friends/SO low → family-conflict relapse
+        #   risk; prosocial peer-network reconstruction (SMART, AA/NA,
+        #   hobby-based re-integration).
+        # - Friends elevated, Family/SO low → peer-group substance-
+        #   use-norm risk; assess peer drinking/using norms.
+        # - All three low ("diffuse-deficit") → highest-risk profile,
+        #   parallels Holt-Lunstad 2010 isolation-mortality finding
+        #   (n = 308,849 meta; isolation effect ≈ 15-cig/day smoking).
+        #   Scaffolding via supported-housing / day-program / IOP
+        #   while natural network rebuilds.
+        # - All three high ("distributed-support") → protective;
+        #   single-source rupture does not leave client unsupported.
+        #
+        # Paired-signal use with existing instruments:
+        # - MSPSS low + UCLA-3 high (convergent deficit + loneliness):
+        #   the "unsupported-and-alone" profile — priority Holt-
+        #   Lunstad 2010 intervention target.
+        # - MSPSS high + UCLA-3 high ("surrounded but lonely"):
+        #   relational-depth problem, not structural absence;
+        #   emotion-focused therapy (Greenberg 2002) / attachment-
+        #   informed EFT (Johnson 2019) / IPT (Markowitz 2014).
+        # - MSPSS low + SWLS low ("unsupported-plus-dissatisfied"):
+        #   Moos 2005 delayed-relapse signature with network
+        #   vulnerability; network-rebuild precedes life-evaluation
+        #   work.
+        # - MSPSS low + PSS-10 high ("unsupported-under-stress"):
+        #   exact Cohen-Wills 1985 stress-buffering scenario;
+        #   social-prescribing (Kiernan 2019) + stress-regulation
+        #   skill-building in parallel.
+        # - MSPSS low + UCLA-3 high + PHQ-9 high: convergent
+        #   isolation-plus-loneliness-plus-depression → Calati 2019
+        #   clinician-UI C-SSRS follow-up prompt (renderer layer),
+        #   NOT a scorer-layer T3 flag.
+        #
+        # Scoring: 12 items, 1-7 Likert (1 = Very Strongly Disagree,
+        # 7 = Very Strongly Agree), NO reverse keying (Zimet 1988
+        # Table 1 confirms all 12 items worded in the "higher = more
+        # perceived support" direction — uniform with WHO-5 / LOT-R /
+        # BRS / MAAS / RSES / SWLS / PANAS-10 PA higher-is-better
+        # direction).  Subscale sums: Significant Other (items 1, 2,
+        # 5, 10) = 4-28, Family (items 3, 4, 8, 11) = 4-28, Friends
+        # (items 6, 7, 9, 12) = 4-28.  Total = sum of all items =
+        # 12-84.  The interleaved administration order was deliberate
+        # in Zimet 1988 to prevent subscale-block context effects;
+        # items MUST arrive in Zimet 1988 position 1-12 or the
+        # subscale partition silently misclassifies the profile.
+        #
+        # Severity = "continuous".  Canty-Mitchell & Zimet 2000
+        # (J Pers Assess 74(2):391-400) proposed mean-score cutpoints
+        # (1-2.9 low, 3-5 moderate, 5.1-7 high) on both total and per-
+        # subscale means.  These are AUTHOR-PROPOSED descriptive
+        # bands, NOT validated against a gold-standard reference (no
+        # MSPSS versus structured-clinical-interview validation exists
+        # because "perceived support" has no external criterion).
+        # Per CLAUDE.md non-negotiable #9 ("Don't hand-roll severity
+        # thresholds"), the Canty-Mitchell bands stay at the
+        # CLINICIAN-UI RENDERER layer — same posture as SWLS Pavot
+        # interpretive bands, UCLA-3 Hughes terciles, CIUS Guertler
+        # cutpoints.  The envelope stores integer SUMS; the clinician
+        # UI divides by item count to recover the mean when rendering.
+        #
+        # Acquiescence signature: linear total = 12v for any all-v
+        # constant vector, endpoint-gap = 72 (full 12-84 range, 100%
+        # of range — matches SWLS / UCLA-3 / CIUS relative endpoint-
+        # exposure).  Zimet 1988 reported α = 0.88 total / 0.91 SO /
+        # 0.87 Family / 0.85 Friends, indicating coherent-
+        # interpretation dominance over acquiescence bias in practice
+        # (same rationale as CIUS / SHAPS / SWLS for all-positive
+        # wording).
+        #
+        # T3 posture — NO item probes suicidality.  Item 10 ("special
+        # person in my life who cares about my feelings") is an
+        # attachment-adequacy probe, NOT a self-harm or ideation
+        # probe.  Acute-risk screening stays on C-SSRS / PHQ-9 item 9.
+        # Low MSPSS paired with high UCLA-3 and elevated PHQ-9
+        # surfaces at the clinician-UI layer as a C-SSRS follow-up
+        # prompt (per Calati 2019 convergent isolation + suicide-risk
+        # literature), NOT as a scorer-layer T3 flag — same renderer-
+        # layer-versus-scorer-layer boundary established for SWLS /
+        # UCLA-3.
+        #
+        # Envelope: banded+total + subscales (no scaled_score,
+        # positive_screen, cutoff_used, triggering_items — same
+        # shape as PANAS-10 multi-subscale envelope but with a
+        # canonical aggregate total, since Zimet 1988's three factors
+        # are sources of the SAME construct [perceived support]
+        # rather than the orthogonal dimensions of affect circumplex
+        # that made PANAS-10 uniquely incapable of a single-total
+        # summary).  ``items`` field = raw input (identity under
+        # zero-reverse-keying).  See ``scoring/mspss.py``.
+        m = score_mspss(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="mspss",
+            total=m.total,
+            severity=m.severity,
+            requires_t3=False,
+            subscales={
+                MSPSS_SUBSCALES[0]: m.significant_other,
+                MSPSS_SUBSCALES[1]: m.family,
+                MSPSS_SUBSCALES[2]: m.friends,
+            },
+            instrument_version=m.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -4572,6 +4764,7 @@ async def submit_assessment(
         Ucla3Invalid,
         CiusInvalid,
         SwlsInvalid,
+        MspssInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

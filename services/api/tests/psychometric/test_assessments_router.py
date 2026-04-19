@@ -19067,6 +19067,631 @@ class TestSwlsRouting:
         assert body["requires_t3"] is False
 
 
+class TestMspssRouting:
+    """End-to-end routing tests for the MSPSS dispatcher branch.
+
+    Zimet, Dahlem, Zimet & Farley 1988 Multidimensional Scale of
+    Perceived Social Support — 12 items, 1-7 Likert, NO reverse keying
+    (all 12 items positively worded in the "higher = more perceived
+    support" direction per Zimet 1988 Table 1), three-factor structure
+    (Significant Other / Family / Friends).  Per-subscale sum = 4-28;
+    total = 12-84.  **HIGHER = MORE perceived support** — uniform with
+    WHO-5 / LOT-R / BRS / MAAS / RSES / SWLS / PANAS-10 PA "higher-is-
+    better" direction.
+
+    Multi-subscale envelope — second instrument (after PANAS-10) to
+    populate the ``subscales`` dict slot with its three source-
+    partitioned sums.  Zimet 1988 factor analysis (n = 275 undergrads;
+    eigenvalues 6.1, 1.3, 1.1) confirmed the three factors are NOT
+    interchangeable; clinicians MUST read subscales via the dict —
+    the total alone cannot distinguish partner-dependent, family-only,
+    peer-only, diffuse-deficit, or distributed-support profiles.
+
+    Interleaved administration order — Zimet 1988 items alternate
+    across sources to prevent subscale-block context effects:
+        SO, SO, Fam, Fam, SO, Fr, Fr, Fam, Fr, SO, Fam, Fr
+    The wire layer MUST preserve this ordering; a client that
+    reshuffles items per-subscale will silently misclassify the
+    profile (total still correct, subscales misattributed).
+
+    Subscale position mapping (1-indexed per Zimet 1988 Table 1):
+        Significant Other: items 1, 2, 5, 10
+        Family:            items 3, 4, 8, 11
+        Friends:           items 6, 7, 9, 12
+
+    Clinical use cases:
+    1. Cohen & Wills 1985 stress-buffering — MSPSS low + PSS-10 high
+       identifies "unsupported-under-stress" profile; social-
+       prescribing (Kiernan 2019) + skill-building in parallel.
+    2. Beattie 1999 perceived-friends-support predicts 3-year AUD
+       outcomes > structural network variables.
+    3. Holt-Lunstad 2010 n=308,849 isolation-mortality meta — all-
+       three-subscales-low ("diffuse-deficit") is the priority
+       intervention target.
+    4. Calati 2019 convergent isolation + suicide-risk: MSPSS low +
+       UCLA-3 high + PHQ-9 high → clinician-UI C-SSRS follow-up
+       prompt (renderer layer), NOT scorer-layer T3.
+    5. Moos 2005 delayed-relapse + network-vulnerability: MSPSS low
+       + SWLS low → network-rebuild precedes life-evaluation work.
+
+    T3 posture — NO item probes suicidality.  Item 10 ("special
+    person in my life who cares about my feelings") is an attachment-
+    adequacy probe, NOT a self-harm or ideation probe.  Active-risk
+    screening stays on C-SSRS / PHQ-9 item 9.
+
+    Envelope: banded+total + subscales (no scaled_score,
+    positive_screen, cutoff_used, triggering_items).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ---------------------------------------------------
+
+    def test_max_support_extremum_eighty_four(
+        self, client: TestClient
+    ) -> None:
+        """Zimet 1988 top-of-range: "Very Strongly Agree" on all 12
+        items.  Raw [7]*12.  No reverse keying → total = 84, Canty-
+        Mitchell 2000 "high" band (mean 7.0)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [7] * 12},
+            headers=self._headers("mspss-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "mspss"
+        assert body["total"] == 84
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_min_support_extremum_twelve(
+        self, client: TestClient
+    ) -> None:
+        """Zimet 1988 bottom-of-range: "Very Strongly Disagree" on all
+        12 items.  Raw [1]*12 = total 12, Canty-Mitchell 2000 "low"
+        floor (mean 1.0) — Holt-Lunstad 2010 diffuse-deficit."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [1] * 12},
+            headers=self._headers("mspss-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "continuous"
+
+    def test_canty_mitchell_midpoint_forty_eight(
+        self, client: TestClient
+    ) -> None:
+        """Canty-Mitchell 2000 moderate-band center: all items = 4
+        (mean 4.0).  Total = 48.  Envelope stays continuous per
+        CLAUDE.md non-negotiable #9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [4] * 12},
+            headers=self._headers("mspss-mid"),
+        )
+        body = response.json()
+        assert body["total"] == 48
+        assert body["severity"] == "continuous"
+
+    def test_subscales_populated_with_three_zimet_keys(
+        self, client: TestClient
+    ) -> None:
+        """Second multi-subscale instrument (after PANAS-10) — the
+        ``subscales`` dict carries three keys matching MSPSS_SUBSCALES
+        constants so clinician-UI renderers key off one source of truth."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [4] * 12},
+            headers=self._headers("mspss-subscales-keys"),
+        )
+        body = response.json()
+        subscales = body["subscales"]
+        assert set(subscales.keys()) == {
+            "significant_other",
+            "family",
+            "friends",
+        }
+
+    def test_subscales_are_integer_sums_not_means(
+        self, client: TestClient
+    ) -> None:
+        """Envelope stores integer SUMS (4-28 per subscale), not the
+        float mean Canty-Mitchell 2000 used.  The renderer divides by
+        4 to recover the mean.  All items = 5 → each subscale = 20
+        (four items × 5)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [5] * 12},
+            headers=self._headers("mspss-subscales-int"),
+        )
+        body = response.json()
+        for v in body["subscales"].values():
+            assert isinstance(v, int)
+            assert v == 20
+
+    # -- Subscale partitioning per Zimet 1988 Table 1 ---------------------
+
+    def test_significant_other_only_elevated_profile(
+        self, client: TestClient
+    ) -> None:
+        """SO items (1, 2, 5, 10) = 7; Family / Friends items = 1.
+        Partner-dependent profile — relapse risk in partner-rupture."""
+        items = [1] * 12
+        for pos in (1, 2, 5, 10):
+            items[pos - 1] = 7
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-so-only"),
+        )
+        body = response.json()
+        assert body["subscales"]["significant_other"] == 28
+        assert body["subscales"]["family"] == 4
+        assert body["subscales"]["friends"] == 4
+        assert body["total"] == 36
+
+    def test_family_only_elevated_profile(
+        self, client: TestClient
+    ) -> None:
+        """Family items (3, 4, 8, 11) = 7; SO / Friends items = 1.
+        Early-recovery withdrawal pattern — prosocial peer-network
+        reconstruction indication."""
+        items = [1] * 12
+        for pos in (3, 4, 8, 11):
+            items[pos - 1] = 7
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-fam-only"),
+        )
+        body = response.json()
+        assert body["subscales"]["significant_other"] == 4
+        assert body["subscales"]["family"] == 28
+        assert body["subscales"]["friends"] == 4
+
+    def test_friends_only_elevated_profile(
+        self, client: TestClient
+    ) -> None:
+        """Friends items (6, 7, 9, 12) = 7; SO / Family items = 1.
+        Peer-only support — assess peer substance-use norms."""
+        items = [1] * 12
+        for pos in (6, 7, 9, 12):
+            items[pos - 1] = 7
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-fr-only"),
+        )
+        body = response.json()
+        assert body["subscales"]["significant_other"] == 4
+        assert body["subscales"]["family"] == 4
+        assert body["subscales"]["friends"] == 28
+
+    def test_subscale_partition_sum_equals_total(
+        self, client: TestClient
+    ) -> None:
+        """Invariant: subscale sums always add up to the total.  If
+        the partition is ever broken, this test fails."""
+        items = [1, 7, 1, 7, 1, 7, 1, 7, 1, 7, 1, 7]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-partition-sum"),
+        )
+        body = response.json()
+        subs = body["subscales"]
+        assert (
+            subs["significant_other"] + subs["family"] + subs["friends"]
+            == body["total"]
+        )
+
+    def test_interleaved_order_matters_for_subscales(
+        self, client: TestClient
+    ) -> None:
+        """Reversing the item array preserves the total but changes
+        subscale sums — the wire layer MUST preserve Zimet 1988
+        administration order."""
+        aligned = [1, 1, 7, 7, 1, 7, 7, 7, 7, 1, 7, 7]
+        reversed_ = list(reversed(aligned))
+
+        r1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": aligned},
+            headers=self._headers("mspss-aligned"),
+        ).json()
+        r2 = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": reversed_},
+            headers=self._headers("mspss-reversed"),
+        ).json()
+        assert r1["total"] == r2["total"]
+        assert r1["subscales"] != r2["subscales"]
+
+    # -- Acquiescence signature -------------------------------------------
+
+    @pytest.mark.parametrize(
+        "v,expected_total",
+        [(1, 12), (2, 24), (3, 36), (4, 48), (5, 60), (6, 72), (7, 84)],
+    )
+    def test_all_constant_total_is_linear_twelve_v(
+        self, client: TestClient, v: int, expected_total: int
+    ) -> None:
+        """No reverse-keying: all-``v`` total = 12v for v ∈ {1..7}.
+        Endpoint-only responders expose the full 72-point range (100%
+        of 12-84)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [v] * 12},
+            headers=self._headers(f"mspss-acq-{v}"),
+        )
+        body = response.json()
+        assert body["total"] == expected_total
+
+    def test_endpoint_gap_is_seventy_two(
+        self, client: TestClient
+    ) -> None:
+        """All-7 minus all-1 = 72, full 12-84 range (100% endpoint
+        exposure — matches SWLS / UCLA-3 / CIUS proportion)."""
+        r_max = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [7] * 12},
+            headers=self._headers("mspss-gap-max"),
+        ).json()
+        r_min = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [1] * 12},
+            headers=self._headers("mspss-gap-min"),
+        ).json()
+        assert r_max["total"] - r_min["total"] == 72
+
+    # -- Envelope fields --------------------------------------------------
+
+    def test_subscales_populated(
+        self, client: TestClient
+    ) -> None:
+        """MSPSS IS a multi-subscale instrument — ``subscales`` MUST
+        be populated (not None)."""
+        response = _post(client, instrument="mspss", items=[4] * 12)
+        body = response.json()
+        assert body["subscales"] is not None
+
+    def test_cutoff_used_absent(
+        self, client: TestClient
+    ) -> None:
+        """MSPSS has no cutoff gate."""
+        response = _post(client, instrument="mspss", items=[4] * 12)
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_positive_screen_absent(
+        self, client: TestClient
+    ) -> None:
+        """MSPSS is not a screen."""
+        response = _post(client, instrument="mspss", items=[4] * 12)
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_triggering_items_absent(
+        self, client: TestClient
+    ) -> None:
+        """MSPSS is not an item-firing screen."""
+        response = _post(client, instrument="mspss", items=[4] * 12)
+        body = response.json()
+        assert body.get("triggering_items") in (None, [])
+
+    def test_index_absent(
+        self, client: TestClient
+    ) -> None:
+        """``index`` is WHO-5-only."""
+        response = _post(client, instrument="mspss", items=[4] * 12)
+        body = response.json()
+        assert body.get("index") is None
+
+    # -- Severity continuous across Canty-Mitchell bands ------------------
+
+    @pytest.mark.parametrize(
+        "v",
+        [1, 2, 3, 4, 5, 6, 7],
+    )
+    def test_severity_always_continuous(
+        self, client: TestClient, v: int
+    ) -> None:
+        """Envelope is continuous regardless of Canty-Mitchell band —
+        bands stay at the clinician-UI renderer layer per CLAUDE.md
+        non-negotiable #9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [v] * 12},
+            headers=self._headers(f"mspss-cont-{v}"),
+        )
+        body = response.json()
+        assert body["severity"] == "continuous"
+
+    # -- T3 posture -------------------------------------------------------
+
+    def test_requires_t3_always_false_at_max(
+        self, client: TestClient
+    ) -> None:
+        """No MSPSS item probes suicidality.  Even at max support
+        score (all 7), requires_t3 is False."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [7] * 12},
+            headers=self._headers("mspss-t3-max"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    def test_requires_t3_always_false_at_min(
+        self, client: TestClient
+    ) -> None:
+        """Even at diffuse-deficit floor (all 1), MSPSS does not set
+        T3.  Acute-risk escalation stays on C-SSRS / PHQ-9 item 9.
+        Clinician-UI may prompt C-SSRS follow-up per Calati 2019
+        but the MSPSS assessment itself MUST NOT set T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [1] * 12},
+            headers=self._headers("mspss-t3-min"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    def test_requires_t3_false_on_item10_counterfactual(
+        self, client: TestClient
+    ) -> None:
+        """Item 10 ("special person who cares about my feelings")
+        low is an attachment-adequacy signal, NOT an ideation
+        signal.  Isolating item 10 to the floor still returns
+        requires_t3 False."""
+        items = [4] * 12
+        items[9] = 1  # item 10 at floor
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-t3-item10"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    # -- No reverse-keying pass-through -----------------------------------
+
+    @pytest.mark.parametrize("pos", [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])
+    def test_no_reverse_keying_raw_item_adds_directly(
+        self, client: TestClient, pos: int
+    ) -> None:
+        """No reverse-keying: raising any position from 1 to 7
+        increases the total by 6.  Uniform direction across all 12
+        items."""
+        base = [1] * 12
+        bumped = list(base)
+        bumped[pos - 1] = 7
+        r_base = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": base},
+            headers=self._headers(f"mspss-rev-base-{pos}"),
+        ).json()
+        r_bumped = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": bumped},
+            headers=self._headers(f"mspss-rev-bumped-{pos}"),
+        ).json()
+        assert r_bumped["total"] - r_base["total"] == 6
+
+    # -- Item count traps -------------------------------------------------
+
+    @pytest.mark.parametrize("count", [0, 1, 5, 10, 11, 13, 14, 20, 100])
+    def test_wrong_item_count_returns_422(
+        self, client: TestClient, count: int
+    ) -> None:
+        """MSPSS requires exactly 12 items.  Mismatch → 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [4] * count},
+            headers=self._headers(f"mspss-count-{count}"),
+        )
+        assert response.status_code == 422
+
+    # -- Item value traps -------------------------------------------------
+
+    @pytest.mark.parametrize("bad", [0, 8, -1, 99])
+    def test_out_of_range_item_returns_422(
+        self, client: TestClient, bad: int
+    ) -> None:
+        """MSPSS range is 1-7.  Out-of-range → 422."""
+        items = [bad] + [4] * 11
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers(f"mspss-range-{bad}"),
+        )
+        assert response.status_code == 422
+
+    # -- Item type traps --------------------------------------------------
+
+    def test_numeric_string_coerces_via_pydantic_lax_mode(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic ``list[int]`` uses lax-mode coercion at the wire
+        layer — numeric-string ``"4"`` becomes int 4 BEFORE the scorer
+        runs.  This is the same round-trip mechanism that makes JSON
+        ``true`` → int 1.  Documents the actual Pydantic behavior:
+        scorer-level type checks fire for DIRECT Python callers; the
+        HTTP wire layer's lax coercion decides HTTP behavior
+        independently."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": ["4"] + [4] * 11},
+            headers=self._headers("mspss-type-numstr"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["total"] == 48  # all coerced to int 4
+
+    def test_non_numeric_string_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """Non-numeric strings cannot coerce to int even in lax mode;
+        Pydantic returns 422 at the wire layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": ["hello"] + [4] * 11},
+            headers=self._headers("mspss-type-badstr"),
+        )
+        assert response.status_code == 422
+
+    def test_float_item_returns_422(
+        self, client: TestClient
+    ) -> None:
+        """Non-integer floats are rejected at the Pydantic wire layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [4.5] + [4] * 11},
+            headers=self._headers("mspss-type-float"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic bool coercion behavior ----------------------------------
+
+    def test_true_coerces_to_one_and_is_accepted(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic ``list[int]`` coerces JSON ``true`` to int 1 at the
+        wire layer, BEFORE the scorer's bool-check runs.  1 is a valid
+        MSPSS response.  Documents defence-in-depth: scorer-level bool
+        rejection protects direct Python callers; wire layer decides
+        HTTP behavior independently."""
+        items = [True] + [4] * 11  # type: ignore[list-item]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-bool-true"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        # total = 1 (from coerced True) + 4*11 = 45
+        assert body["total"] == 45
+
+    def test_false_coerces_to_zero_and_is_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``false`` to int 0 at the wire layer.
+        MSPSS range is 1-7, so 0 fails the range check and returns 422
+        — the INVERSE of CIUS, where 0 is valid and the scorer's bool
+        check is load-bearing."""
+        items = [False] + [4] * 11  # type: ignore[list-item]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-bool-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes -----------------------------------------------
+
+    def test_vignette_diffuse_deficit_highest_risk(
+        self, client: TestClient
+    ) -> None:
+        """Holt-Lunstad 2010 isolation-mortality priority profile: all
+        three subscales at the floor.  Raw [1]*12.  Total = 12.  The
+        clinician-UI layer flags for supported-housing / IOP scaffold
+        per Cohen-Wills 1985 buffering-absence logic."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [1] * 12},
+            headers=self._headers("mspss-vig-diffuse"),
+        )
+        body = response.json()
+        assert body["total"] == 12
+        for v in body["subscales"].values():
+            assert v == 4  # subscale floor
+
+    def test_vignette_distributed_support_protective(
+        self, client: TestClient
+    ) -> None:
+        """Protective profile — all three subscales elevated.  Raw
+        [6]*12 (mean 6.0, Canty-Mitchell "high" band).  Total = 72."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [6] * 12},
+            headers=self._headers("mspss-vig-distributed"),
+        )
+        body = response.json()
+        assert body["total"] == 72
+        for v in body["subscales"].values():
+            assert v == 24
+
+    def test_vignette_partner_dependent_relapse_risk(
+        self, client: TestClient
+    ) -> None:
+        """Partner-dependent profile — SO elevated, Family / Friends
+        low.  Raw items: SO (1,2,5,10) = 7; others = 2.  Relapse risk
+        concentrates in partner-rupture episodes."""
+        items = [2] * 12
+        for pos in (1, 2, 5, 10):
+            items[pos - 1] = 7
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": items},
+            headers=self._headers("mspss-vig-partner"),
+        )
+        body = response.json()
+        assert body["subscales"]["significant_other"] == 28
+        assert body["subscales"]["family"] == 8
+        assert body["subscales"]["friends"] == 8
+
+    def test_vignette_mspss_low_pss10_high_pairing_mspss_side(
+        self, client: TestClient
+    ) -> None:
+        """Cohen-Wills 1985 "unsupported-under-stress" pairing: MSPSS
+        side.  Raw [2]*12 (mean 2.0, Canty-Mitchell "low" band at the
+        clinician-UI layer).  Envelope stays continuous."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [2] * 12},
+            headers=self._headers("mspss-vig-stress"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+        assert body["severity"] == "continuous"
+
+    def test_vignette_mspss_low_swls_low_pairing_mspss_side(
+        self, client: TestClient
+    ) -> None:
+        """Moos 2005 delayed-relapse + network-vulnerability pairing:
+        MSPSS side.  Total < 36 (below Canty-Mitchell moderate
+        floor).  Network-rebuild precedes life-evaluation work."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [2, 3, 2, 2, 2, 2, 3, 2, 2, 2, 3, 2]},
+            headers=self._headers("mspss-vig-swls-low"),
+        )
+        body = response.json()
+        assert body["total"] < 36
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_calati_isolation_suicide_risk_context(
+        self, client: TestClient
+    ) -> None:
+        """Calati 2019 convergent isolation + suicide-risk context:
+        MSPSS low documents the perceived-support half.  At the
+        clinician-UI layer, pairs with UCLA-3 high and PHQ-9 high to
+        prompt C-SSRS follow-up.  The MSPSS assessment itself MUST
+        NOT set T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "mspss", "items": [1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 2, 1]},
+            headers=self._headers("mspss-vig-calati"),
+        )
+        body = response.json()
+        assert body["total"] <= 20  # deep low-support range
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
