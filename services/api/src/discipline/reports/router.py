@@ -25,7 +25,10 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from discipline.psychometric.repository import get_assessment_repository
+from discipline.psychometric.repository import (
+    AssessmentRecord,
+    get_assessment_repository,
+)
 from discipline.shared.http import mark_phi_boundary
 from discipline.shared.logging import LogStream, get_stream_logger
 
@@ -34,7 +37,7 @@ from .enterprise import (
     OrgEngagementSnapshot,
     build_org_engagement,
 )
-from .fhir_bundle import BundleType, assemble_bundle
+from .fhir_bundle import BundleType, assemble_bundle, assemble_bundle_from_resources
 from .fhir_observation import (
     CssrsObservationSpec,
     LOINC_CODES,
@@ -420,6 +423,61 @@ async def request_user_export(payload: UserExportRequest) -> dict[str, object]:
 _CSSRS_RISK_VALUES = frozenset({"none", "low", "moderate", "acute"})
 
 
+def _render_record_as_observation(
+    record: AssessmentRecord,
+) -> dict[str, object]:
+    """Map a stored :class:`AssessmentRecord` to a FHIR R4 Observation dict.
+
+    Dispatches by instrument:
+    - ``cssrs`` → :func:`render_cssrs_bundle` (categorical
+      ``valueCodeableConcept`` path with ``component`` entries per
+      triggering item).
+    - Every other supported instrument → :func:`render_bundle`
+      (numeric ``valueInteger`` path).
+
+    Pure function — no side effects, no I/O, no audit emission.  Raises
+    :class:`UnsupportedInstrumentError` (instrument has no pinned LOINC
+    code) or :class:`ValueError` (stored C-SSRS severity is outside the
+    known risk-level set).  Callers translate to HTTP 422 with a
+    ``phi.access.error`` audit emission as appropriate to their surface.
+
+    Shared by the single-Observation GET (Sprint 24) and the
+    patient-bundle GET (Sprint 27) so the C-SSRS-vs-numeric dispatch
+    cannot drift between the two surfaces.
+    """
+    patient_reference = f"Patient/{record.user_id}"
+    if record.instrument == "cssrs":
+        # C-SSRS record severity is a Literal risk level; assert
+        # defensively so a future record-shape change that stored
+        # a different string surfaces here with a clean 422 rather
+        # than a 500 from the frozen-dataclass validator.
+        if record.severity not in _CSSRS_RISK_VALUES:
+            raise ValueError(
+                f"stored C-SSRS severity {record.severity!r} is not a "
+                f"known risk level; expected one of {sorted(_CSSRS_RISK_VALUES)}"
+            )
+        cssrs_spec = CssrsObservationSpec(
+            patient_reference=patient_reference,
+            risk_level=record.severity,  # type: ignore[arg-type]
+            effective=record.created_at,
+            triggering_items=(
+                record.triggering_items
+                if record.triggering_items is not None
+                else ()
+            ),
+            requires_t3=record.requires_t3,
+        )
+        return render_cssrs_bundle(cssrs_spec)
+    obs_spec = ObservationSpec(
+        patient_reference=patient_reference,
+        instrument=record.instrument,
+        score=record.total,
+        effective=record.created_at,
+        safety_item_positive=record.requires_t3,
+    )
+    return render_bundle(obs_spec)
+
+
 @router.get(
     "/fhir/observations/{assessment_id}",
     status_code=200,
@@ -524,40 +582,8 @@ async def get_fhir_observation(
             },
         )
 
-    patient_reference = f"Patient/{record.user_id}"
-
     try:
-        if record.instrument == "cssrs":
-            # C-SSRS record severity is a Literal risk level; assert
-            # defensively so a future record-shape change that stored
-            # a different string surfaces here with a clean 422 rather
-            # than a 500 from the frozen-dataclass validator.
-            if record.severity not in _CSSRS_RISK_VALUES:
-                raise ValueError(
-                    f"stored C-SSRS severity {record.severity!r} is not a "
-                    f"known risk level; expected one of {sorted(_CSSRS_RISK_VALUES)}"
-                )
-            cssrs_spec = CssrsObservationSpec(
-                patient_reference=patient_reference,
-                risk_level=record.severity,  # type: ignore[arg-type]
-                effective=record.created_at,
-                triggering_items=(
-                    record.triggering_items
-                    if record.triggering_items is not None
-                    else ()
-                ),
-                requires_t3=record.requires_t3,
-            )
-            resource = render_cssrs_bundle(cssrs_spec)
-        else:
-            obs_spec = ObservationSpec(
-                patient_reference=patient_reference,
-                instrument=record.instrument,
-                score=record.total,
-                effective=record.created_at,
-                safety_item_positive=record.requires_t3,
-            )
-            resource = render_bundle(obs_spec)
+        resource = _render_record_as_observation(record)
     except UnsupportedInstrumentError as exc:
         _audit.warning(
             "phi.access.error",
@@ -605,6 +631,215 @@ async def get_fhir_observation(
         correlation_id=x_correlation_id,
     )
     return resource
+
+
+@router.get(
+    "/fhir/patients/{user_id}/bundle",
+    status_code=200,
+    summary="Clinician FHIR R4 Bundle of a patient's psychometric history (PHI surface)",
+    dependencies=[Depends(mark_phi_boundary)],
+)
+async def get_fhir_patient_bundle(
+    user_id: str,
+    instrument: str | None = None,
+    limit: int = 100,
+    x_clinician_id: str = Header(..., alias="X-Clinician-Id"),
+    x_correlation_id: str | None = Header(
+        default=None, alias="X-Correlation-Id"
+    ),
+) -> dict[str, object]:
+    """Render every stored assessment for a patient as a FHIR R4 Bundle.
+
+    Why this endpoint exists:
+    The POST ``/reports/fhir/clinician-bundle`` surface accepts a
+    pre-fetched list of Observations and assembles them — useful when
+    the clinician's UI has already paginated and filtered the chart.
+    The GET ``/reports/fhir/observations/{assessment_id}`` surface
+    fetches a single stored assessment.  This endpoint is the missing
+    middle: a clinician fetches the patient's full chart in one
+    request, with the server doing the repository read + per-record
+    rendering + Bundle assembly.  Mirrors the EHR pattern of "give me
+    everything you have on this patient".
+
+    Authorization (temporary shape, mirrors single-Observation GET):
+    - ``X-Clinician-Id`` header carries the clinician identity; in
+      production this resolves from a Clerk session JWT inside a
+      middleware whose role claim includes ``"clinician"``.  The
+      header form is the Sprint-era stub for that integration.
+    - A missing or empty ``X-Clinician-Id`` yields a 401.
+
+    Filtering:
+    - ``instrument`` (query, optional) — restrict to one instrument
+      key (canonical lowercase, e.g. ``phq9``).  Unknown instruments
+      and instruments the patient hasn't been assessed on both yield
+      an empty Bundle, not a 404 — "no readings of this kind" is a
+      successful query, just one with zero results.
+    - ``limit`` (query, default 100, hard cap 1000) — caps the number
+      of records read from the repository.  The 1000 ceiling matches
+      the trajectory endpoint's analytics-friendly window; clinicians
+      reading a multi-year chart should not need pagination, but a
+      cursor-based pagination story will land alongside the Postgres
+      repository.
+
+    PHI surface per Rule #11:
+    - Sets ``X-Phi-Boundary: 1`` via the ``mark_phi_boundary``
+      dependency.
+    - Emits ``phi.access.attempt`` (with ``instrument_filter`` echoed)
+      before the repository read, then ``phi.access.ok`` /
+      ``phi.access.error`` after assembly.  HMAC-Merkle chained,
+      6-year retention.
+
+    Bundle shape:
+    - ``resourceType`` = ``"Bundle"``, ``type`` = ``"collection"``.
+    - ``identifier.value`` = ``X-Correlation-Id`` if supplied
+      (prefixed with ``urn:uuid:`` if the caller didn't already), else
+      a fresh UUID.  Mirrors the POST clinician-bundle correlation-id
+      contract so a caller using both surfaces sees the same trace
+      stitching behavior.
+    - ``entry`` = oldest-first.  Clinician chart-read convention
+      reads top-to-bottom as a timeline; the server sort relieves the
+      client of ordering responsibility.
+    - Empty patient history → ``entry=[]`` with HTTP 200, NOT 404.
+      A patient who has been onboarded but never assessed is a valid
+      state the clinician UI must render ("no readings yet").
+
+    Errors:
+    - 401 — missing / empty ``X-Clinician-Id``.
+    - 400 — ``limit`` outside (0, 1000].
+    - 422 — a stored record's instrument has no pinned LOINC code
+      (future scorer not yet wired through to ``LOINC_CODES``), or a
+      stored C-SSRS severity is outside the known risk-level set.
+      Both fire ``phi.access.error`` audit events.
+    - 404 — only when ``user_id`` itself is empty (path-param is
+      always present per FastAPI routing, but a deliberate empty
+      string check defends against future client-side misencoding).
+    """
+    if not x_clinician_id:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth.missing_clinician_id",
+                "message": "X-Clinician-Id header required.",
+            },
+        )
+    if not user_id:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "not_found",
+                "message": "user_id must be non-empty",
+            },
+        )
+    if limit <= 0 or limit > 1000:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "validation.limit",
+                "message": (
+                    f"limit must be between 1 and 1000, got {limit}"
+                ),
+            },
+        )
+
+    # Normalize the optional instrument filter — callers don't need to
+    # know the canonical casing.  Empty string after strip → no filter
+    # (treats ``?instrument=`` the same as omitting the parameter).
+    instrument_filter: str | None = None
+    if instrument is not None:
+        normalized = instrument.strip().lower()
+        instrument_filter = normalized or None
+
+    # Pre-emit: audit the access intent BEFORE the repository read so
+    # an attacker enumerating user ids appears in the trail even if the
+    # subsequent fetch yields nothing.
+    _audit.info(
+        "phi.access.attempt",
+        actor_id=x_clinician_id,
+        actor_role="clinician",
+        subject_id=user_id,
+        resource="fhir.bundle.history",
+        instrument_filter=instrument_filter,
+        correlation_id=x_correlation_id,
+    )
+
+    repo = get_assessment_repository()
+    records = repo.history_for(user_id, limit=limit)
+    if instrument_filter is not None:
+        records = [r for r in records if r.instrument == instrument_filter]
+    # Repository returns newest-first; clinician chart reads oldest-first
+    # so the timeline renders top-to-bottom as it occurred.
+    records.sort(key=lambda r: r.created_at)
+
+    resources: list[dict[str, object]] = []
+    for record in records:
+        try:
+            resources.append(_render_record_as_observation(record))
+        except UnsupportedInstrumentError as exc:
+            _audit.warning(
+                "phi.access.error",
+                actor_id=x_clinician_id,
+                subject_id=user_id,
+                resource="fhir.bundle.history",
+                resource_id=record.assessment_id,
+                error="unsupported_instrument",
+                detail=str(exc),
+                correlation_id=x_correlation_id,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "validation.unsupported_instrument",
+                    "message": str(exc),
+                    "supported_instruments": sorted(LOINC_CODES.keys()),
+                },
+            ) from exc
+        except ValueError as exc:
+            _audit.warning(
+                "phi.access.error",
+                actor_id=x_clinician_id,
+                subject_id=user_id,
+                resource="fhir.bundle.history",
+                resource_id=record.assessment_id,
+                error="validation_error",
+                detail=str(exc),
+                correlation_id=x_correlation_id,
+            )
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "validation.invalid_payload",
+                    "message": str(exc),
+                },
+            ) from exc
+
+    # ``allow_empty=True``: a patient with no readings is a valid clinical
+    # state the UI must render, not a 404.  See module docstring + the
+    # endpoint docstring above for the design rationale.
+    bundle = assemble_bundle_from_resources(
+        resources,
+        identifier=x_correlation_id,
+        bundle_type="collection",
+        allow_empty=True,
+    )
+
+    bundle_identifier = bundle.get("identifier", {})
+    bundle_id_value = (
+        bundle_identifier.get("value")
+        if isinstance(bundle_identifier, dict)
+        else None
+    )
+    _audit.info(
+        "phi.access.ok",
+        actor_id=x_clinician_id,
+        actor_role="clinician",
+        subject_id=user_id,
+        resource="fhir.bundle.history",
+        bundle_identifier=bundle_id_value,
+        observation_count=len(resources),
+        instrument_filter=instrument_filter,
+        correlation_id=x_correlation_id,
+    )
+    return bundle
 
 
 @router.post(

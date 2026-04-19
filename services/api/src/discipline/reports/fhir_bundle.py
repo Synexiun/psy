@@ -65,41 +65,48 @@ def _format_iso8601_z(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def assemble_bundle(
-    specs: Sequence[ObservationSpec],
+def assemble_bundle_from_resources(
+    resources: Sequence[dict[str, object]],
     *,
     identifier: str | None = None,
     timestamp: datetime | None = None,
     bundle_type: BundleType = "collection",
+    allow_empty: bool = False,
 ) -> dict[str, object]:
-    """Render a FHIR R4 Bundle containing one Observation per spec.
+    """Wrap pre-rendered FHIR resources in a Bundle envelope.
 
-    Raises ``ValueError`` on an empty spec list — an empty Bundle is almost
-    always a caller bug (you meant to export *something*) and silently
-    shipping ``entry=[]`` would mask the underlying issue.
+    Two cases this exists for that :func:`assemble_bundle` doesn't cover:
 
-    ``identifier`` defaults to a newly-minted UUID; callers who correlate
-    bundles with audit records should pass their own UUID through.
-    ``timestamp`` defaults to :meth:`datetime.now(tz=utc)`; tests inject a
-    fixed value for deterministic assertions.
+    1. **Mixed renderers** — the clinician chart-read endpoint streams
+       both ``Observation`` (numeric, valueInteger) and C-SSRS
+       (categorical, valueCodeableConcept) resources into one Bundle.
+       :func:`assemble_bundle` only knows how to render
+       :class:`ObservationSpec`; this function takes any rendered dict.
+    2. **Clinically-valid empty case** — a clinician viewing a patient
+       with no recorded readings should see ``entry=[]``, not a 422.
+       :func:`assemble_bundle` rejects empty input because for the POST
+       clinician-bundle surface an empty list is a caller bug.  Here
+       the empty case is opt-in via ``allow_empty=True``.
+
+    Identifier handling matches :func:`assemble_bundle`: a caller-supplied
+    string round-trips, with ``urn:uuid:`` prefix normalization.
     """
-    if not specs:
+    if not resources and not allow_empty:
         raise ValueError(
-            "cannot assemble an empty Bundle; pass at least one ObservationSpec"
+            "cannot assemble an empty Bundle; pass at least one resource "
+            "or set allow_empty=True"
         )
 
     effective_id = identifier or str(uuid.uuid4())
     effective_ts = timestamp or datetime.now(tz=timezone.utc)
 
-    entries: list[dict[str, object]] = []
-    for spec in specs:
-        observation = render_bundle(spec)
-        entries.append(
-            {
-                "fullUrl": _new_urn_uuid(),
-                "resource": observation,
-            }
-        )
+    entries: list[dict[str, object]] = [
+        {
+            "fullUrl": _new_urn_uuid(),
+            "resource": resource,
+        }
+        for resource in resources
+    ]
 
     return {
         "resourceType": "Bundle",
@@ -115,4 +122,45 @@ def assemble_bundle(
     }
 
 
-__all__ = ["BundleMeta", "BundleType", "assemble_bundle"]
+def assemble_bundle(
+    specs: Sequence[ObservationSpec],
+    *,
+    identifier: str | None = None,
+    timestamp: datetime | None = None,
+    bundle_type: BundleType = "collection",
+) -> dict[str, object]:
+    """Render a FHIR R4 Bundle containing one Observation per spec.
+
+    Raises ``ValueError`` on an empty spec list — an empty Bundle is almost
+    always a caller bug (you meant to export *something*) and silently
+    shipping ``entry=[]`` would mask the underlying issue.  When the empty
+    case is clinically valid (e.g., chart-read of a patient with no
+    readings yet), use :func:`assemble_bundle_from_resources` with
+    ``allow_empty=True`` instead.
+
+    ``identifier`` defaults to a newly-minted UUID; callers who correlate
+    bundles with audit records should pass their own UUID through.
+    ``timestamp`` defaults to :meth:`datetime.now(tz=utc)`; tests inject a
+    fixed value for deterministic assertions.
+    """
+    if not specs:
+        raise ValueError(
+            "cannot assemble an empty Bundle; pass at least one ObservationSpec"
+        )
+
+    resources = [render_bundle(spec) for spec in specs]
+    return assemble_bundle_from_resources(
+        resources,
+        identifier=identifier,
+        timestamp=timestamp,
+        bundle_type=bundle_type,
+        allow_empty=False,
+    )
+
+
+__all__ = [
+    "BundleMeta",
+    "BundleType",
+    "assemble_bundle",
+    "assemble_bundle_from_resources",
+]
