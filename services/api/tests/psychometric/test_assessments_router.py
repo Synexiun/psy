@@ -23028,3 +23028,1014 @@ class TestIesrRouting:
             "avoidance": 32,
             "hyperarousal": 24,
         }
+
+
+class TestHadsRouting:
+    """End-to-end routing tests for the HADS dispatcher branch.
+
+    Zigmond & Snaith 1983 Hospital Anxiety and Depression Scale —
+    14 items, 0–3 Likert, two-subscale structure (Anxiety 7 items /
+    Depression 7 items alternating), 6 reverse-keyed items.  Designed
+    for medical (non-psychiatric) settings: every somatic symptom is
+    intentionally excluded so the instrument isolates the psychological
+    / cognitive component of anxiety and depression in patients with
+    chronic medical illness (oncology / cardiology / post-surgical /
+    chronic-pain) where PHQ-9 somatic item load falsely inflates
+    depression scores.  Validated by Bjelland 2002 (systematic review,
+    747 studies) and Herrmann 1997 (criterion-validity against
+    structured clinical interview, ROC AUC ≈ 0.80 per subscale).
+
+    Fourth multi-subscale instrument (after PANAS-10 / MSPSS / IES-R)
+    to populate the ``subscales`` envelope slot.
+
+    Subscale partitioning (Zigmond & Snaith 1983 Table 1 — odd-even
+    alternating design for acquiescence control):
+
+        Anxiety     (7 items): 1, 3, 5, 7, 9, 11, 13  (odd)
+        Depression  (7 items): 2, 4, 6, 8, 10, 12, 14 (even)
+
+    Reverse-keyed positions (6 items — per Zigmond & Snaith 1983
+    acquiescence-control design, roughly half the items read
+    distress-NEGATIVE ("I still enjoy...") so higher raw = LESS
+    distress; these items must be flipped before summation):
+
+        Reverse: 2, 4, 6, 7, 12, 14
+
+    Within the reverse set: position 7 is anxiety-subscale
+    (1 of 7 anxiety items); positions 2, 4, 6, 12, 14 are
+    depression-subscale (5 of 7 depression items).  Per-position:
+    ``flipped = 3 - raw``.  Items field stores RAW values (audit
+    invariance per CLAUDE.md Rule #6).
+
+    **HIGHER = MORE distress** after reverse-keying — uniform with
+    PHQ-9 / GAD-7 / CORE-10; opposite of WHO-5 / MSPSS / SWLS / GSE.
+
+    Snaith 2003 / Zigmond & Snaith 1983 severity bands (APPLIED PER
+    SUBSCALE):
+
+        0–7   normal
+        8–10  mild
+        11–14 moderate
+        15–21 severe
+
+    Bjelland 2002 clinical cutoff: ≥ 11 per subscale (pooled ROC
+    optimal cutoff; sensitivity 0.80 / specificity 0.80 against SCID
+    major depression / generalized anxiety diagnoses).
+    ``positive_screen`` flags either-subscale ≥ 11;
+    ``cutoff_used`` surfaces 11.
+
+    Overall ``severity`` field = WORST-of-two-subscale-bands.  A patient
+    severe on anxiety but normal on depression gets severity=severe —
+    the clinician's primary-triage number.  Per-subscale detail is
+    retained in ``subscales``.
+
+    T3 posture — NO item probes suicidality.  Zigmond & Snaith 1983
+    deliberately excluded the "thoughts of ending life" item so the
+    instrument could be used by non-psychiatrist medical staff in
+    oncology / cardiology / chronic-pain clinics without the hand-off
+    infrastructure an active-risk item demands.  A severe HADS-D in a
+    HADS-using clinic triggers a C-SSRS follow-up at the clinician-UI
+    layer, NOT a scorer-layer T3 flag.  Same renderer-versus-scorer
+    boundary used for IES-R / MSPSS / SWLS / GSE.
+
+    Construct placement — complement to PHQ-9 (DSM-criterion depression
+    with somatic items; best for primary care) and GAD-7 (generalized
+    anxiety severity).  HADS alongside PHQ-9 / PHQ-15 gives the
+    Barsky 2005 three-way decomposition of medical-setting distress:
+    depression / anxiety-mood (HADS) vs somatization (PHQ-15) vs
+    DSM-criterion mood (PHQ-9).
+
+    Envelope: total + severity(worst-of-two-bands) + positive_screen
+    (either ≥ 11) + cutoff_used(11) + subscales (anxiety / depression);
+    no scaled_score, no index, no triggering_items, requires_t3
+    always False.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    @staticmethod
+    def _items_for(anx_target: int, dep_target: int) -> list[int]:
+        """Build a 14-item RAW vector that, after reverse-keying
+        (flip positions 2, 4, 6, 7, 12, 14 via ``3 - raw``), sums to
+        ``anx_target`` on the anxiety subscale and ``dep_target`` on
+        the depression subscale.
+
+        Anxiety positions 1, 3, 5, 9, 11, 13 are forward (contribute
+        raw); position 7 is reverse (contributes 3 - raw).  Forward
+        anxiety max = 18, reverse anxiety max flipped = 3 → subscale
+        max 21.
+
+        Depression positions 8, 10 are forward (contribute raw);
+        positions 2, 4, 6, 12, 14 are reverse (contribute 3 - raw
+        each).  Forward depression max = 6, reverse depression max
+        flipped = 15 → subscale max 21.
+
+        Safe-baseline raw vector (both subscales = 0):
+            [0, 3, 0, 3, 0, 3, 3, 0, 0, 0, 0, 3, 0, 3]
+        (forward items default to 0 for raw 0; reverse items set to
+        raw 3 so they flip to contribution 0).
+        """
+        assert 0 <= anx_target <= 21, f"anx_target {anx_target} out of range"
+        assert 0 <= dep_target <= 21, f"dep_target {dep_target} out of range"
+        items = [0] * 14
+        # Initialize all reverse positions to raw 3 → flipped 0 → subscale 0 baseline
+        for pos in (2, 4, 6, 7, 12, 14):
+            items[pos - 1] = 3
+        # Anxiety: fill forward positions first (max 18); then reverse item 7
+        if anx_target <= 18:
+            remaining = anx_target
+            for pos in (1, 3, 5, 9, 11, 13):
+                c = min(3, remaining)
+                items[pos - 1] = c
+                remaining -= c
+                if remaining == 0:
+                    break
+        else:
+            for pos in (1, 3, 5, 9, 11, 13):
+                items[pos - 1] = 3
+            overage = anx_target - 18  # 1..3
+            items[7 - 1] = 3 - overage  # raw = 3 - overage → flipped = overage
+        # Depression: fill forward positions first (max 6); then reverse items
+        if dep_target <= 6:
+            remaining = dep_target
+            for pos in (8, 10):
+                c = min(3, remaining)
+                items[pos - 1] = c
+                remaining -= c
+                if remaining == 0:
+                    break
+        else:
+            for pos in (8, 10):
+                items[pos - 1] = 3
+            remaining = dep_target - 6  # 1..15
+            for pos in (2, 4, 6, 12, 14):
+                c = min(3, remaining)
+                items[pos - 1] = 3 - c  # raw = 3 - c → flipped = c
+                remaining -= c
+                if remaining == 0:
+                    break
+        return items
+
+    # -- Envelope shape ---------------------------------------------------
+
+    def test_all_zeros_total_eighteen(self, client: TestClient) -> None:
+        """All raw items = 0 → reverse positions (2, 4, 6, 7, 12, 14)
+        flip to 3 each (6 × 3 = 18 total contribution); forward
+        positions contribute 0.  Anxiety = forward 0 + flipped item 7
+        (raw 0 → flipped 3) = 3 (normal).  Depression = forward 0 +
+        flipped items 2, 4, 6, 12, 14 (5 × 3 = 15) = 15 (severe).
+        Severity = severe (worst-of-two).  Positive screen = True
+        (depression ≥ 11)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [0] * 14},
+            headers=self._headers("hads-all-zeros"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "hads"
+        assert body["total"] == 18
+        assert body["subscales"] == {"anxiety": 3, "depression": 15}
+        assert body["severity"] == "severe"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 11
+        assert body["requires_t3"] is False
+
+    def test_all_threes_total_twenty_four(self, client: TestClient) -> None:
+        """All raw items = 3 → reverse positions flip to 0 (6 × 0);
+        forward positions contribute 3 each (8 × 3 = 24).  Anxiety =
+        forward 18 (items 1,3,5,9,11,13 at 3) + flipped item 7 (raw 3
+        → flipped 0) = 18 (severe).  Depression = forward 6 (items
+        8, 10 at 3) + flipped items 2, 4, 6, 12, 14 all 0 = 6 (normal).
+        Severity = severe (worst-of-two).  Positive screen = True
+        (anxiety ≥ 11)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [3] * 14},
+            headers=self._headers("hads-all-threes"),
+        )
+        body = response.json()
+        assert body["total"] == 24
+        assert body["subscales"] == {"anxiety": 18, "depression": 6}
+        assert body["severity"] == "severe"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 11
+
+    def test_all_ones_total_twenty(self, client: TestClient) -> None:
+        """All raw items = 1 → reverse positions flip to 2; forward
+        positions contribute 1.  Anxiety = 6 × 1 + (3 - 1) = 8 (mild).
+        Depression = 2 × 1 + 5 × 2 = 12 (moderate).  Severity =
+        moderate (worst-of mild/moderate)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [1] * 14},
+            headers=self._headers("hads-all-ones"),
+        )
+        body = response.json()
+        assert body["total"] == 20
+        assert body["subscales"] == {"anxiety": 8, "depression": 12}
+        assert body["severity"] == "moderate"
+        assert body["positive_screen"] is True
+
+    def test_all_twos_total_twenty_two(self, client: TestClient) -> None:
+        """All raw items = 2 → reverse positions flip to 1; forward
+        positions contribute 2.  Anxiety = 6 × 2 + (3 - 2) = 13
+        (moderate).  Depression = 2 × 2 + 5 × 1 = 9 (mild).  Severity
+        = moderate."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [2] * 14},
+            headers=self._headers("hads-all-twos"),
+        )
+        body = response.json()
+        assert body["total"] == 22
+        assert body["subscales"] == {"anxiety": 13, "depression": 9}
+        assert body["severity"] == "moderate"
+        assert body["positive_screen"] is True
+
+    def test_baseline_zero_via_helper(self, client: TestClient) -> None:
+        """Helper-constructed "safe baseline": anxiety=0, depression=0.
+        Raw vector = [0, 3, 0, 3, 0, 3, 3, 0, 0, 0, 0, 3, 0, 3] — all
+        reverse items at raw 3 (flipped 0), forward items at 0.
+        Total = 0; severity = normal; positive_screen = False — the
+        medical-setting "no distress" baseline."""
+        items = self._items_for(0, 0)
+        assert items == [0, 3, 0, 3, 0, 3, 3, 0, 0, 0, 0, 3, 0, 3]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-baseline-zero"),
+        )
+        body = response.json()
+        assert body["total"] == 0
+        assert body["subscales"] == {"anxiety": 0, "depression": 0}
+        assert body["severity"] == "normal"
+        assert body["positive_screen"] is False
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        """``instrument_version`` is pinned — downstream FHIR export
+        and longitudinal trajectory computation require a stable
+        version identifier per Zigmond & Snaith 1983 reference."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [1] * 14},
+            headers=self._headers("hads-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "hads-1.0.0"
+
+    # -- Reverse-keying wire-layer arithmetic -----------------------------
+
+    def test_reverse_item_2_flips_zero_to_three(
+        self, client: TestClient
+    ) -> None:
+        """Item 2 (depression subscale, reverse-keyed).  Isolate:
+        raw item 2 = 0 → flipped 3 → depression +3.  All other items
+        at "safe" raw (forward 0, other reverse 3)."""
+        items = self._items_for(0, 0)
+        items[2 - 1] = 0  # change reverse item 2 from raw 3 → raw 0 → flipped +3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-rev2"),
+        )
+        body = response.json()
+        assert body["subscales"]["anxiety"] == 0
+        assert body["subscales"]["depression"] == 3
+
+    def test_reverse_item_7_is_anxiety_subscale(
+        self, client: TestClient
+    ) -> None:
+        """Item 7 is the SINGLE reverse-keyed anxiety item.  Set raw
+        item 7 = 0 → flipped 3 → anxiety +3 (not depression).
+        Load-bearing: a flaw mapping item 7 into depression would
+        break the Zigmond & Snaith 1983 subscale partition."""
+        items = self._items_for(0, 0)
+        items[7 - 1] = 0  # raw item 7: 3 → 0 → flipped contribution 0 → 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-rev7-anx"),
+        )
+        body = response.json()
+        assert body["subscales"]["anxiety"] == 3
+        assert body["subscales"]["depression"] == 0
+
+    def test_forward_item_8_is_depression_subscale(
+        self, client: TestClient
+    ) -> None:
+        """Item 8 is depression-subscale FORWARD (not reverse).  Raw
+        item 8 = 3 → contributes 3 directly to depression."""
+        items = self._items_for(0, 0)
+        items[8 - 1] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-fwd8-dep"),
+        )
+        body = response.json()
+        assert body["subscales"]["anxiety"] == 0
+        assert body["subscales"]["depression"] == 3
+
+    def test_forward_item_1_is_anxiety_subscale(
+        self, client: TestClient
+    ) -> None:
+        """Item 1 is anxiety-subscale FORWARD.  Raw item 1 = 3 →
+        contributes 3 directly to anxiety."""
+        items = self._items_for(0, 0)
+        items[1 - 1] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-fwd1-anx"),
+        )
+        body = response.json()
+        assert body["subscales"]["anxiety"] == 3
+        assert body["subscales"]["depression"] == 0
+
+    def test_items_field_preserves_raw_not_flipped(
+        self, client: TestClient
+    ) -> None:
+        """Audit-invariance — the submitted raw response set is what
+        the scorer / repository / FHIR-export layer must see.  A
+        future re-score must reconstruct the clinical total from the
+        RAW values plus the pinned reverse-keying rule.  Assert the
+        envelope's ``total`` matches our computed flipped sum, not
+        the raw sum (raw sum = 3 for this fixture; flipped sum =
+        anxiety 0 + depression 0 + flip of item 4 = 0 contribution ≠
+        raw)."""
+        items = self._items_for(0, 0)  # safe baseline
+        items[4 - 1] = 0  # reverse item 4: raw 3 → raw 0 → flipped +3 depression
+        raw_sum = sum(items)  # accounting for both forward zeros and reverse threes
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-raw-audit"),
+        )
+        body = response.json()
+        # The total is the post-reverse-key total (0 + 3 = 3), not the raw sum.
+        assert body["total"] == 3
+        assert body["total"] != raw_sum  # reverse-keyed totals differ from raw sums
+
+    # -- Subscale partitioning --------------------------------------------
+
+    def test_anxiety_and_depression_are_independent(
+        self, client: TestClient
+    ) -> None:
+        """A burst in anxiety leaves depression baseline-zero and
+        vice versa (separable subscales per Zigmond & Snaith 1983
+        odd-even partition)."""
+        # Anxiety burst, depression baseline
+        anx_burst = self._items_for(15, 0)
+        r1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": anx_burst},
+            headers=self._headers("hads-sep-anx"),
+        ).json()
+        assert r1["subscales"] == {"anxiety": 15, "depression": 0}
+        # Depression burst, anxiety baseline
+        dep_burst = self._items_for(0, 15)
+        r2 = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": dep_burst},
+            headers=self._headers("hads-sep-dep"),
+        ).json()
+        assert r2["subscales"] == {"anxiety": 0, "depression": 15}
+
+    @pytest.mark.parametrize(
+        "anx_target,dep_target",
+        [(0, 0), (5, 10), (11, 11), (18, 6), (21, 21), (7, 14), (15, 8)],
+    )
+    def test_helper_construction_round_trips(
+        self,
+        client: TestClient,
+        anx_target: int,
+        dep_target: int,
+    ) -> None:
+        """The helper produces a raw vector whose post-reverse-key
+        subscale totals equal the targets.  Verifies the construction
+        itself across representative values."""
+        items = self._items_for(anx_target, dep_target)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers(
+                f"hads-rt-{anx_target}-{dep_target}"
+            ),
+        )
+        body = response.json()
+        assert body["subscales"] == {
+            "anxiety": anx_target,
+            "depression": dep_target,
+        }
+        assert body["total"] == anx_target + dep_target
+
+    # -- Anxiety severity-band boundaries (Snaith 2003) -------------------
+
+    @pytest.mark.parametrize(
+        "anx_score,band",
+        [
+            (0, "normal"),
+            (7, "normal"),
+            (8, "mild"),
+            (10, "mild"),
+            (11, "moderate"),
+            (14, "moderate"),
+            (15, "severe"),
+            (21, "severe"),
+        ],
+    )
+    def test_anxiety_severity_band_boundaries(
+        self,
+        client: TestClient,
+        anx_score: int,
+        band: str,
+    ) -> None:
+        """Per-subscale severity bands (Snaith 2003 / Zigmond &
+        Snaith 1983): 0–7 normal, 8–10 mild, 11–14 moderate, 15–21
+        severe.  Isolate anxiety: depression at 0 (normal).  Overall
+        severity = anxiety band (depression normal is weakest)."""
+        items = self._items_for(anx_score, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers(f"hads-anx-band-{anx_score}"),
+        )
+        body = response.json()
+        assert body["subscales"] == {
+            "anxiety": anx_score,
+            "depression": 0,
+        }
+        assert body["severity"] == band
+
+    # -- Depression severity-band boundaries ------------------------------
+
+    @pytest.mark.parametrize(
+        "dep_score,band",
+        [
+            (0, "normal"),
+            (7, "normal"),
+            (8, "mild"),
+            (10, "mild"),
+            (11, "moderate"),
+            (14, "moderate"),
+            (15, "severe"),
+            (21, "severe"),
+        ],
+    )
+    def test_depression_severity_band_boundaries(
+        self,
+        client: TestClient,
+        dep_score: int,
+        band: str,
+    ) -> None:
+        """Per-subscale severity bands — depression side (Snaith 2003
+        identical bands to anxiety).  Isolate depression: anxiety at
+        0 (normal)."""
+        items = self._items_for(0, dep_score)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers(f"hads-dep-band-{dep_score}"),
+        )
+        body = response.json()
+        assert body["subscales"] == {
+            "anxiety": 0,
+            "depression": dep_score,
+        }
+        assert body["severity"] == band
+
+    # -- Overall severity = worst-of-two ---------------------------------
+
+    def test_severity_worst_of_anx_severe_dep_normal(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety severe (18), depression normal (5).  Overall
+        severity = severe.  A clinician's triage-level summary should
+        reflect the worst of the two dimensions — a patient severely
+        anxious but depression-normal still needs severe-level
+        resource allocation."""
+        items = self._items_for(18, 5)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-worst-anx-severe"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 18, "depression": 5}
+        assert response["severity"] == "severe"
+
+    def test_severity_worst_of_anx_normal_dep_severe(
+        self, client: TestClient
+    ) -> None:
+        """Inverted — depression severe (18), anxiety normal (5).
+        Overall severity = severe."""
+        items = self._items_for(5, 18)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-worst-dep-severe"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 5, "depression": 18}
+        assert response["severity"] == "severe"
+
+    def test_severity_mild_plus_moderate_is_moderate(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety mild (9), depression moderate (12).  Overall
+        severity = moderate."""
+        items = self._items_for(9, 12)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-worst-mild-mod"),
+        ).json()
+        assert response["severity"] == "moderate"
+
+    def test_severity_normal_plus_mild_is_mild(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety normal (5), depression mild (9).  Overall severity
+        = mild."""
+        items = self._items_for(5, 9)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-worst-norm-mild"),
+        ).json()
+        assert response["severity"] == "mild"
+
+    def test_severity_identical_bands_returns_that_band(
+        self, client: TestClient
+    ) -> None:
+        """Both subscales in the same band → overall = that band.
+        Moderate-both (anx 12, dep 13) → moderate."""
+        items = self._items_for(12, 13)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-worst-both-mod"),
+        ).json()
+        assert response["severity"] == "moderate"
+
+    # -- Positive-screen subscale independence ---------------------------
+
+    def test_positive_screen_only_anxiety_geq_eleven(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety ≥ 11, depression < 11 → positive_screen True
+        (Bjelland 2002 either-subscale rule)."""
+        items = self._items_for(11, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-pos-anx-only"),
+        ).json()
+        assert response["positive_screen"] is True
+        assert response["cutoff_used"] == 11
+
+    def test_positive_screen_only_depression_geq_eleven(
+        self, client: TestClient
+    ) -> None:
+        """Depression ≥ 11, anxiety < 11 → positive_screen True."""
+        items = self._items_for(10, 11)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-pos-dep-only"),
+        ).json()
+        assert response["positive_screen"] is True
+        assert response["cutoff_used"] == 11
+
+    def test_positive_screen_both_subscales_geq_eleven(
+        self, client: TestClient
+    ) -> None:
+        """Both ≥ 11 → positive_screen True."""
+        items = self._items_for(15, 15)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-pos-both"),
+        ).json()
+        assert response["positive_screen"] is True
+        assert response["severity"] == "severe"
+
+    def test_negative_screen_both_subscales_below_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """Both subscales < 11 → positive_screen False (no Bjelland
+        2002 cutoff met)."""
+        items = self._items_for(10, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-neg-both"),
+        ).json()
+        assert response["positive_screen"] is False
+        assert response["severity"] == "mild"
+
+    def test_positive_screen_exact_cutoff_anxiety_eleven(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety = 11 exactly → positive_screen True (Bjelland 2002
+        inclusive ≥ 11)."""
+        items = self._items_for(11, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-pos-exact"),
+        ).json()
+        assert response["positive_screen"] is True
+
+    def test_negative_screen_at_ten_not_positive(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety = 10, depression = 10 → positive_screen False.
+        Verifies the ≥ 11 boundary is inclusive at 11, exclusive at
+        10 (the "mild" upper bound)."""
+        items = self._items_for(10, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-neg-at-10"),
+        ).json()
+        assert response["positive_screen"] is False
+        assert response["subscales"] == {"anxiety": 10, "depression": 10}
+
+    # -- Item-count validation -------------------------------------------
+
+    def test_thirteen_items_rejected(self, client: TestClient) -> None:
+        """< 14 items → 422 with instrument-specific message."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [1] * 13},
+            headers=self._headers("hads-short"),
+        )
+        assert response.status_code == 422
+
+    def test_fifteen_items_rejected(self, client: TestClient) -> None:
+        """> 14 items → 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [1] * 15},
+            headers=self._headers("hads-long"),
+        )
+        assert response.status_code == 422
+
+    def test_zero_items_rejected_at_pydantic_layer(
+        self, client: TestClient
+    ) -> None:
+        """Empty items list — 422 at the Pydantic min_length=1 check."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": []},
+            headers=self._headers("hads-empty"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value range validation -------------------------------------
+
+    def test_value_negative_rejected(self, client: TestClient) -> None:
+        """Raw item value < 0 → 422."""
+        items = [1] * 14
+        items[0] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_value_four_rejected(self, client: TestClient) -> None:
+        """Raw item value > 3 → 422 (HADS is 0–3 Likert; 4 is the
+        GAD-7 / PHQ-9 max, not HADS)."""
+        items = [1] * 14
+        items[7] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-over"),
+        )
+        assert response.status_code == 422
+
+    def test_value_far_out_of_range_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Raw item value = 100 → 422."""
+        items = [1] * 14
+        items[13] = 100
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-far-out"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-type / Pydantic-coercion boundary --------------------------
+
+    def test_string_value_non_numeric_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Non-numeric string ("two") → 422 at Pydantic list[int]."""
+        items: list[object] = [1] * 14
+        items[3] = "two"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-str-nonnum"),
+        )
+        assert response.status_code == 422
+
+    def test_string_numeric_coerced_to_int(
+        self, client: TestClient
+    ) -> None:
+        """Numeric string ("2") → Pydantic lax-mode coerces to 2 →
+        accepted."""
+        items: list[object] = [1] * 14
+        items[3] = "2"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-str-num"),
+        )
+        assert response.status_code == 201
+
+    def test_float_whole_coerced(self, client: TestClient) -> None:
+        """Whole-number float (2.0) → Pydantic lax-mode coerces → 201."""
+        items: list[object] = [1] * 14
+        items[5] = 2.0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-float-whole"),
+        )
+        assert response.status_code == 201
+
+    def test_float_fractional_rejected(self, client: TestClient) -> None:
+        """Non-whole float (2.5) → Pydantic rejects at list[int]."""
+        items: list[object] = [1] * 14
+        items[5] = 2.5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-float-frac"),
+        )
+        assert response.status_code == 422
+
+    def test_bool_true_coerced_via_pydantic(
+        self, client: TestClient
+    ) -> None:
+        """JSON ``true`` → Pydantic lax-mode coerces to 1 → 201.
+        The strict-bool rejection only applies to DIRECT-Python
+        calls into the scorer; the wire layer follows Pydantic's
+        standard list[int] coercion."""
+        items: list[object] = [1] * 14
+        items[0] = True
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-bool-true"),
+        )
+        assert response.status_code == 201
+
+    def test_bool_false_coerced_via_pydantic(
+        self, client: TestClient
+    ) -> None:
+        """JSON ``false`` → Pydantic lax-mode coerces to 0 → 201."""
+        items: list[object] = [0] * 14
+        items[0] = False
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-bool-false"),
+        )
+        assert response.status_code == 201
+
+    def test_null_rejected(self, client: TestClient) -> None:
+        """JSON ``null`` at a list position → 422."""
+        items: list[object] = [1] * 14
+        items[7] = None
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-null"),
+        )
+        assert response.status_code == 422
+
+    # -- Unused envelope fields -----------------------------------------
+
+    def test_no_scaled_score_key(self, client: TestClient) -> None:
+        """HADS has no scaled-score transformation — the total IS
+        the published score."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [1] * 14},
+            headers=self._headers("hads-no-scaled"),
+        ).json()
+        assert response.get("scaled_score") is None
+
+    def test_no_index_key(self, client: TestClient) -> None:
+        """HADS has no index — WHO-5 is the only instrument using
+        index (raw × 4)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [1] * 14},
+            headers=self._headers("hads-no-index"),
+        ).json()
+        assert response.get("index") is None
+
+    def test_no_triggering_items(self, client: TestClient) -> None:
+        """HADS has no per-item acuity routing — triggering_items
+        null in the envelope (no item-level T3 flag)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": [3] * 14},
+            headers=self._headers("hads-no-trig"),
+        ).json()
+        assert response.get("triggering_items") is None
+
+    def test_requires_t3_always_false_even_at_ceiling(
+        self, client: TestClient
+    ) -> None:
+        """HADS by design excludes suicidality probes (Zigmond &
+        Snaith 1983 medical-setting rationale).  requires_t3 is
+        False even at the maximum severity profile."""
+        items = self._items_for(21, 21)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-t3-ceiling"),
+        ).json()
+        assert response["total"] == 42
+        assert response["severity"] == "severe"
+        assert response["requires_t3"] is False
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_vignette_medical_setting_normal_baseline(
+        self, client: TestClient
+    ) -> None:
+        """Chronic-illness-clinic baseline: anxiety 5 / depression 6
+        — both in normal range (0–7 per Snaith 2003).  The typical
+        pattern in a stable chronic-illness cohort (mild
+        cardiovascular, post-op day 30, managed oncology surveillance).
+        No mood-intervention referral indicated."""
+        items = self._items_for(5, 6)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-vignette-medical-baseline"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 5, "depression": 6}
+        assert response["severity"] == "normal"
+        assert response["positive_screen"] is False
+
+    def test_vignette_convergent_depression_with_phq9(
+        self, client: TestClient
+    ) -> None:
+        """HADS-D = 13 (moderate) + PHQ-9 = 15 (moderate; tested
+        separately in PHQ-9 suite).  In a medical cohort, when PHQ-9
+        and HADS-D agree, the depression inference is strengthened —
+        somatic-inflation is not confounding the signal.  Bjelland
+        2002 cross-instrument convergence pattern."""
+        items = self._items_for(4, 13)  # anx normal, dep moderate
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-vignette-convergent-phq9"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 4, "depression": 13}
+        assert response["severity"] == "moderate"
+        assert response["positive_screen"] is True
+
+    def test_vignette_convergent_anxiety_with_gad7(
+        self, client: TestClient
+    ) -> None:
+        """HADS-A = 12 (moderate) + GAD-7 = 12 (moderate; tested
+        separately).  Medical-setting anxiety with convergent
+        cross-instrument signal.  Routes to anxiety-focused
+        intervention (CBT / relaxation training / SSRI consult)."""
+        items = self._items_for(12, 4)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-vignette-convergent-gad7"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 12, "depression": 4}
+        assert response["severity"] == "moderate"
+        assert response["positive_screen"] is True
+
+    def test_vignette_anhedonia_dominant_medical_comorbidity(
+        self, client: TestClient
+    ) -> None:
+        """HADS-D elevated (14 moderate) + HADS-A normal (6).  In a
+        cancer / chronic-pain cohort, this isolates the anhedonia /
+        cognitive-mood component from anxiety.  A PHQ-9 for this
+        patient would likely be inflated by somatic items (fatigue,
+        sleep) that reflect illness rather than mood — HADS-D
+        corrects for that."""
+        items = self._items_for(6, 14)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-vignette-anhedonia"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 6, "depression": 14}
+        assert response["severity"] == "moderate"
+        assert response["positive_screen"] is True
+
+    def test_vignette_mixed_moderate_both_subscales(
+        self, client: TestClient
+    ) -> None:
+        """Both subscales moderate (anx 12 / dep 12) — the classic
+        mixed-anxiety-depression presentation.  Treatment routes
+        toward transdiagnostic CBT (Barlow 2010 Unified Protocol)
+        rather than a disorder-specific protocol."""
+        items = self._items_for(12, 12)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-vignette-mixed-mod"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 12, "depression": 12}
+        assert response["severity"] == "moderate"
+        assert response["total"] == 24
+        assert response["positive_screen"] is True
+
+    def test_vignette_ceiling_severe_both(
+        self, client: TestClient
+    ) -> None:
+        """Maximum severity on both subscales — anx 21 / dep 21.
+        Total = 42 (envelope ceiling).  Routes to urgent psychiatric
+        evaluation; C-SSRS follow-up flagged by clinician-UI
+        layer (scorer itself reports requires_t3=False per HADS
+        design — no suicidality probe)."""
+        items = self._items_for(21, 21)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-vignette-ceiling"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 21, "depression": 21}
+        assert response["total"] == 42
+        assert response["severity"] == "severe"
+        assert response["positive_screen"] is True
+        assert response["requires_t3"] is False
+
+    def test_vignette_puhan_rci_delta(
+        self, client: TestClient
+    ) -> None:
+        """Puhan 2008 COPD-cohort MCID = 1.5 points per subscale;
+        platform RCI benchmark.  Baseline anx 12 → follow-up anx 10
+        (Δ = 2) meets MCID.  Baseline positive_screen True (≥ 11);
+        follow-up positive_screen False — a clinically meaningful
+        within-episode improvement."""
+        baseline = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": self._items_for(12, 5)},
+            headers=self._headers("hads-puhan-baseline"),
+        ).json()
+        assert baseline["subscales"]["anxiety"] == 12
+        assert baseline["positive_screen"] is True
+        followup = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": self._items_for(10, 5)},
+            headers=self._headers("hads-puhan-followup"),
+        ).json()
+        assert followup["subscales"]["anxiety"] == 10
+        assert followup["positive_screen"] is False
+        assert baseline["subscales"]["anxiety"] - followup["subscales"]["anxiety"] >= 2
+
+    def test_vignette_bjelland_at_threshold(
+        self, client: TestClient
+    ) -> None:
+        """Bjelland 2002 cutoff boundary: anxiety = 11 exactly →
+        positive_screen True.  Verifies the sensitivity-of-the-cutoff
+        for the either-subscale rule."""
+        items = self._items_for(11, 7)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-bjelland-at-11"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 11, "depression": 7}
+        assert response["positive_screen"] is True
+        assert response["severity"] == "moderate"
+
+    def test_vignette_bjelland_below_threshold(
+        self, client: TestClient
+    ) -> None:
+        """Bjelland 2002 just-below: anxiety = 10 / depression = 10
+        → positive_screen False.  A subthreshold presentation the
+        clinician-UI may flag for watchful waiting / repeat screen,
+        but not immediate referral."""
+        items = self._items_for(10, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "hads", "items": items},
+            headers=self._headers("hads-bjelland-below-11"),
+        ).json()
+        assert response["subscales"] == {"anxiety": 10, "depression": 10}
+        assert response["positive_screen"] is False
+        assert response["severity"] == "mild"

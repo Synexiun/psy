@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10, IES-R.
+MSPSS, GSE, CORE-10, IES-R, HADS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +45,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1590,6 +1590,11 @@ from .scoring.iesr import (
     InvalidResponseError as IesrInvalid,
     score_iesr,
 )
+from .scoring.hads import (
+    HADS_SUBSCALES,
+    InvalidResponseError as HadsInvalid,
+    score_hads,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1671,6 +1676,7 @@ Instrument = Literal[
     "gse",
     "core10",
     "iesr",
+    "hads",
 ]
 
 
@@ -1734,6 +1740,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "gse": 10,
     "core10": 10,
     "iesr": 22,
+    "hads": 14,
 }
 
 
@@ -5006,6 +5013,202 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=i.instrument_version,
         )
+    if payload.instrument == "hads":
+        # HADS — 14-item Hospital Anxiety and Depression Scale
+        # (Zigmond & Snaith 1983).  The most widely-used self-
+        # report instrument for anxiety and depression in
+        # medical (non-psychiatric) settings — developed
+        # specifically for use in general hospital outpatient
+        # clinics where somatic-symptom-based instruments
+        # (PHQ-9 item 4 "feeling tired or having little energy";
+        # PHQ-9 item 3 "trouble falling / staying asleep";
+        # PHQ-15 across all 15 items) falsely inflate depression
+        # scores by picking up medical illness rather than mood.
+        # Zigmond & Snaith 1983 intentionally excluded every
+        # somatic item to isolate the psychological / cognitive
+        # component of anxiety and depression; the resulting
+        # instrument discriminates mood disorder from medical
+        # illness in cardiology / oncology / chronic-pain / post-
+        # surgical cohorts where comorbidity is high.
+        #
+        # Construct placement in the platform's depression /
+        # anxiety roster:
+        #
+        # - PHQ-9 (Kroenke 2001) — 9-item DSM-IV-criterion-
+        #   mapped depression severity, carries suicidality
+        #   probe (item 9).  Best for primary-care / mental-
+        #   health contexts.  Somatic-item load is DSM-5-
+        #   aligned, not a flaw.
+        # - GAD-7 (Spitzer 2006) — 7-item generalized anxiety
+        #   severity.  Best for primary-care / mental-health
+        #   contexts.
+        # - HADS (Zigmond & Snaith 1983) — 14-item joint anxiety
+        #   + depression for medical settings.  Isolates
+        #   psychological component; no somatic items, no
+        #   suicidality probe.  Best for chronic-illness /
+        #   oncology / cardiology cohorts where PHQ-9 somatic
+        #   overlap inflates the score.
+        # - PHQ-15 (Kroenke 2002) — 15-item somatic symptom
+        #   severity — the complement to HADS.  Where HADS
+        #   removes somatic symptoms, PHQ-15 isolates them.
+        #   Both alongside PHQ-9 is a Barsky 2005 three-way
+        #   decomposition of medical-setting distress:
+        #   depression / anxiety-mood (HADS) vs somatization
+        #   (PHQ-15) vs DSM-criterion mood (PHQ-9).
+        #
+        # Why HADS alongside PHQ-9 and GAD-7?  They partition
+        # the mood-symptom space differently.  PHQ-9 / GAD-7
+        # follow DSM-5 criteria and include somatic symptoms
+        # (sleep, fatigue, appetite, restlessness) that are
+        # genuine mood-disorder criteria in otherwise-healthy
+        # adults but become *confounders* in medical-patient
+        # cohorts — a post-MI patient reports fatigue and
+        # sleep disturbance because of the MI, not because of
+        # depression, and PHQ-9 can't separate the two.  HADS
+        # removes every somatic item, so an elevated HADS
+        # depression score in a post-MI patient is unambiguously
+        # a mood signal.  Bjelland 2002 (systematic review, 747
+        # studies) established HADS as the go-to depression /
+        # anxiety screener in chronic-illness cohorts; Herrmann
+        # 1997 established criterion-validity against structured
+        # clinical interview (ROC AUC ≈ 0.80 per subscale).
+        #
+        # Two-subscale partitioning (Zigmond & Snaith 1983
+        # Table 1 — alternating-item design):
+        #
+        #     Anxiety    (7 items): 1, 3, 5, 7, 9, 11, 13  (odd)
+        #     Depression (7 items): 2, 4, 6, 8, 10, 12, 14 (even)
+        #
+        # Scoring direction: each item is 0-3 Likert (item
+        # stems alternate direction by design — Zigmond & Snaith
+        # 1983 acquiescence-control: roughly half the items read
+        # distress-positive ("I feel tense"; higher = more
+        # distress) and half read distress-negative ("I still
+        # enjoy the things I used to enjoy"; higher = less
+        # distress).  The acquiescence-control pattern requires
+        # reverse-keying on six items before subscale totals
+        # are computed:
+        #
+        #     Reverse-keyed positions: 2, 4, 6, 7, 12, 14
+        #
+        # Per-position: ``flipped_v = 3 - raw_v``.  The scorer
+        # stores RAW items (pre-flip) in ``items`` for audit
+        # invariance; the subscale sums use flipped values.
+        # This mirrors the CORE-10 reverse-keying discipline
+        # (Sprint 75) — raw is preserved for the audit log,
+        # flipped is used for the clinical score.
+        #
+        # Severity bands (Snaith 2003 / Zigmond & Snaith
+        # original 1983 extension) — APPLIED PER SUBSCALE:
+        #
+        #     0–7   normal
+        #     8–10  mild
+        #     11–14 moderate
+        #     15–21 severe
+        #
+        # Clinical cutoff: ≥ 11 per subscale (Bjelland 2002
+        # Systematic-Review-pooled ROC optimal cutoff —
+        # sensitivity 0.80 / specificity 0.80 against SCID
+        # major depression / generalized anxiety diagnoses).
+        # ``positive_screen`` flags either-subscale ≥ 11;
+        # ``cutoff_used`` surfaces 11.
+        #
+        # Envelope shape (multi-subscale — fourth in the
+        # roster after PANAS-10 / MSPSS / IES-R):
+        #
+        # - ``total``: 0–42 sum of all 14 items (post reverse-
+        #   keying for the 6 reverse positions).
+        # - ``severity``: worst-of-two — the more severe band
+        #   between anxiety_severity and depression_severity.
+        #   Rationale: clinicians need a single overall
+        #   severity for triage ("this patient has at least
+        #   moderate mood symptoms") while retaining per-
+        #   subscale detail in ``subscales``.  A patient who is
+        #   severely anxious but normal on depression gets
+        #   severity=severe — clinically correct.
+        # - ``subscales``: two-subscale dict keyed by
+        #   HADS_SUBSCALES ("anxiety" / "depression").
+        # - ``positive_screen``: True if anxiety ≥ 11 OR
+        #   depression ≥ 11 (Bjelland 2002).
+        # - ``cutoff_used``: 11 (Bjelland 2002).
+        # - ``requires_t3``: always False — HADS by design
+        #   has NO suicidality probe.  Zigmond & Snaith 1983
+        #   deliberately excluded the "thoughts of ending
+        #   life" item from the depression subscale so the
+        #   instrument could be used by non-psychiatrist
+        #   medical staff in oncology / cardiology / chronic-
+        #   pain clinics without requiring the hand-off
+        #   infrastructure an active-risk item demands.  A
+        #   severe HADS depression score in a HADS-using
+        #   clinic should trigger a C-SSRS follow-up at the
+        #   clinician-UI layer — NOT a scorer-layer T3 flag.
+        #   Same renderer-versus-scorer boundary used for
+        #   IES-R / MSPSS / SWLS / GSE.
+        # - No ``index`` — the total IS the published score.
+        # - No ``scaled_score`` — no transformation applied.
+        # - No ``triggering_items`` — no item-level acuity
+        #   routing (HADS has no per-item safety posture).
+        #
+        # Clinical pairings the scorer output supports:
+        #
+        # - HADS depression ≥ 11 + PHQ-9 ≥ 10 — convergent
+        #   signal.  In a medical cohort, agreement between
+        #   PHQ-9 and HADS-D strengthens the depression-
+        #   diagnostic inference; PHQ-9 alone risks somatic-
+        #   symptom inflation (Kroenke 2001; Bjelland 2002).
+        # - HADS depression ≥ 11 + PHQ-9 < 10 + PHQ-15 high —
+        #   somatization-inflation pattern.  PHQ-9 is high
+        #   because of medical-illness somatic load, HADS-D
+        #   isolates the cognitive / mood signal.  Route to
+        #   mood-intervention review AND a medical workup
+        #   (Barsky 2005).
+        # - HADS anxiety ≥ 11 + GAD-7 ≥ 10 — convergent
+        #   anxiety signal.
+        # - HADS anxiety / depression trajectory — Puhan 2008
+        #   published a 1.5-point MCID (minimal clinically
+        #   important difference) per subscale in COPD
+        #   cohorts, established as the per-subscale RCI
+        #   benchmark.  A 2-point HADS-A delta over a
+        #   treatment episode is clinically meaningful;
+        #   a 1-point delta is within measurement noise.
+        # - HADS + Najavits 2002 "Seeking Safety" — HADS is
+        #   the mood-symptom tracking instrument for concurrent
+        #   PTSD+SUD intervention programs; IES-R handles the
+        #   trauma-specific symptom track.
+        # - HADS in cancer-patient cohorts (NCCN guidelines) —
+        #   HADS is the NCCN-recommended distress screener
+        #   where PHQ-9 somatic load is untenable (chemotherapy
+        #   fatigue / cachexia inflate PHQ-9 item 3 / item 4).
+        #
+        # Historical note — factor structure:
+        # Bjelland 2002 published a 1-factor / 2-factor / 3-
+        # factor debate.  The platform uses the ORIGINAL
+        # Zigmond & Snaith 1983 2-factor (anxiety / depression)
+        # partition because (a) it matches clinical use
+        # (screening for either anxiety OR depression is
+        # the instrument's purpose); (b) the 3-factor
+        # solutions proposed by various authors disagree
+        # on item placement and have not produced a single
+        # published cutoff set; (c) Snaith 2003 severity
+        # bands and Bjelland 2002 cutoffs are published
+        # only on the 2-factor partition.  Per CLAUDE.md
+        # non-negotiable #9 (no hand-rolled thresholds),
+        # we stay on the 2-factor solution.
+        h = score_hads(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="hads",
+            total=h.total,
+            severity=h.severity,
+            positive_screen=h.positive_screen,
+            cutoff_used=h.cutoff_used,
+            requires_t3=False,
+            subscales={
+                HADS_SUBSCALES[0]: h.anxiety,
+                HADS_SUBSCALES[1]: h.depression,
+            },
+            instrument_version=h.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5180,6 +5383,7 @@ async def submit_assessment(
         GseInvalid,
         Core10Invalid,
         IesrInvalid,
+        HadsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
