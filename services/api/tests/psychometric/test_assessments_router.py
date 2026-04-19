@@ -26,21 +26,26 @@ from discipline.app import create_app
 
 
 @pytest.fixture(autouse=True)
-def _reset_idempotency_store() -> Any:
-    """Clear the module-level idempotency store before and after each test.
+def _reset_psychometric_stores() -> Any:
+    """Clear the module-level idempotency store and assessment
+    repository before and after each test.
 
-    The existing helper ``_post`` hard-codes ``Idempotency-Key:
-    test-key-abc`` for every submission; without this reset, the second
-    test in a run would see the first test's body under the same key
-    and 409 Conflict.  Test isolation must match the production model
-    where each request is a fresh operation — the cache exists for
-    retry-within-a-single-client, not cross-test fixture reuse.
+    Test isolation must match the production model where each request
+    is a fresh operation.  The idempotency cache exists for retry-
+    within-a-single-client (not cross-test fixture reuse), and the
+    assessment repository would otherwise accumulate records across
+    tests and blow up history-endpoint assertions about timeline size.
     """
+    from discipline.psychometric.repository import (
+        get_assessment_repository,
+    )
     from discipline.shared.idempotency import get_idempotency_store
 
     get_idempotency_store().clear()
+    get_assessment_repository().clear()
     yield
     get_idempotency_store().clear()
+    get_assessment_repository().clear()
 
 
 @pytest.fixture
@@ -1278,3 +1283,317 @@ class TestIdempotency:
             headers=headers,
         )
         assert good.status_code == 201
+
+
+# =============================================================================
+# GET /v1/assessments/history — Sprint 23
+# =============================================================================
+
+
+def _submit_for_user(
+    client: TestClient,
+    *,
+    user_id: str,
+    instrument: str,
+    items: list[int],
+    sex: str | None = None,
+) -> Any:
+    """Submit one assessment with ``user_id`` in the body so it
+    persists to the repository.  Fresh Idempotency-Key per call via
+    the underlying helper."""
+    body: dict[str, Any] = {
+        "instrument": instrument,
+        "items": items,
+        "user_id": user_id,
+    }
+    if sex is not None:
+        body["sex"] = sex
+    import uuid
+
+    headers = {"Idempotency-Key": f"test-{uuid.uuid4()}"}
+    return client.post("/v1/assessments", json=body, headers=headers)
+
+
+class TestHistoryEndpoint:
+    """``GET /v1/assessments/history`` — reads through the
+    AssessmentRepository that Sprint 23 introduced.  Identity comes
+    from the ``X-User-Id`` header (stub for the Clerk session JWT
+    in a later sprint)."""
+
+    def test_missing_user_id_header_returns_401(
+        self, client: TestClient
+    ) -> None:
+        """Without identity there's no timeline to return — refuse
+        rather than returning an empty list, which would let an
+        unauthenticated client probe for the endpoint's shape."""
+        resp = client.get("/v1/assessments/history")
+        # FastAPI's Header(...) with an alias surfaces the missing
+        # required header as a 422 from pydantic validation.  Either
+        # 401 (our guard) or 422 (pydantic) is acceptable — the point
+        # is that the request does NOT succeed.
+        assert resp.status_code in (401, 422)
+
+    def test_empty_user_id_header_returns_401(
+        self, client: TestClient
+    ) -> None:
+        resp = client.get(
+            "/v1/assessments/history", headers={"X-User-Id": ""}
+        )
+        assert resp.status_code == 401
+
+    def test_zero_limit_rejected(self, client: TestClient) -> None:
+        resp = client.get(
+            "/v1/assessments/history?limit=0",
+            headers={"X-User-Id": "user-1"},
+        )
+        assert resp.status_code == 400
+
+    def test_negative_limit_rejected(self, client: TestClient) -> None:
+        resp = client.get(
+            "/v1/assessments/history?limit=-5",
+            headers={"X-User-Id": "user-1"},
+        )
+        assert resp.status_code == 400
+
+    def test_empty_history_for_new_user(self, client: TestClient) -> None:
+        resp = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "brand-new-user"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body == {"items": [], "limit": 50, "total": 0}
+
+    def test_submit_then_history_round_trip(
+        self, client: TestClient
+    ) -> None:
+        """Post an assessment with user_id in the body, then GET
+        /history under that same id — the record must appear with
+        matching assessment_id."""
+        post = _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+        )
+        assert post.status_code == 201
+        assessment_id = post.json()["assessment_id"]
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-1"},
+        )
+        assert hist.status_code == 200
+        items = hist.json()["items"]
+        assert len(items) == 1
+        assert items[0]["assessment_id"] == assessment_id
+        assert items[0]["instrument"] == "phq9"
+
+    def test_history_response_omits_raw_items(
+        self, client: TestClient
+    ) -> None:
+        """PHI-boundary shape: the raw answers are stored in the
+        repository but NOT projected into the history timeline.  A
+        regression that surfaced raw_items here would leak PHI to the
+        patient-portal timeline view."""
+        _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+        )
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-1"},
+        )
+        item = hist.json()["items"][0]
+        assert "raw_items" not in item
+
+    def test_history_is_newest_first(self, client: TestClient) -> None:
+        """Three submissions land in chronological order — history
+        returns them newest-first by ``created_at``."""
+        # Three distinct bodies so each gets a unique assessment_id.
+        _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="phq9",
+            items=[0, 0, 0, 0, 0, 0, 0, 0, 0],
+        )
+        _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="gad7",
+            items=[0, 0, 0, 0, 0, 0, 0],
+        )
+        _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="who5",
+            items=[0, 0, 0, 0, 0],
+        )
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-1"},
+        )
+        items = hist.json()["items"]
+        assert len(items) == 3
+        # Newest-first means the third submission leads.
+        assert items[0]["instrument"] == "who5"
+        assert items[1]["instrument"] == "gad7"
+        assert items[2]["instrument"] == "phq9"
+
+    def test_multi_user_isolation(self, client: TestClient) -> None:
+        """User A's submissions are invisible to user B and vice-versa.
+        This is the clinical privacy boundary — a leak here would
+        expose one patient's trajectory to another."""
+        _submit_for_user(
+            client,
+            user_id="user-A",
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+        )
+        _submit_for_user(
+            client,
+            user_id="user-B",
+            instrument="gad7",
+            items=[1, 1, 1, 1, 1, 1, 1],
+        )
+
+        a = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-A"},
+        )
+        b = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-B"},
+        )
+        a_items = a.json()["items"]
+        b_items = b.json()["items"]
+        assert len(a_items) == 1
+        assert len(b_items) == 1
+        assert a_items[0]["instrument"] == "phq9"
+        assert b_items[0]["instrument"] == "gad7"
+
+    def test_limit_caps_returned_but_total_is_absolute(
+        self, client: TestClient
+    ) -> None:
+        """``limit`` caps the returned page; ``total`` is the
+        unbounded count.  Ordering matters to the UI — the 'load
+        older' affordance depends on seeing total > items.length."""
+        for i in range(5):
+            _submit_for_user(
+                client,
+                user_id="user-1",
+                instrument="gad7",
+                items=[(i % 4)] * 7,
+            )
+        hist = client.get(
+            "/v1/assessments/history?limit=2",
+            headers={"X-User-Id": "user-1"},
+        )
+        body = hist.json()
+        assert len(body["items"]) == 2
+        assert body["limit"] == 2
+        assert body["total"] == 5
+
+    def test_submit_without_user_id_does_not_persist(
+        self, client: TestClient
+    ) -> None:
+        """A test-harness submission that omits user_id still scores
+        and returns a result, but leaves no trace in /history under
+        any identity.  Matches the stated contract: 'phantom anonymous
+        user timelines have no owner and no value.'"""
+        post = _post(
+            client,
+            instrument="phq9",
+            items=[1, 1, 1, 1, 1, 1, 1, 1, 0],
+        )
+        assert post.status_code == 201
+
+        # Nobody should see this record.
+        for uid in ("user-1", "user-A", "anonymous", ""):
+            if not uid:
+                continue  # empty id is 401, not a history query
+            hist = client.get(
+                "/v1/assessments/history",
+                headers={"X-User-Id": uid},
+            )
+            assert hist.json() == {"items": [], "limit": 50, "total": 0}
+
+    def test_t3_firing_assessment_persisted_with_flag(
+        self, client: TestClient
+    ) -> None:
+        """A T3-firing PHQ-9 (item 9 positive) must appear in the
+        timeline with ``requires_t3=True`` — the clinical-ops view
+        renders that flag prominently."""
+        resp = _submit_for_user(
+            client,
+            user_id="user-1",
+            instrument="phq9",
+            items=[0, 0, 0, 0, 0, 0, 0, 0, 1],
+        )
+        assert resp.status_code == 201
+        assert resp.json()["requires_t3"] is True
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-1"},
+        )
+        items = hist.json()["items"]
+        assert len(items) == 1
+        assert items[0]["requires_t3"] is True
+        assert items[0]["t3_reason"] == "phq9_item9_positive"
+
+    def test_cssrs_history_preserves_triggering_items(
+        self, client: TestClient
+    ) -> None:
+        """C-SSRS records carry ``triggering_items`` — the audit trail
+        of which 1-indexed questions drove the band.  Must survive
+        the repository round-trip and appear in the timeline."""
+        # Item 4 positive → acute T3 per C-SSRS triage.
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "cssrs",
+                "items": [0, 0, 0, 1, 0, 0],
+                "user_id": "user-1",
+            },
+            headers={"Idempotency-Key": "cssrs-history-1"},
+        )
+        assert resp.status_code == 201
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-1"},
+        )
+        items = hist.json()["items"]
+        assert len(items) == 1
+        assert items[0]["instrument"] == "cssrs"
+        assert items[0]["triggering_items"] == [4]
+
+    def test_idempotency_replay_does_not_duplicate_history(
+        self, client: TestClient
+    ) -> None:
+        """A retried submission under the same Idempotency-Key must
+        create exactly ONE history entry.  The replay returns the
+        cached result but MUST NOT call the repository a second time —
+        the clinical timeline would otherwise show phantom duplicates
+        of the same assessment."""
+        headers = {"Idempotency-Key": "history-replay-key"}
+        body = {
+            "instrument": "phq9",
+            "items": [1, 1, 1, 1, 1, 1, 1, 1, 0],
+            "user_id": "user-1",
+        }
+        first = client.post("/v1/assessments", json=body, headers=headers)
+        assert first.status_code == 201
+        second = client.post("/v1/assessments", json=body, headers=headers)
+        assert second.status_code == 201
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-1"},
+        )
+        items = hist.json()["items"]
+        assert len(items) == 1
+        assert items[0]["assessment_id"] == first.json()["assessment_id"]

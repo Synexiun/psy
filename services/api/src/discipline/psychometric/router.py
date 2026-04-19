@@ -58,6 +58,7 @@ from discipline.shared.idempotency import (
 )
 from discipline.shared.logging import LogStream, get_stream_logger
 
+from .repository import AssessmentRecord, get_assessment_repository
 from .safety_items import evaluate_phq9
 from .scoring.audit_c import (
     InvalidResponseError as AuditCInvalid,
@@ -393,12 +394,63 @@ async def submit_assessment(
 
     if result.requires_t3:
         _emit_t3_safety_event(result, user_id=payload.user_id)
+
+    # Persist the record when a user_id is supplied.  Unauthenticated
+    # diagnostic harnesses omit user_id; those submissions still score
+    # and still emit safety events, but leave no history trail — which
+    # matches the clinical posture that a phantom 'anonymous user'
+    # timeline has no owner and no value.
+    if payload.user_id:
+        _persist_record(payload, result)
+
     # Only cache successful results.  A 422 re-raises on replay by
     # rerunning validation — the invalid payload is deterministic, so
     # caching the exception would save a few microseconds at the cost
     # of a much more complex cache invalidation story.
     store.store(idempotency_key, body_hash, result)
     return result
+
+
+def _persist_record(
+    payload: AssessmentRequest, result: AssessmentResult
+) -> None:
+    """Save the submitted event to the assessment repository.
+
+    The record captures the full request context (raw items plus the
+    per-instrument options ``sex`` / ``behavior_within_3mo``) so a
+    later FHIR Observation re-render (Sprint 24 and beyond) does not
+    need to re-fetch from a second source.  ``/history`` only surfaces
+    the summary projection; the stored shape carries the full event.
+    """
+    repo = get_assessment_repository()
+    # Convert list → tuple so the frozen dataclass stays hashable and
+    # immutable.  A shared list reference would otherwise let a caller
+    # mutate the stored record from the outside.
+    raw_items = tuple(payload.items)
+    triggering = (
+        tuple(result.triggering_items)
+        if result.triggering_items is not None
+        else None
+    )
+    record = AssessmentRecord(
+        assessment_id=result.assessment_id,
+        user_id=payload.user_id or "",
+        instrument=result.instrument,
+        total=result.total,
+        severity=result.severity,
+        requires_t3=result.requires_t3,
+        raw_items=raw_items,
+        created_at=repo.now(),
+        t3_reason=result.t3_reason,
+        index=result.index,
+        cutoff_used=result.cutoff_used,
+        positive_screen=result.positive_screen,
+        triggering_items=triggering,
+        instrument_version=result.instrument_version,
+        sex=payload.sex,
+        behavior_within_3mo=payload.behavior_within_3mo,
+    )
+    repo.save(record)
 
 
 # =============================================================================
@@ -514,7 +566,122 @@ async def trajectory_thresholds() -> dict[str, float]:
     return dict(RCI_THRESHOLDS)
 
 
-@router.get("/history", tags=["psychometric"])
-async def history() -> dict[str, str]:
-    """Stub — wire to AssessmentRepository.history_for(user_id) in the first milestone."""
-    return {"status": "not_implemented"}
+class AssessmentHistoryItem(BaseModel):
+    """Summary row for a single historical assessment.
+
+    Deliberately omits ``raw_items`` — the user's literal answers on a
+    validated clinical instrument are PHI that the history timeline
+    does not need.  A clinician viewing a single Observation (Sprint 24
+    GET ``/reports/fhir/observations/{id}``) reads the raw items
+    through that PHI-boundary-gated endpoint instead; the history
+    surface is the patient's own timeline view.
+
+    Field shape matches :class:`AssessmentResult` for the fields that
+    overlap, so a client rendering either response uses the same
+    projection layer.
+    """
+
+    assessment_id: str
+    instrument: str
+    total: int
+    severity: str
+    requires_t3: bool
+    created_at: str  # ISO-8601 UTC — consumed by chart-plot code as-is
+    t3_reason: str | None = None
+    index: int | None = None
+    cutoff_used: int | None = None
+    positive_screen: bool | None = None
+    triggering_items: list[int] | None = None
+    instrument_version: str | None = None
+
+
+class AssessmentHistoryResponse(BaseModel):
+    """Envelope for the history endpoint.
+
+    ``items`` is newest-first, capped at ``limit``.  ``limit`` is
+    echoed so a client rendering pagination can display "showing 50 of
+    N" without a second call; ``total`` is the absolute count for
+    this user (not the returned page size) so the UI can decide
+    whether to surface a "load older" control.
+    """
+
+    items: list[AssessmentHistoryItem]
+    limit: int
+    total: int
+
+
+@router.get(
+    "/history",
+    response_model=AssessmentHistoryResponse,
+    tags=["psychometric"],
+)
+async def history(
+    x_user_id: str = Header(..., alias="X-User-Id"),
+    limit: int = 50,
+) -> AssessmentHistoryResponse:
+    """Return the authenticated user's assessment timeline.
+
+    Authentication (temporary shape):
+    - ``X-User-Id`` header carries the pseudonymous subject id.  In
+      production this is derived from the Clerk session JWT inside an
+      auth middleware and injected here; the header form is a
+      scaffolding stub so the Sprint 23 endpoint is testable before
+      the Clerk v6 integration lands.  Callers must NOT supply an
+      ``X-User-Id`` from a client-controlled source in a production
+      deploy — the server-side middleware overwrite is what makes the
+      identity trustable.
+    - A missing or empty ``X-User-Id`` yields a 401.  ``limit`` must
+      be a positive integer; 0 and negatives are 400.
+
+    Response projection:
+    - Items are newest-first by ``created_at``.
+    - ``raw_items`` is deliberately omitted (see
+      :class:`AssessmentHistoryItem`).  Clinician-portal views that
+      need raw items go through Sprint 24's FHIR Observation GET.
+
+    This endpoint does NOT touch the idempotency cache — GET is
+    idempotent by HTTP semantics so there's nothing to deduplicate.
+    """
+    if not x_user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={
+                "code": "auth.missing_user_id",
+                "message": "X-User-Id header required.",
+            },
+        )
+    if limit <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "validation.limit",
+                "message": f"limit must be positive, got {limit}",
+            },
+        )
+
+    repo = get_assessment_repository()
+    records = repo.history_for(x_user_id, limit=limit)
+    total = repo.count_for(x_user_id)
+
+    items = [
+        AssessmentHistoryItem(
+            assessment_id=r.assessment_id,
+            instrument=r.instrument,
+            total=r.total,
+            severity=r.severity,
+            requires_t3=r.requires_t3,
+            created_at=r.created_at.isoformat(),
+            t3_reason=r.t3_reason,
+            index=r.index,
+            cutoff_used=r.cutoff_used,
+            positive_screen=r.positive_screen,
+            triggering_items=(
+                list(r.triggering_items)
+                if r.triggering_items is not None
+                else None
+            ),
+            instrument_version=r.instrument_version,
+        )
+        for r in records
+    ]
+    return AssessmentHistoryResponse(items=items, limit=limit, total=total)
