@@ -1381,6 +1381,177 @@ class TestPcPtsd5Routing:
 
 
 # =============================================================================
+# ISI (Bastien 2001) — 7-item Insomnia Severity Index
+# =============================================================================
+
+
+class TestIsiRouting:
+    """ISI over the wire.
+
+    Router-level contract verification for the 7-item 0-4 Likert
+    severity-band instrument.  The scorer's own unit tests
+    exhaustively pin each band boundary; these tests pin (1) the
+    dispatch branch picks ``score_isi``, (2) the wire envelope
+    surfaces the four-band ``severity`` label (uniform with PHQ-9
+    and GAD-7 pattern), (3) ``positive_screen`` is NOT populated
+    (ISI is a banded instrument, not a screen), and (4)
+    ``requires_t3`` is always False — ISI has no safety item, so
+    even the maximum total never routes through the crisis pathway.
+    """
+
+    def _post_isi(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "isi", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_severe(self, client: TestClient) -> None:
+        """All 7 items at 4 → total 28 → severe band.  The wire
+        envelope carries the band label directly, matching the
+        PHQ-9 / GAD-7 response-shape convention."""
+        resp = self._post_isi(client, items=[4, 4, 4, 4, 4, 4, 4])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "isi"
+        assert body["total"] == 28
+        assert body["severity"] == "severe"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "isi-1.0.0"
+
+    def test_band_boundary_moderate(self, client: TestClient) -> None:
+        """Total 15 → moderate band — the Morin 2011 clinical-
+        referral threshold.  A fence-post bug at the 14/15 boundary
+        would misclassify half of the clinical-insomnia cohort."""
+        # 15 = 4+4+4+3+0+0+0
+        resp = self._post_isi(client, items=[4, 4, 4, 3, 0, 0, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 15
+        assert body["severity"] == "moderate"
+
+    def test_band_boundary_subthreshold(self, client: TestClient) -> None:
+        """Total 14 → subthreshold (NOT moderate).  Just-below-cutoff
+        to pin the 14/15 boundary from the opposite direction."""
+        # 14 = 4+4+4+2+0+0+0
+        resp = self._post_isi(client, items=[4, 4, 4, 2, 0, 0, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 14
+        assert body["severity"] == "subthreshold"
+
+    def test_zero_total_is_none_band(self, client: TestClient) -> None:
+        """Absent symptoms → ``none``.  A patient who answered 0 to
+        every item is definitionally not insomniac on this screen."""
+        resp = self._post_isi(client, items=[0, 0, 0, 0, 0, 0, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "none"
+
+    def test_severe_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: the maximum ISI score
+        never fires the T3 crisis pathway.  T3 is reserved for
+        active suicidality — a severe-insomnia patient with
+        co-occurring depression needs a PHQ-9 + C-SSRS submission to
+        route appropriately, not a silent escalation via ISI.  A
+        regression that let ISI fire T3 would spam the clinical-ops
+        safety queue and desensitize responders to genuine crises."""
+        resp = self._post_isi(client, items=[4, 4, 4, 4, 4, 4, 4])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_positive_screen_not_populated(self, client: TestClient) -> None:
+        """ISI is a band-labelled instrument, not a positive/negative
+        screen.  positive_screen is reserved for AUDIT-C / MDQ /
+        PC-PTSD-5 which have an explicit cutoff boolean.  ISI's
+        ``severity`` field carries the full four-band semantic
+        directly."""
+        resp = self._post_isi(client, items=[4, 4, 4, 4, 4, 4, 4])
+        assert resp.status_code == 201
+        body = resp.json()
+        # ``positive_screen`` is either absent or explicitly null —
+        # what it must NOT be is True.  A refactor that auto-
+        # populated positive_screen for every severity-banded
+        # instrument would mislabel ISI as a screen.
+        assert body.get("positive_screen") in (None,)
+
+    def test_rejects_six_items(self, client: TestClient) -> None:
+        resp = self._post_isi(client, items=[4, 4, 4, 4, 4, 4])
+        assert resp.status_code == 422
+
+    def test_rejects_eight_items(self, client: TestClient) -> None:
+        resp = self._post_isi(client, items=[4, 4, 4, 4, 4, 4, 4, 4])
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Item > 4 → 422.  Client UI must not submit a 5-point-max
+        Likert; the server is the safety net."""
+        resp = self._post_isi(client, items=[4, 5, 4, 0, 0, 0, 0])
+        assert resp.status_code == 422
+
+    def test_persists_severity_in_history(
+        self, client: TestClient
+    ) -> None:
+        """A submission with user_id surfaces in per-user history with
+        the Bastien severity band captured.  Downstream trajectory /
+        clinician-UI code renders band labels from the stored field,
+        not from a re-score."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "isi",
+            "items": [3, 3, 2, 2, 3, 3, 3],  # total 19 → moderate
+            "user_id": "user-isi-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-isi-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "isi"
+        assert stored.total == 19
+        assert stored.severity == "moderate"
+        assert stored.requires_t3 is False
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """If a client mistakenly sends ``concurrent_symptoms`` or
+        ``functional_impairment`` with instrument=isi, the dispatcher
+        reaches the ISI branch before the MDQ fallthrough, so those
+        fields are ignored.  Defensive pin against dispatcher-
+        ordering regressions."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "isi",
+                "items": [3, 3, 2, 2, 3, 3, 3],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "isi"
+        assert body["severity"] == "moderate"
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 

@@ -1,5 +1,5 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
-C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5.
+C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -34,8 +34,8 @@ Safety routing:
   T3 check per Kroenke 2001).
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
-- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5 have
-  no safety items — ``requires_t3`` is always False for these
+- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI
+  have no safety items — ``requires_t3`` is always False for these
   instruments.  WHO-5 ``depression_screen`` band is *not* a T3
   trigger; T3 is reserved for active suicidality per
   Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ screen
@@ -43,7 +43,9 @@ Safety routing:
   not a crisis signal — see ``scoring/mdq.py`` module docstring.
   A positive PC-PTSD-5 is a referral signal for trauma-informed care
   (CAPS-5 / PCL-5 structured interview, EMDR / TF-CBT intake), not a
-  crisis signal — see ``scoring/pcptsd5.py``.
+  crisis signal — see ``scoring/pcptsd5.py``.  A severe ISI result
+  is a referral signal for CBT-I / sleep medicine, not a crisis
+  signal — see ``scoring/isi.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -84,6 +86,7 @@ from .scoring.cssrs import (
 )
 from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
 from .scoring.gad7 import InvalidResponseError as Gad7Invalid, score_gad7
+from .scoring.isi import InvalidResponseError as IsiInvalid, score_isi
 from .scoring.mdq import (
     ImpairmentLevel,
     InvalidResponseError as MdqInvalid,
@@ -118,6 +121,7 @@ Instrument = Literal[
     "dast10",
     "mdq",
     "pcptsd5",
+    "isi",
 ]
 
 
@@ -135,6 +139,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "dast10": 10,
     "mdq": 13,
     "pcptsd5": 5,
+    "isi": 7,
 }
 
 
@@ -384,6 +389,21 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=pt.positive_screen,
             instrument_version=pt.instrument_version,
         )
+    if payload.instrument == "isi":
+        # Bastien 2001 — 7-item 0-4 Likert, total 0-28.  severity is
+        # the four-band Bastien label (none/subthreshold/moderate/
+        # severe) so the wire shape matches PHQ-9 / GAD-7 severity-
+        # band instruments.  No safety routing — ISI is a CBT-I /
+        # sleep-medicine referral signal, not a crisis signal.
+        i = score_isi(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="isi",
+            total=i.total,
+            severity=i.severity,
+            requires_t3=False,
+            instrument_version=i.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -512,6 +532,7 @@ async def submit_assessment(
         Dast10Invalid,
         MdqInvalid,
         PcPtsd5Invalid,
+        IsiInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

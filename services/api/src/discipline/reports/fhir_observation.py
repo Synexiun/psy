@@ -52,6 +52,13 @@ LOINC_CODES: dict[str, str] = {
     # (>= 3) is a referral signal for CAPS-5 / PCL-5 / trauma-informed
     # care, not a severity band.
     "pcptsd5": "89204-2",
+    # ISI (Bastien 2001) uses LOINC 96899-5 for the total 0-28
+    # severity sum.  Unlike MDQ / PC-PTSD-5, ISI's ``valueInteger`` IS
+    # a weighted sum (summed 0-4 Likert items); the severity bands
+    # (none/subthreshold/moderate/severe) are surfaced separately
+    # via valueCodeableConcept on a paired Observation by the
+    # reports layer.
+    "isi": "96899-5",
 }
 
 LOINC_DISPLAY: dict[str, str] = {
@@ -64,6 +71,7 @@ LOINC_DISPLAY: dict[str, str] = {
     "pss10": "Perceived Stress Scale 10 item (PSS-10) total score",
     "mdq": "Mood Disorder Questionnaire (MDQ) positive item count",
     "pcptsd5": "Primary Care PTSD Screen for DSM-5 (PC-PTSD-5) positive item count",
+    "isi": "Insomnia Severity Index (ISI) total score",
 }
 
 # HL7 v3 terminology URIs — pinned as constants so callers (and tests) can
