@@ -1,6 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2.
+PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
+GAD-2.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -37,8 +38,8 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2 have no safety items — ``requires_t3`` is always
-  False for these instruments.  WHO-5 ``depression_screen``
+  DTCQ-8, URICA, PHQ-2, GAD-2 have no safety items — ``requires_t3``
+  is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -133,6 +134,21 @@ Safety routing:
   needs daily depression check-ins AND is at acute risk should be
   on PHQ-9 or C-SSRS (instrument choice is itself clinical), not
   on PHQ-2 with an added safety hack.  See ``scoring/phq2.py``.
+  GAD-2 (Kroenke 2007) is the 2-item ultra-short anxiety pre-
+  screener composed of GAD-7 items 1 (nervousness / on-edge) and
+  2 (uncontrolled worry) — the **companion to PHQ-2** on the
+  daily-EMA affective check-in surface.  Shipping PHQ-2 without
+  GAD-2 would strand the daily-EMA tier with only half the
+  affective signal (depression, not anxiety).  **No validated
+  severity bands** — Kroenke 2007 and downstream literature treat
+  GAD-2 as a binary decision gate ("promote to GAD-7 this week?
+  yes/no"), not a severity measure.  The router maps onto the
+  cutoff-only wire envelope (severity = "positive_screen" /
+  "negative_screen") uniform with PHQ-2 / PC-PTSD-5 / MDQ /
+  AUDIT-C.  No safety routing: GAD-2 has no suicidality item —
+  neither does the full GAD-7 — so anxiety screens never fire T3.
+  Acute ideation stays gated by PHQ-9 item 9 / C-SSRS per the
+  uniform safety-posture convention.  See ``scoring/gad2.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -183,6 +199,10 @@ from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
 from .scoring.dtcq8 import (
     InvalidResponseError as Dtcq8Invalid,
     score_dtcq8,
+)
+from .scoring.gad2 import (
+    InvalidResponseError as Gad2Invalid,
+    score_gad2,
 )
 from .scoring.gad7 import InvalidResponseError as Gad7Invalid, score_gad7
 from .scoring.isi import InvalidResponseError as IsiInvalid, score_isi
@@ -259,6 +279,7 @@ Instrument = Literal[
     "dtcq8",
     "urica",
     "phq2",
+    "gad2",
 ]
 
 
@@ -287,6 +308,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "dtcq8": 8,
     "urica": 16,
     "phq2": 2,
+    "gad2": 2,
 }
 
 
@@ -394,9 +416,9 @@ class AssessmentResult(BaseModel):
       (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
-      subscales (PHQ-9 / PHQ-2 / GAD-7 / WHO-5 / AUDIT / AUDIT-C /
-      C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 / ISI / PHQ-15 /
-      PACS / Craving VAS / Readiness Ruler / DTCQ-8) emit
+      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / WHO-5 / AUDIT /
+      AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 / ISI /
+      PHQ-15 / PACS / Craving VAS / Readiness Ruler / DTCQ-8) emit
       ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
@@ -936,6 +958,40 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=p2.positive_screen,
             instrument_version=p2.instrument_version,
         )
+    if payload.instrument == "gad2":
+        # Kroenke 2007 — 2-item 0-3 Likert ultra-short anxiety pre-
+        # screener composed of GAD-7 items 1 (nervousness / on-edge)
+        # and 2 (uncontrolled worry).  Total 0-6, positive at >= 3.
+        # **Companion to PHQ-2** on the daily-EMA affective check-in
+        # surface: PHQ-2 covers depression, GAD-2 covers anxiety, and
+        # together they form the 4-item daily screener that captures
+        # ~80% of primary-care mental-health screening volume in ~30
+        # seconds.  When GAD-2 crosses the positive cutoff across
+        # consecutive daily checks, the clinician workflow recommends
+        # promotion to a full GAD-7 for severity banding.  Wire
+        # envelope uses the cutoff-only semantic (severity =
+        # positive_screen / negative_screen) uniform with PHQ-2 /
+        # PC-PTSD-5 / MDQ / AUDIT-C — NOT the banded envelope used
+        # by GAD-7 itself.  Kroenke 2007 publishes no GAD-2 severity
+        # bands; back-calculating from GAD-7 thresholds would violate
+        # CLAUDE.md's "Don't hand-roll severity thresholds" rule.
+        # No safety routing: GAD-2 has no suicidality item (neither
+        # does GAD-7 full form), so anxiety screens never fire T3.
+        # Acute ideation stays gated by PHQ-9 item 9 / C-SSRS on
+        # demand per the uniform safety-posture convention.  See
+        # ``scoring/gad2.py``.
+        g2 = score_gad2(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="gad2",
+            total=g2.total,
+            severity=(
+                "positive_screen" if g2.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=g2.positive_screen,
+            instrument_version=g2.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1075,6 +1131,7 @@ async def submit_assessment(
         Dtcq8Invalid,
         UricaInvalid,
         Phq2Invalid,
+        Gad2Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

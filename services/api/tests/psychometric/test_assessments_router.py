@@ -4007,6 +4007,304 @@ class TestPhq2Routing:
 
 
 # =============================================================================
+# GAD-2 (Kroenke 2007) — 2-item ultra-short anxiety pre-screener
+# =============================================================================
+
+
+class TestGad2Routing:
+    """GAD-2 over the wire.
+
+    Router-level contract verification for the 2-item cutoff screen.
+    The scorer's own unit tests exhaustively pin the ``>= 3`` cutoff
+    and item validation; these tests pin:
+    (1) the dispatch branch picks ``score_gad2``,
+    (2) the wire envelope surfaces ``positive_screen`` and carries the
+        Likert-weighted total (0-6) as ``total`` (uniform with PHQ-2 /
+        PC-PTSD-5 / MDQ / AUDIT-C's cutoff-only envelope),
+    (3) ``requires_t3`` is always False — GAD-2 has no safety item
+        (neither does GAD-7 full form) so the T3 pathway is
+        unreachable from an anxiety screen regardless of score.
+        A regression that let GAD-2 fire T3 would spam the clinical-
+        ops safety queue on daily EMA volume and defeat the design
+        purpose of the 2-item short form (friction-minimizing daily
+        check-in).  Acute ideation stays gated by PHQ-9 item 9 /
+        C-SSRS on demand.
+    (4) dispatch ordering: GAD-2 is handled before the MDQ fallthrough
+        (same defensive pin as PHQ-2).
+    """
+
+    def _post_gad2(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+    ) -> Any:
+        return client.post(
+            "/v1/assessments",
+            json={"instrument": "gad2", "items": items},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_total_three_at_cutoff_is_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """At the Kroenke 2007 cutoff (total = 3 — e.g. nervousness
+        "more than half the days" + uncontrolled worry "several days")
+        → the wire response surfaces ``positive_screen=True``.  This
+        is the exact operating point; a fence-post regression would
+        break this case most visibly."""
+        resp = self._post_gad2(client, items=[2, 1])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "gad2"
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "gad2-1.0.0"
+
+    def test_total_two_below_cutoff_is_negative_screen(
+        self, client: TestClient
+    ) -> None:
+        """Just below the cutoff (total = 2) → negative_screen.
+        Kroenke 2007 considered cutoff 2 but rejected it for
+        over-firing on sub-clinical situational worry."""
+        resp = self._post_gad2(client, items=[1, 1])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "gad2"
+        assert body["total"] == 2
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_zero_total_is_negative_screen(self, client: TestClient) -> None:
+        """Zero on both items → negative screen.  The degenerate case:
+        a patient with no anxiety symptoms in the past 2 weeks."""
+        resp = self._post_gad2(client, items=[0, 0])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_max_total_is_positive_screen(self, client: TestClient) -> None:
+        """Both items "nearly every day" (total = 6) → unambiguous
+        positive screen — canonical GAD presentation on GAD-2, routes
+        the patient to full GAD-7 administration."""
+        resp = self._post_gad2(client, items=[3, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 6
+        assert body["positive_screen"] is True
+
+    def test_single_max_item_hits_cutoff(self, client: TestClient) -> None:
+        """One item maxed (3), the other zero (total = 3) → positive.
+        A patient with "every day uncontrolled worry but no
+        nervousness symptom" is still a positive screen — the cutoff
+        is on the total, not on per-item thresholds."""
+        resp = self._post_gad2(client, items=[0, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 3
+        assert body["positive_screen"] is True
+
+    def test_positive_screen_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: even a maximum GAD-2
+        score never fires the T3 crisis pathway.  GAD-2 has no
+        suicidality item (and neither does GAD-7 full form).  A
+        regression that let GAD-2 fire T3 would spam clinical-ops on
+        daily EMA volume and desensitize responders to real crises."""
+        resp = self._post_gad2(client, items=[3, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        """GAD-2 has no subscales — the wire envelope must emit
+        ``subscales=None`` (not an empty dict) to match the
+        convention for non-subscale instruments."""
+        resp = self._post_gad2(client, items=[3, 3])
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body.get("subscales") is None
+
+    def test_rejects_one_item(self, client: TestClient) -> None:
+        """Wrong item count → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad2", "items": [2]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_three_items(self, client: TestClient) -> None:
+        """Extra item → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad2", "items": [2, 1, 1]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_seven_items_gad7_misroute(
+        self, client: TestClient
+    ) -> None:
+        """A 7-item submission against ``instrument=gad2`` is almost
+        certainly a mis-routed GAD-7 (a UI bug that passed the full
+        GAD-7 array but tagged it gad2).  Must 422 with the
+        2-items-expected message rather than partially scoring."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad2", "items": [0, 0, 0, 0, 0, 0, 0]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        """Item value > 3 → 422.  GAD-2 is 0-3 four-point Likert."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad2", "items": [4, 2]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        """Negative item value → 422."""
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "gad2", "items": [-1, 2]},
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        """A submission with a user_id shows up in the per-user
+        history with the positive_screen flag captured."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gad2",
+                "items": [3, 2],
+                "user_id": "user-gad2-1",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-gad2-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "gad2"
+        assert stored.total == 5
+        assert stored.positive_screen is True
+        assert stored.requires_t3 is False
+        assert stored.subscales is None
+
+    def test_history_projection_surfaces_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """The /history endpoint projects GAD-2 records with the
+        ``positive_screen`` field populated."""
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gad2",
+                "items": [3, 3],
+                "user_id": "user-gad2-hist",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        resp = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-gad2-hist"},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["total"] == 1
+        item = body["items"][0]
+        assert item["instrument"] == "gad2"
+        assert item["total"] == 6
+        assert item["severity"] == "positive_screen"
+        assert item["positive_screen"] is True
+        assert item["requires_t3"] is False
+        assert item["subscales"] is None
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """``concurrent_symptoms`` and ``functional_impairment`` are
+        MDQ-only.  The GAD-2 dispatch branch is handled before the
+        MDQ fallthrough — defensive pin against dispatcher-ordering
+        regressions."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gad2",
+                "items": [2, 1],
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "gad2"
+        assert body["positive_screen"] is True
+
+    def test_phq2_and_gad2_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """The daily-EMA clinical pattern: PHQ-2 + GAD-2 submitted
+        together (same user, same day).  Both must land on the user's
+        timeline independently and render with their own per-
+        instrument cutoff labels.  Pins the router/repository
+        contract that the two companion screeners do NOT collide or
+        overwrite each other's records — a regression where the
+        history endpoint deduplicated by something like (user,
+        date, severity) would hide one of the two signals."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq2",
+                "items": [3, 2],
+                "user_id": "user-daily-ema",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gad2",
+                "items": [2, 2],
+                "user_id": "user-daily-ema",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-daily-ema", limit=10)
+        assert len(records) == 2
+        instruments = {r.instrument for r in records}
+        assert instruments == {"phq2", "gad2"}
+        # Both positive — the daily-EMA surface would escalate both to
+        # their full-form partners (PHQ-9 / GAD-7) in the clinician
+        # workflow.
+        for r in records:
+            assert r.positive_screen is True
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
