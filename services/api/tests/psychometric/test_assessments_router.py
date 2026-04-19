@@ -29288,3 +29288,400 @@ class TestSpinRouting:
         assert low["total"] == 0
         assert high["severity"] == "very_severe"
         assert low["severity"] == "none"
+
+
+# ============================================================================
+# TestCuditRRouting -- Adamson 2010 Cannabis Use Disorder ID Test - Revised
+# ============================================================================
+
+
+class TestCuditRRouting:
+    """HTTP-layer tests for CUDIT-R (Adamson 2010).
+
+    8 items, items 1-7 scored 0-4, item 8 scored 0-4 (weighted x2).
+    Total = sum(items[:7]) + items[7]*2; range 0-36.
+    Positive screen at total >= 12.
+    Wire shape: positive_screen / negative_screen (no severity bands).
+    requires_t3=False. No subscales, no cutoff_used.
+    """
+
+    @staticmethod
+    def _weighted_total(items: list) -> int:
+        return sum(items[:7]) + items[7] * 2
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"cuditr-test-{idem_key}"}
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_cuditr_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_cuditr_envelope_has_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_cuditr_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "cuditr"
+
+    def test_cuditr_envelope_has_total(self, client: TestClient) -> None:
+        # [1]*8: sum(1*7) + 1*2 = 7+2 = 9
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [1] * 8},
+            headers=self._headers("env-total"),
+        ).json()
+        assert body["total"] == 9
+
+    def test_cuditr_envelope_has_positive_screen(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("env-ps"),
+        ).json()
+        assert "positive_screen" in body
+
+    def test_cuditr_requires_t3_always_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_cuditr_instrument_version(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("version"),
+        ).json()
+        assert body["instrument_version"] == "cuditr-1.0.0"
+
+    # ------------------------------------------------------------------
+    # Weighted scoring
+    # ------------------------------------------------------------------
+
+    def test_floor_total_is_zero(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("floor"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_ceiling_total_is_36(self, client: TestClient) -> None:
+        # sum(4*7) + 4*2 = 28 + 8 = 36
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("ceil"),
+        ).json()
+        assert body["total"] == 36
+
+    def test_item_8_contributes_double(self, client: TestClient) -> None:
+        # item 8=1, all others 0 → total = 2
+        items = [0] * 7 + [1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("w8-double"),
+        ).json()
+        assert body["total"] == 2
+
+    def test_item_8_max_contribution_8(self, client: TestClient) -> None:
+        # items 1-7=0, item8=4 → total = 0+4*2=8
+        items = [0] * 7 + [4]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("w8-max"),
+        ).json()
+        assert body["total"] == 8
+
+    def test_weighted_total_explicit(self, client: TestClient) -> None:
+        items = [1, 2, 3, 2, 1, 0, 1, 3]
+        expected = sum(items[:7]) + items[7] * 2  # 10+6=16
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("w-expl"),
+        ).json()
+        assert body["total"] == expected
+
+    # ------------------------------------------------------------------
+    # Positive screen boundary
+    # ------------------------------------------------------------------
+
+    def test_total_below_cutoff_negative(self, client: TestClient) -> None:
+        # total = 11 → negative_screen
+        items = [1, 1, 1, 1, 1, 2, 2, 1]  # sum[:7]=9, 1*2=2 → 11
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("ps-neg"),
+        ).json()
+        assert body["total"] == 11
+        assert body["positive_screen"] is False
+        assert body["severity"] == "negative_screen"
+
+    def test_total_at_cutoff_positive(self, client: TestClient) -> None:
+        # total = 12 → positive_screen
+        items = [2, 2, 2, 1, 1, 1, 1, 1]  # sum[:7]=10, 1*2=2 → 12
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("ps-at"),
+        ).json()
+        assert body["total"] == 12
+        assert body["positive_screen"] is True
+        assert body["severity"] == "positive_screen"
+
+    def test_total_above_cutoff_positive(self, client: TestClient) -> None:
+        items = [2] * 8  # 14 + 4 = 18
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("ps-above"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_floor_is_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("ps-floor"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_ceiling_is_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("ps-ceil"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    # ------------------------------------------------------------------
+    # Envelope audit -- absent/present fields
+    # ------------------------------------------------------------------
+
+    def test_no_subscales_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [2] * 8},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [2] * 8},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_no_index_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [1] * 8},
+            headers=self._headers("no-idx"),
+        ).json()
+        assert body.get("index") is None
+
+    def test_no_triggering_items_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("no-trig"),
+        ).json()
+        assert body.get("triggering_items") is None
+
+    # ------------------------------------------------------------------
+    # Item validation -- wrong count
+    # ------------------------------------------------------------------
+
+    def test_cuditr_7_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [1] * 7},
+            headers=self._headers("cnt-7"),
+        )
+        assert resp.status_code == 422
+
+    def test_cuditr_9_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [1] * 9},
+            headers=self._headers("cnt-9"),
+        )
+        assert resp.status_code == 422
+
+    def test_cuditr_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item validation -- range
+    # ------------------------------------------------------------------
+
+    def test_item_above_4_returns_422(self, client: TestClient) -> None:
+        items = [1] * 8
+        items[3] = 5
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("range-hi"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_8_above_4_returns_422(self, client: TestClient) -> None:
+        # Item 8 raw range is still 0-4; weighting is internal.
+        items = [0] * 7 + [5]
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("range-8-hi"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_negative_returns_422(self, client: TestClient) -> None:
+        items = [1] * 8
+        items[0] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    def test_item_4_accepted(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("range-4ok"),
+        )
+        assert resp.status_code == 201
+
+    # ------------------------------------------------------------------
+    # JSON type coercion
+    # ------------------------------------------------------------------
+
+    def test_json_false_zero_accepted(self, client: TestClient) -> None:
+        items: list = [1] * 8
+        items[0] = False  # Pydantic lax: false → 0, valid for 0-4
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("false-ok"),
+        )
+        assert resp.status_code == 201
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_non_user_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("vig-non"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_cannabis_use_disorder_positive(self, client: TestClient) -> None:
+        # CUD diagnosis pattern per Adamson 2010.
+        items = [2, 2, 2, 2, 2, 2, 2, 3]  # 14+6=20 → positive
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("vig-cud"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_withdrawal_relapse_driver_positive(self, client: TestClient) -> None:
+        # Haney 1999 / Budney 2003: heavy use with early morning.
+        items = [3, 3, 3, 2, 2, 2, 2, 4]  # 17+8=25 → positive
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("vig-haney"),
+        ).json()
+        assert body["total"] == 25
+        assert body["positive_screen"] is True
+
+    def test_social_anxiety_self_medication(self, client: TestClient) -> None:
+        # Buckner 2008: cannabis as social-anxiety management.
+        items = [2, 3, 3, 2, 1, 2, 2, 2]  # 15+4=19 → positive
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("vig-buckner"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_ceiling_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("vig-ceil"),
+        ).json()
+        assert body["total"] == 36
+        assert body["positive_screen"] is True
+
+    # ------------------------------------------------------------------
+    # Stability / determinism
+    # ------------------------------------------------------------------
+
+    def test_same_items_same_result(self, client: TestClient) -> None:
+        items = [1, 2, 3, 0, 2, 1, 3, 2]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["positive_screen"] == b["positive_screen"]
+        assert a["instrument_version"] == b["instrument_version"]
+
+    def test_direction_higher_is_more_harm(self, client: TestClient) -> None:
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [4] * 8},
+            headers=self._headers("dir-high"),
+        ).json()
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "cuditr", "items": [0] * 8},
+            headers=self._headers("dir-low"),
+        ).json()
+        assert high["total"] > low["total"]
+        assert high["total"] == 36
+        assert low["total"] == 0

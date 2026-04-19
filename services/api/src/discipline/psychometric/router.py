@@ -6,7 +6,7 @@ CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
 MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
-IGDS9-SF, PCS, ESS, SPIN.
+IGDS9-SF, PCS, ESS, SPIN, CUDIT-R.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -46,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS, ESS, SPIN, CUDIT-R have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1630,6 +1630,10 @@ from .scoring.spin import (
     InvalidResponseError as SpinInvalid,
     score_spin,
 )
+from .scoring.cuditr import (
+    InvalidResponseError as CuditRInvalid,
+    score_cuditr,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1720,6 +1724,7 @@ Instrument = Literal[
     "pcs",
     "ess",
     "spin",
+    "cuditr",
 ]
 
 
@@ -1792,6 +1797,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pcs": 13,
     "ess": 8,
     "spin": 17,
+    "cuditr": 8,
 }
 
 
@@ -6224,6 +6230,56 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=s.instrument_version,
         )
+    if payload.instrument == "cuditr":
+        # CUDIT-R — Adamson 2010 Cannabis Use Disorder Identification
+        # Test - Revised.
+        #
+        # Adamson SJ et al. 2010 Drug Alcohol Depend 110(3):247-252.
+        # 8 items; items 1-7 scored 0-4 Likert; item 8 scored 0-4
+        # with ×2 weight in total formula.
+        # Total = sum(items[0:7]) + items[7] × 2; range 0-36.
+        # HIGHER = MORE cannabis-related harm.
+        #
+        # Positive screen: total ≥ 12 (Adamson 2010 Table 3;
+        # AUC = 0.93, sensitivity 0.91, specificity 0.83 against
+        # DSM-IV cannabis abuse/dependence; n = 294).
+        #
+        # Platform relevance — cannabis is the #2 substance in
+        # the platform's addiction-intervention scope.  Three
+        # clinical pathways:
+        #
+        # 1. Cannabis withdrawal as relapse driver — Haney 1999
+        #    Psychopharmacology 143(4):396-403; Budney 2003 J Abnorm
+        #    Psychol 112(3):393-402: 70% of regular users report
+        #    withdrawal on abstinence; high CUDIT-R + ESS elevated →
+        #    cannabis-withdrawal-insomnia-relapse compound signal.
+        # 2. Cannabis × social anxiety self-medication — Buckner
+        #    2008 Drug Alcohol Depend 93(3):1-8; Kedzior 2014 PLoS
+        #    ONE 9(4):e92478: social anxiety is the strongest
+        #    psychiatric predictor of CUD.  CUDIT-R elevated + SPIN
+        #    elevated → self-medication pattern.
+        # 3. Cannabis craving as the 60-180s urge-to-action construct
+        #    — Copersino 2006 Am J Addict 15(1):8-14: CUDIT-R total
+        #    trajectory correlates with PACS total at session level.
+        #
+        # Wire shape: positive_screen cutoff-only envelope (uniform
+        # with PHQ-2 / GAD-2 / OASIS / PC-PTSD-5 / MDQ / AUDIT-C).
+        # No severity bands (Adamson 2010 validates single cutoff).
+        # No subscales (unidimensional EFA).
+        #
+        # T3 posture — CUDIT-R has NO safety items.  Acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10
+        # item 6.
+        c = score_cuditr(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="cuditr",
+            total=c.total,
+            severity=c.severity,
+            requires_t3=False,
+            positive_screen=c.positive_screen,
+            instrument_version=c.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -6407,6 +6463,7 @@ async def submit_assessment(
         PcsInvalid,
         EssInvalid,
         SpinInvalid,
+        CuditRInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
