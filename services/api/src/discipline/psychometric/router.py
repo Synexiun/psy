@@ -1,6 +1,6 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
-PACS, BIS-11, Craving VAS, Readiness Ruler.
+PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -36,9 +36,9 @@ Safety routing:
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
-  PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler
-  have no safety items — ``requires_t3`` is always False for these
-  instruments.  WHO-5 ``depression_screen``
+  PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
+  DTCQ-8 have no safety items — ``requires_t3`` is always False for
+  these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -84,7 +84,21 @@ Safety routing:
   applies the same direction-inversion logic it uses for WHO-5.
   No safety item; a Ruler of 0 ("not ready at all") is a
   motivation signal, not a crisis signal.  See
-  ``scoring/readiness_ruler.py``.
+  ``scoring/readiness_ruler.py``.  DTCQ-8 (Sklar & Turner 1999)
+  is the 8-item Drug-Taking Confidence Questionnaire short form
+  — coping self-efficacy across Marlatt 1985's 8 high-risk
+  relapse situations on a 0-100 confidence scale.  The instrument
+  is the **coping-profile partner** to PACS / VAS: where craving
+  measures urge intensity and Ruler measures motivation, DTCQ-8
+  measures the per-situation confidence to resist.  The
+  intervention layer reads the 8-tuple profile (not just the
+  aggregate mean) to pick skill-building tool variants matched
+  to the weakest Marlatt category.  Higher-is-better direction
+  (same as WHO-5 / Ruler) — the trajectory layer's RCI logic
+  must register DTCQ-8 in the higher-is-better partition when
+  Sprint-X adds DTCQ-8 trajectory coverage.  No safety item;
+  a DTCQ-8 of 0 ("no confidence at all") is a skill-building
+  signal, not a crisis signal.  See ``scoring/dtcq8.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -132,6 +146,10 @@ from .scoring.cssrs import (
     score_cssrs_screen,
 )
 from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
+from .scoring.dtcq8 import (
+    InvalidResponseError as Dtcq8Invalid,
+    score_dtcq8,
+)
 from .scoring.gad7 import InvalidResponseError as Gad7Invalid, score_gad7
 from .scoring.isi import InvalidResponseError as IsiInvalid, score_isi
 from .scoring.mdq import (
@@ -196,6 +214,7 @@ Instrument = Literal[
     "bis11",
     "craving_vas",
     "readiness_ruler",
+    "dtcq8",
 ]
 
 
@@ -221,6 +240,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "bis11": 30,
     "craving_vas": 1,
     "readiness_ruler": 1,
+    "dtcq8": 8,
 }
 
 
@@ -231,8 +251,8 @@ class AssessmentRequest(BaseModel):
     Pydantic) so the error message can be specific to the instrument
     ("PHQ-9 requires exactly 9 items, got N").  The Pydantic
     ``min_length=1, max_length=30`` bound is the broadest envelope
-    covering every supported instrument (Craving VAS=1 through
-    BIS-11=30); a tighter check needs to know the instrument value,
+    covering every supported instrument (Craving VAS=1, DTCQ-8=8
+    through BIS-11=30); a tighter check needs to know the instrument value,
     which Pydantic field validators can't see in a clean way.  Craving
     VAS (Sprint 36) dropped the floor from 3 to 1 so the single-item
     EMA instrument could flow through the same wire shape; BIS-11
@@ -322,18 +342,24 @@ class AssessmentResult(BaseModel):
     positive_count is the closest analogue and clients can use it for
     trajectory tracking independently of band changes.
 
-    For PACS (Flannery 1999), Craving VAS (Sayette 2000), and
-    Readiness Ruler (Rollnick 1999 / Heather 2008), ``severity`` is
-    the literal sentinel ``"continuous"``.  None of these instruments
-    publishes severity bands; the trajectory layer extracts the
-    clinical signal from ``total`` directly — week-over-week Δ for
-    PACS, within-episode Δ + EMA trajectory for VAS, week-over-week
-    Δ for the Ruler.  Direction semantics differ: VAS and PACS are
-    higher-is-worse (craving rising = deterioration), the Ruler is
-    higher-is-better (motivation rising = improvement, same direction
-    as WHO-5).  Clients rendering these results must not attempt to
-    classify status from ``severity`` — show ``total`` and the
-    trajectory chart instead.
+    For PACS (Flannery 1999), Craving VAS (Sayette 2000), Readiness
+    Ruler (Rollnick 1999 / Heather 2008), and DTCQ-8 (Sklar & Turner
+    1999), ``severity`` is the literal sentinel ``"continuous"``.
+    None of these instruments publishes severity bands; the trajectory
+    layer extracts the clinical signal from ``total`` directly —
+    week-over-week Δ for PACS, within-episode Δ + EMA trajectory for
+    VAS, week-over-week Δ for the Ruler, week-over-week Δ on the
+    coping-self-efficacy mean for DTCQ-8.  Direction semantics differ:
+    VAS and PACS are higher-is-worse (craving rising = deterioration);
+    the Ruler and DTCQ-8 are higher-is-better (motivation / coping-
+    confidence rising = improvement, same direction as WHO-5).
+    Clients rendering these results must not attempt to classify
+    status from ``severity`` — show ``total`` and the trajectory chart
+    instead.  DTCQ-8 additionally carries irreducible per-situation
+    profile signal in the stored record's ``raw_items`` tuple; the
+    response envelope exposes the aggregate ``total`` only, and
+    clinician-UI surfaces reading the coping profile fetch the raw
+    items through the PHI-boundary-gated repository path.
     """
 
     assessment_id: str
@@ -681,6 +707,51 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=rr.instrument_version,
         )
+    if payload.instrument == "dtcq8":
+        # Sklar & Turner 1999 — 8-item Drug-Taking Confidence
+        # Questionnaire short form.  Each item is a 0-100 integer
+        # confidence-percentage score; the aggregate is the **mean**
+        # across the 8 Marlatt 1985 situation categories, not the
+        # sum.  The scorer exposes ``total`` as the mean rounded to
+        # int (for AssessmentResult envelope compatibility) AND
+        # ``mean`` as the exact float (for FHIR valueDecimal /
+        # clinician-PDF precision).  The router emits ``total`` here;
+        # the ``mean`` field flows through the repository record so
+        # downstream consumers (trajectory layer, FHIR export) can
+        # read the precise aggregate.  **Continuous-severity
+        # envelope** (same sentinel as PACS / VAS / Ruler) — Sklar
+        # 1999 publishes no bands and the "50% = moderate confidence"
+        # clinician-training heuristic is pedagogical shorthand, not
+        # a validated cutoff with consensus uptake.  Fabricating
+        # bands would violate CLAUDE.md's "Don't hand-roll severity
+        # thresholds" rule.  **Direction semantics: higher is
+        # better** — the third higher-is-better instrument in the
+        # package after WHO-5 and Readiness Ruler.  The trajectory
+        # layer must apply the same direction-inversion logic when
+        # DTCQ-8 trajectory coverage is added.  **Per-situation
+        # profile signal** is load-bearing here (unique to DTCQ-8
+        # among shipped instruments): the intervention layer reads
+        # the 8-tuple via ``SITUATION_LABELS`` positional mapping to
+        # pick skill-building tool variants matched to the weakest
+        # Marlatt category (e.g. social-pressure weakness routes to
+        # refusal-skills, unpleasant-emotions weakness routes to
+        # distress-tolerance).  The wire response envelope surfaces
+        # only the aggregate ``total``; clinician-UI surfaces
+        # reading the full profile go through the
+        # PHI-boundary-gated repository path.  No safety routing:
+        # low coping self-efficacy is a skill-building signal, not
+        # a crisis signal; acute ideation is gated by PHQ-9 item 9
+        # / C-SSRS per the uniform safety-posture convention.  See
+        # ``scoring/dtcq8.py``.
+        d = score_dtcq8(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="dtcq8",
+            total=d.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=d.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -817,6 +888,7 @@ async def submit_assessment(
         Bis11Invalid,
         CravingVasInvalid,
         ReadinessRulerInvalid,
+        Dtcq8Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

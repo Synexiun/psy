@@ -2850,6 +2850,258 @@ class TestReadinessRulerRouting:
 
 
 # =============================================================================
+# DTCQ-8 (Sklar & Turner 1999 — 8-item Drug-Taking Confidence Questionnaire)
+# =============================================================================
+
+
+class TestDtcq8Routing:
+    """DTCQ-8 (Sklar & Turner 1999) over the wire.
+
+    DTCQ-8 is the package's **first profiled continuous instrument** —
+    the 8-tuple carries per-situation coping-self-efficacy signal the
+    intervention layer reads by position (social-pressure weakness vs
+    unpleasant-emotions weakness route to different tool variants at
+    the same aggregate).  The wire response envelope surfaces only the
+    aggregate ``total`` — clinician-UI surfaces that render the full
+    Marlatt 1985 profile go through the PHI-boundary-gated repository
+    path.  The **third higher-is-better continuous-severity instrument**
+    (after WHO-5 and Ruler); the severity sentinel remains
+    ``"continuous"`` uniform with PACS / VAS / Ruler, since Sklar 1999
+    publishes no bands.
+
+    These tests pin (1) the dispatch branch picks ``score_dtcq8``,
+    (2) the wire envelope carries ``severity == "continuous"`` across
+    the full 0-100 range, (3) ``requires_t3`` is always False (low
+    coping is a skill-building signal, not a crisis signal), (4) the
+    ``total`` field equals the mean-rounded-to-int per Sklar 1999
+    scoring, (5) 7 / 9 / 50-item payloads are rejected at 422 (off-by-
+    one + long-form DTCQ misroute guards), and (6) out-of-range values
+    (-1, 101, 200) are 422.  Also pins the per-situation profile
+    preservation contract end-to-end through the router — the stored
+    ``raw_items`` tuple matches the submitted 8-tuple positionally so
+    the intervention layer's per-situation lookup is intact after
+    persistence.
+    """
+
+    def _post_dtcq8(
+        self,
+        client: TestClient,
+        *,
+        items: list[int],
+        user_id: str | None = None,
+    ) -> Any:
+        body: dict[str, Any] = {"instrument": "dtcq8", "items": items}
+        if user_id is not None:
+            body["user_id"] = user_id
+        return client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_happy_path_maintenance_profile(self, client: TestClient) -> None:
+        """Uniform 90 — maintenance-stage broad coping confidence →
+        total 90 → severity 'continuous'.  No T3."""
+        resp = self._post_dtcq8(client, items=[90] * 8)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "dtcq8"
+        assert body["total"] == 90
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "dtcq8-1.0.0"
+
+    def test_rock_bottom_coping_returns_continuous_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """All 0s → "no confidence at all" in every Marlatt situation.
+        Must emit ``severity == "continuous"`` — a regression that
+        classified this case as a distinct label (e.g. 'low_coping')
+        would cross the "Don't hand-roll severity thresholds" line
+        from CLAUDE.md."""
+        resp = self._post_dtcq8(client, items=[0] * 8)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_midrange_total_is_still_continuous(
+        self, client: TestClient
+    ) -> None:
+        """Uniform 50 — the "moderate confidence" clinician-training
+        vignette.  Must not pick up a banded label — the 50% anchor
+        is pedagogical, not a validated cutoff."""
+        resp = self._post_dtcq8(client, items=[50] * 8)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 50
+        assert body["severity"] == "continuous"
+
+    def test_mean_rounds_to_int_in_router_envelope(
+        self, client: TestClient
+    ) -> None:
+        """Items [50,50,50,50,50,50,50,51] → exact mean 50.125 →
+        rounded total 50.  The router envelope exposes the int total;
+        the exact float ``mean`` lives on the scorer result but is
+        NOT on the wire response shape (kept int-only for uniformity
+        with every other instrument)."""
+        resp = self._post_dtcq8(
+            client, items=[50, 50, 50, 50, 50, 50, 50, 51]
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 50
+        # The wire response shape is int-only — ``mean`` is not a
+        # field.  A regression that added ``mean`` to AssessmentResult
+        # without extending every renderer would break this test AND
+        # the sibling instruments' serialization contracts.
+        assert "mean" not in body
+
+    def test_profile_weakness_aggregate(self, client: TestClient) -> None:
+        """Seven situations at 80, one weak spot (item 7 —
+        social_pressure_to_use) at 10.  Mean = 570/8 = 71.25 →
+        rounded total 71.  This is the "social-pressure weakness"
+        profile the intervention layer reads to pick refusal-skills
+        scripts — here we pin only the aggregate; the per-situation
+        lookup is verified in
+        ``test_persists_profile_verbatim_in_history`` below."""
+        resp = self._post_dtcq8(
+            client, items=[80, 80, 80, 80, 80, 80, 10, 80]
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["total"] == 71
+        assert body["severity"] == "continuous"
+
+    def test_zero_coping_does_not_fire_t3(self, client: TestClient) -> None:
+        """Critical clinical-safety contract: DTCQ-8 all-zeros ("no
+        confidence in any situation") does NOT fire T3.  Low
+        self-efficacy pairs with high-craving / low-motivation
+        profiles, but the product responds with skill-building
+        interventions matched to the weakest category — not T4
+        human handoff.  Acute ideation is gated by PHQ-9 item 9 /
+        C-SSRS per the uniform safety-posture convention."""
+        resp = self._post_dtcq8(client, items=[0] * 8)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_rejects_empty_list(self, client: TestClient) -> None:
+        resp = self._post_dtcq8(client, items=[])
+        assert resp.status_code == 422
+
+    def test_rejects_seven_items(self, client: TestClient) -> None:
+        """Off-by-one below.  A caller dropping one Marlatt category
+        would silently misreport the aggregate if padding or
+        truncation existed."""
+        resp = self._post_dtcq8(client, items=[50] * 7)
+        assert resp.status_code == 422
+
+    def test_rejects_nine_items(self, client: TestClient) -> None:
+        """Off-by-one above.  9 items is the PHQ-9 shape — a caller
+        wiring DTCQ-8 through a PHQ-9 code path would send 9 items;
+        the dispatch must 422 with a DTCQ-8-specific message rather
+        than silently scoring the first 8."""
+        resp = self._post_dtcq8(client, items=[50] * 9)
+        assert resp.status_code == 422
+
+    def test_rejects_fifty_items_long_form_misroute(
+        self, client: TestClient
+    ) -> None:
+        """50 items is the long-form DTCQ shape (Sklar 1997).  The
+        8-item dispatch must NOT silently accept a long-form payload
+        — the semantic "one item per Marlatt category" mapping
+        breaks at any other length, and silently scoring the first 8
+        would produce a profile that does not match the long-form
+        category assignments."""
+        resp = self._post_dtcq8(client, items=[50] * 50)
+        assert resp.status_code == 422
+
+    def test_rejects_one_hundred_one(self, client: TestClient) -> None:
+        """Off-by-one above the 0-100 ceiling → 422.  The classic
+        regression guard."""
+        resp = self._post_dtcq8(
+            client, items=[50, 50, 50, 50, 50, 50, 50, 101]
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_negative_value(self, client: TestClient) -> None:
+        """Negative confidence → 422.  Regression guard against a
+        caller that sent a signed integer instead of the unsigned
+        0-100 scalar."""
+        resp = self._post_dtcq8(
+            client, items=[-1, 50, 50, 50, 50, 50, 50, 50]
+        )
+        assert resp.status_code == 422
+
+    def test_persists_profile_verbatim_in_history(
+        self, client: TestClient
+    ) -> None:
+        """Submission with user_id lands in per-user history with the
+        full 8-tuple preserved positionally.  This is THE load-bearing
+        contract for DTCQ-8 — the intervention layer reads the per-
+        situation profile from the stored record, NOT from the wire
+        response (the response exposes only the aggregate ``total``).
+        A regression that sorted, deduplicated, or truncated the
+        stored items would silently break tool-variant selection
+        across every Marlatt category."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        # Social-pressure weakness profile — distinct per-position
+        # values so a reorder regression shows up in multiple
+        # assertions at once.
+        submitted = [80, 85, 75, 70, 90, 95, 10, 65]
+        body = {
+            "instrument": "dtcq8",
+            "items": submitted,
+            "user_id": "user-dtcq8-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-dtcq8-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "dtcq8"
+        assert stored.severity == "continuous"
+        assert stored.requires_t3 is False
+        # Positional preservation — every index must match the
+        # submitted value.
+        assert stored.raw_items == tuple(submitted)
+        # Aggregate sanity check: mean = 570/8 = 71.25 → total 71.
+        assert stored.total == 71
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """instrument=dtcq8 + MDQ fields → MDQ fields ignored, DTCQ-8
+        dispatch runs cleanly.  Defensive pin across the dispatcher-
+        ordering contract — same guard as PACS / VAS / Ruler / BIS-11
+        / PHQ-15."""
+        resp = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dtcq8",
+                "items": [60] * 8,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "dtcq8"
+        assert body["total"] == 60
+        assert body["severity"] == "continuous"
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
