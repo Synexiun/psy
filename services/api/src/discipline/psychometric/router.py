@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R.
+CD-RISC-10, PSWQ, LOT-R, TAS-20.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -564,6 +564,32 @@ Safety routing:
   self-harm, or crisis behavior.  LOT-R pairs directly with
   CD-RISC-10 as the two-axis trait-positive-psychology layer
   (capacity + expectancy).  See ``scoring/lotr.py``.
+- TAS-20 (Bagby, Parker & Taylor 1994): 20 items, 1-5 Likert.
+  Measures **alexithymia** — trait-level difficulty identifying
+  feelings (DIF), describing feelings (DDF), and an externally-
+  oriented cognitive style (EOT).  Reverse-keying on items 4, 5,
+  10, 18, 19 (reuses the PSWQ / LOT-R arithmetic-reflection
+  idiom; ``flipped = 6 - raw``).  Three-subscale structure per
+  Bagby 1994 CFA — surfaced via the ``subscales`` map with keys
+  ``dif`` / ``ddf`` / ``eot`` (uniform with DERS-16's subscale
+  dispatch shape).  Higher-is-worse (more alexithymia); uniform
+  direction with PHQ-9 / GAD-7 / DERS-16 / PCL-5 / OCI-R / K10 /
+  WSAS / PSWQ.  **Re-introduces banded classification** after
+  five consecutive continuous-sentinel sprints (WSAS, DERS-16,
+  CD-RISC-10, PSWQ, LOT-R) — Bagby 1994 published cross-
+  calibrated cutoffs (≤51 non_alexithymic, 52-60
+  possible_alexithymia, ≥61 alexithymic) replicated across
+  Taylor 1997 / Ogrodniczuk 2011 / Cleland 2005 validation work.
+  Clinical framing: upstream emotion-identification measure that
+  GATES downstream emotion-regulation training — a patient who
+  cannot identify "I am angry right now" cannot plausibly deploy
+  an anger-regulation strategy, so the intervention-selection
+  layer routes high-DIF patients to affect-labeling work BEFORE
+  DBT-style regulation skills.  No ``cutoff_used`` /
+  ``positive_screen`` — TAS-20 uses three bands, not a single
+  binary cutoff.  No T3 — the 20 items probe emotion-
+  identification / description / externally-oriented cognition;
+  none probe suicidality.  See ``scoring/tas20.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -702,6 +728,10 @@ from .scoring.sds import (
     Substance as SdsSubstance,
     score_sds,
 )
+from .scoring.tas20 import (
+    InvalidResponseError as Tas20Invalid,
+    score_tas20,
+)
 from .scoring.urica import (
     InvalidResponseError as UricaInvalid,
     score_urica,
@@ -757,6 +787,7 @@ Instrument = Literal[
     "cdrisc10",
     "pswq",
     "lotr",
+    "tas20",
 ]
 
 
@@ -798,6 +829,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "cdrisc10": 10,
     "pswq": 16,
     "lotr": 10,
+    "tas20": 20,
 }
 
 
@@ -2050,6 +2082,83 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=lr.instrument_version,
         )
+    if payload.instrument == "tas20":
+        # Bagby, Parker & Taylor 1994 Toronto Alexithymia Scale — the
+        # validated 20-item measure of alexithymia (trait-level
+        # difficulty identifying / describing feelings and
+        # externally-oriented cognitive style).  Clinically: the
+        # UPSTREAM emotion-identification construct that GATES
+        # downstream emotion-regulation training — a patient who
+        # cannot identify "I am angry right now" cannot plausibly
+        # deploy an anger-regulation strategy.  The intervention-
+        # selection layer reads high-DIF (Difficulty Identifying
+        # Feelings) subscale scores as an affect-labeling
+        # prerequisite check; high-alexithymia patients route FIRST
+        # to emotion-identification work (Taylor & Bagby 2004
+        # Emotion Regulation Therapy; DBT "Observe"/"Describe"
+        # mindfulness skills before regulation skills; CBT
+        # emotion-awareness logs before cognitive restructuring)
+        # before DBT / CBT-style regulation tools return benefit.
+        # Alexithymia additionally predicts poorer standard-CBT
+        # response across depression / anxiety / addiction
+        # populations (Ogrodniczuk 2011 meta-analysis), elevates
+        # somatization risk (Taylor 1997; pairs with PHQ-15 for the
+        # somatization cluster), and predicts SUD relapse (Cleland
+        # 2005, Thorberg 2009 — alexithymic patients cannot preempt
+        # emotional triggers to the craving-to-use pathway).
+        # 20 items, 1-5 Likert.  Reverse-keying on items 4, 5, 10,
+        # 18, 19 — reuses the PSWQ / LOT-R arithmetic-reflection
+        # idiom (``flipped = 6 - raw``) before summing.  Three
+        # subscales per Bagby 1994 CFA: DIF (7 items: 1, 3, 6, 7,
+        # 9, 13, 14), DDF (5 items: 2, 4, 11, 12, 17), EOT (8
+        # items: 5, 8, 10, 15, 16, 18, 19, 20).  Subscale sums
+        # reconstruct to the 20-item total.  Surfaced via the
+        # ``subscales`` map with keys ``dif`` / ``ddf`` / ``eot``
+        # uniformly with DERS-16 dispatch shape (Bjureberg 2016
+        # surfaces ``nonacceptance`` / ``goals`` / ``impulse`` /
+        # ``strategies`` / ``clarity``).
+        # **Higher-is-worse direction** — uniform with PHQ-9 /
+        # GAD-7 / DERS-16 / PCL-5 / OCI-R / K10 / WSAS / PSWQ;
+        # opposite of WHO-5 / DTCQ-8 / Readiness Ruler /
+        # CD-RISC-10 / LOT-R.
+        # **Re-introduces banded classification** after five
+        # consecutive continuous-sentinel sprints (WSAS, DERS-16,
+        # CD-RISC-10, PSWQ, LOT-R).  Bagby 1994 published cross-
+        # calibrated cutoffs replicated across Taylor 1997 /
+        # Ogrodniczuk 2011 / Cleland 2005:
+        #     ≤51    → non_alexithymic
+        #     52-60  → possible_alexithymia
+        #     ≥61    → alexithymic (clinical threshold)
+        # These are validated thresholds (NOT hand-rolled per
+        # CLAUDE.md "don't hand-roll severity thresholds") — pinned
+        # as TAS20_NON_ALEXITHYMIC_UPPER / TAS20_POSSIBLE_UPPER in
+        # the scorer module.  Notable clinical property: raw
+        # all-3s midline → total 60 → possible_alexithymia (upper
+        # edge of middle band), NOT non_alexithymic.  This is a
+        # deliberate property of Bagby's threshold placement —
+        # "neither agree nor disagree" on alexithymia-identifying
+        # statements is itself evidence of poor emotional self-
+        # knowledge; do NOT 'fix' the midline classification.
+        # ``cutoff_used`` / ``positive_screen`` NOT set — TAS-20
+        # uses three bands, not a single binary cutoff.  No T3 —
+        # all 20 items probe emotion-identification / description
+        # / externally-oriented cognition; none probe suicidality.
+        # Acute ideation screening stays on PHQ-9 item 9 / C-SSRS.
+        # See ``scoring/tas20.py``.
+        ta = score_tas20(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="tas20",
+            total=ta.total,
+            severity=ta.band,
+            requires_t3=False,
+            subscales={
+                "dif": ta.subscale_dif,
+                "ddf": ta.subscale_ddf,
+                "eot": ta.subscale_eot,
+            },
+            instrument_version=ta.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2202,6 +2311,7 @@ async def submit_assessment(
         Cdrisc10Invalid,
         PswqInvalid,
         LotrInvalid,
+        Tas20Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

@@ -9893,6 +9893,499 @@ class TestLotrRouting:
         assert body["severity"] == "continuous"
 
 
+class TestTas20Routing:
+    """TAS-20 (Bagby, Parker & Taylor 1994) router dispatch.
+
+    Wire contract invariants:
+    - **Banded severity** — the ``severity`` field carries the
+      Bagby 1994 band ("non_alexithymic" / "possible_alexithymia"
+      / "alexithymic"), NOT the continuous sentinel.  Re-introduces
+      banded classification after five consecutive continuous-
+      sentinel instruments (WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R).
+    - **Subscales populated** — the ``subscales`` map carries keys
+      ``dif`` / ``ddf`` / ``eot`` with post-flip subscale totals.
+      Distinct from DERS-16's continuous+subscales shape: TAS-20 is
+      banded+subscales (a structurally different envelope).
+    - **Higher-is-worse direction** — uniform with PHQ-9 / GAD-7 /
+      DERS-16 / PCL-5 / OCI-R / K10 / WSAS / PSWQ, opposite of
+      WHO-5 / CD-RISC-10 / LOT-R / DTCQ-8.
+    - **Reverse-keying reuses PSWQ / LOT-R idiom** — items 4, 5,
+      10, 18, 19 are flipped (``6 - raw``) inside the scorer.  The
+      router test layer verifies only the observable wire behavior;
+      detailed per-item math is covered in ``test_tas20_scoring.py``.
+    - No ``cutoff_used`` / ``positive_screen`` — TAS-20 uses three
+      bands, not a single binary cutoff.
+    - ``requires_t3`` is always False — TAS-20 has no safety item.
+    - ``triggering_items`` is None — no firing-item concept.
+    - 1-5 Likert envelope; 0 rejects (below floor), 6 rejects
+      (above ceiling).  20 items required (same count as PCL-5;
+      router dispatches by ``instrument`` key, not by count).
+    - Cross-instrument coexistence: TAS-20 + DERS-16 (upstream
+      emotion identification + downstream emotion regulation —
+      the two-layer emotion-processing framework), TAS-20 + PHQ-15
+      (alexithymia + somatization — Taylor 1997 clinical cluster).
+    """
+
+    def test_all_threes_is_60_possible_alexithymia(
+        self, client: TestClient
+    ) -> None:
+        """Every item at 3 (midline) → total 60 → upper edge of
+        possible_alexithymia band.  Clinically: "neither agree nor
+        disagree" on alexithymia-identifying statements is itself
+        evidence of poor emotional self-knowledge — the midline
+        responder lands in the borderline band."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": "user-tas20-mid",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "tas20"
+        assert body["total"] == 60
+        assert body["severity"] == "possible_alexithymia"
+        assert body["requires_t3"] is False
+
+    def test_all_ones_non_alexithymic(self, client: TestClient) -> None:
+        """Every raw item at 1.  Direct 15 × 1 = 15; reverse 5 ×
+        (6-1)=5 = 25.  Total = 40 → non_alexithymic."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [1] * 20,
+                "user_id": "user-tas20-ones",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 40
+        assert body["severity"] == "non_alexithymic"
+
+    def test_all_fives_alexithymic_acquiescence_catch(
+        self, client: TestClient
+    ) -> None:
+        """Every raw item at 5.  Direct 15 × 5 = 75; reverse 5 ×
+        (6-5)=1 = 5.  Total = 80 → alexithymic.  Acquiescence bias
+        is caught (80 not 100) but the clinical classification
+        still lands in the alexithymic band."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [5] * 20,
+                "user_id": "user-tas20-fives",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 80
+        assert body["severity"] == "alexithymic"
+        assert body["requires_t3"] is False
+
+    def test_maximum_alexithymia_ceiling(self, client: TestClient) -> None:
+        """Direct items at 5, reverse items (4, 5, 10, 18, 19) at
+        1.  Post-flip every item at 5.  Total 100 — instrument
+        ceiling — alexithymic band."""
+        reverse = {4, 5, 10, 18, 19}
+        items = [1 if i in reverse else 5 for i in range(1, 21)]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": items,
+                "user_id": "user-tas20-ceiling",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 100
+        assert body["severity"] == "alexithymic"
+
+    def test_minimum_alexithymia_floor(self, client: TestClient) -> None:
+        """Direct items at 1, reverse items at 5.  Post-flip every
+        item at 1.  Total 20 — instrument floor —
+        non_alexithymic band."""
+        reverse = {4, 5, 10, 18, 19}
+        items = [5 if i in reverse else 1 for i in range(1, 21)]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": items,
+                "user_id": "user-tas20-floor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "non_alexithymic"
+
+    def test_band_boundary_61_alexithymic(self, client: TestClient) -> None:
+        """Total 61 → alexithymic (one above the 60 upper of
+        possible).  Pins the boundary crossing."""
+        items = [3] * 20
+        items[0] = 4  # item 1 direct: +1 → total 61
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": items,
+                "user_id": "user-tas20-boundary-61",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 61
+        assert body["severity"] == "alexithymic"
+
+    def test_subscales_populated_wire(self, client: TestClient) -> None:
+        """Wire envelope populates ``subscales`` with keys
+        ``dif`` / ``ddf`` / ``eot``.  All raw 3 → subscales 21 /
+        15 / 24 (sum 60)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": "user-tas20-subs",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        subs = body.get("subscales")
+        assert subs is not None
+        assert set(subs.keys()) == {"dif", "ddf", "eot"}
+        assert subs["dif"] == 21
+        assert subs["ddf"] == 15
+        assert subs["eot"] == 24
+        # Subscales partition the total.
+        assert subs["dif"] + subs["ddf"] + subs["eot"] == body["total"]
+
+    def test_cutoff_used_not_populated(self, client: TestClient) -> None:
+        """TAS-20 uses three bands — not a single binary cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": "user-tas20-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [5] * 20,
+                "user_id": "user-tas20-notrig",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": "user-tas20-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["instrument_version"] == "tas20-1.0.0"
+
+    def test_too_few_items_rejects(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 19,
+                "user_id": "user-tas20-few",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_too_many_items_rejects(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 21,
+                "user_id": "user-tas20-many",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_zero_rejects_below_floor(self, client: TestClient) -> None:
+        """0 fails — floor is 1, not 0 (CD-RISC-10 / LOT-R
+        envelope misroute guard)."""
+        bad = [3] * 20
+        bad[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": bad,
+                "user_id": "user-tas20-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_six_rejects_above_ceiling(self, client: TestClient) -> None:
+        """6 fails — ceiling is 5."""
+        bad = [3] * 20
+        bad[0] = 6
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": bad,
+                "user_id": "user-tas20-six",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_one_and_five_accept_boundaries(
+        self, client: TestClient
+    ) -> None:
+        items = [1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5, 1, 5]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": items,
+                "user_id": "user-tas20-boundaries",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_persists_raw_pre_flip_items_with_subscales(
+        self, client: TestClient
+    ) -> None:
+        """POST persists the PATIENT'S RAW 20-tuple pre-flip to
+        the repository, and the subscale map to the record's
+        subscales field.  Audit-trail invariant: clinician
+        reviewing the record sees what the patient actually
+        ticked (not the scorer's internal post-flip), and the
+        subscale totals as rendered on the wire."""
+        user = "user-tas20-persist"
+        # Raw pattern with distinctive values per position.
+        raw = [3] * 20
+        raw[0] = 4   # item 1 direct DIF
+        raw[3] = 2   # item 4 reverse DDF — pre-flip 2, post-flip 4
+        raw[4] = 1   # item 5 reverse EOT — pre-flip 1, post-flip 5
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": raw,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "tas20"
+        assert rec.severity in (
+            "non_alexithymic",
+            "possible_alexithymia",
+            "alexithymic",
+        )
+        # Audit invariant: raw pre-flip items preserved.
+        assert rec.raw_items[0] == 4
+        assert rec.raw_items[3] == 2  # NOT 4 (post-flip)
+        assert rec.raw_items[4] == 1  # NOT 5 (post-flip)
+        # Subscales populated.
+        assert rec.subscales is not None
+        assert set(rec.subscales.keys()) == {"dif", "ddf", "eot"}
+
+    def test_history_projects_tas20_with_subscales(
+        self, client: TestClient
+    ) -> None:
+        user = "user-tas20-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "tas20"
+        assert entry["total"] == 60
+        assert entry["severity"] == "possible_alexithymia"
+
+    def test_coexists_with_ders16_two_layer_emotion_processing(
+        self, client: TestClient
+    ) -> None:
+        """TAS-20 (upstream emotion identification) + DERS-16
+        (downstream emotion regulation) — the two-layer emotion-
+        processing framework.  Both have subscale dispatch, but
+        different envelope shapes (TAS-20 banded severity +
+        subscales; DERS-16 continuous sentinel + subscales).  The
+        intervention-selection layer reads both: high TAS-20 DIF
+        + high DERS-16 total routes to affect-labeling FIRST,
+        regulation training SECOND."""
+        user = "user-tas20-ders16"
+        de = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert de.status_code == 201
+        de_body = de.json()
+        assert de_body["severity"] == "continuous"
+        assert de_body.get("subscales") is not None
+        assert len(de_body["subscales"]) == 5  # DERS-16 five subscales
+
+        ta = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert ta.status_code == 201
+        ta_body = ta.json()
+        assert ta_body["severity"] == "possible_alexithymia"
+        assert ta_body.get("subscales") is not None
+        assert len(ta_body["subscales"]) == 3  # TAS-20 three subscales
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "ders16" in instruments
+        assert "tas20" in instruments
+
+    def test_coexists_with_phq15_somatization_cluster(
+        self, client: TestClient
+    ) -> None:
+        """TAS-20 + PHQ-15 is the Taylor 1997 somatization cluster
+        — alexithymic arousal without cognitive label presents as
+        bodily complaints.  Both must persist cleanly."""
+        user = "user-tas20-phq15"
+        phq15 = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq15",
+                "items": [1] * 15,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert phq15.status_code == 201
+
+        ta = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert ta.status_code == 201
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "phq15" in instruments
+        assert "tas20" in instruments
+
+    def test_banded_severity_not_continuous_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """Pins that TAS-20 breaks the 5-sprint continuous-sentinel
+        streak.  ``severity`` is a Bagby 1994 band name, NOT the
+        "continuous" literal used by DERS-16 / CD-RISC-10 / PSWQ /
+        LOT-R.  A renderer that hardcoded "continuous" handling for
+        these new instruments must now dispatch on banded severity
+        for TAS-20."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": "user-tas20-banded",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["severity"] != "continuous"
+        assert body["severity"] in (
+            "non_alexithymic",
+            "possible_alexithymia",
+            "alexithymic",
+        )
+
+    def test_ignores_mdq_and_sex_fields(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "sex": "female",
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "user_id": "user-tas20-ignores",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "tas20"
+        assert body["severity"] == "possible_alexithymia"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
