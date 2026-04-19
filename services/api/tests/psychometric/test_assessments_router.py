@@ -24869,3 +24869,644 @@ class TestDass21Routing:
         ).json()
         assert response["severity"] == "moderate"
         assert response["positive_screen"] is True
+
+
+class TestFtndRouting:
+    """End-to-end routing tests for the FTND dispatcher branch.
+
+    Heatherton, Kozlowski, Frecker & Fagerström 1991 British Journal
+    of Addiction 86:1119-1127 original instrument; Fagerström 2012
+    Nicotine Tob Res 14(1):75-78 5-band severity interpretation.
+    Six items in fixed administration order.  **HETEROGENEOUS per-
+    item scales** — items 1 and 4 are 0-3 (4-point ordinal); items
+    2, 3, 5, 6 are 0-1 (binary).  FTND is the first platform
+    instrument with non-uniform item ranges; this class verifies
+    the per-position range-validation behavior carries through
+    the router → scorer → response envelope.
+
+    **HIGHER = MORE DEPENDENCE** — uniform with PHQ-9 / GAD-7 /
+    AUDIT / DUDIT / DAST-10 / PSS-10 / DASS-21; opposite of WHO-5
+    / BRS / LOT-R / RSES / GSE.
+
+    Item meaning (Heatherton 1991 Appendix verbatim):
+
+        Item 1 — Time to first cigarette after waking
+                 (0=>60min, 1=31-60, 2=6-30, 3=<=5).  [0-3]
+        Item 2 — Difficulty refraining in no-smoking
+                 places (0=no, 1=yes).                [0-1]
+        Item 3 — Hate to give up which cigarette most
+                 (0=any other, 1=first one).          [0-1]
+        Item 4 — Cigarettes per day
+                 (0<=10, 1=11-20, 2=21-30, 3>=31).    [0-3]
+        Item 5 — Smoke more in first hours after
+                 waking (0=no, 1=yes).                [0-1]
+        Item 6 — Smoke when ill in bed
+                 (0=no, 1=yes).                       [0-1]
+
+    Severity bands (Fagerström 2012):
+
+        0-2:  very_low
+        3-4:  low
+        5:    moderate
+        6-7:  high
+        8-10: very_high
+
+    Positive screen cutoff (Fagerström 2012 clinical threshold):
+        total >= 4
+
+    Envelope: total + severity + positive_screen + cutoff_used (4)
+    + requires_t3 (always False).  NO subscales (FTND is
+    unidimensional per Heatherton 1991; Radzius 2003 two-factor
+    decomposition rejected by Fagerström 2012).  No scaled_score,
+    no index, no triggering_items.
+
+    Time-to-first-cigarette (TTFC, item 1) is the single
+    highest-variance FTND dependence predictor (Baker 2007
+    Psychological Review 114(1):33-51); the ``items`` field
+    preserves raw pre-validation responses so downstream
+    clinician dashboards can read TTFC at items[0].
+
+    T3 posture — FTND has NO safety items.  No item probes
+    ideation, intent, or plan.  Acute-risk screening stays on
+    C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Happy path ------------------------------------------------
+
+    def test_all_zeros_total_zero(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-all-zeros"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "ftnd"
+        assert body["total"] == 0
+        assert body["severity"] == "very_low"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 4
+        assert body["requires_t3"] is False
+
+    def test_all_maxima_total_ten(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 3, 1, 1]},
+            headers=self._headers("ftnd-ceiling"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "very_high"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 4
+
+    def test_instrument_version_pinned(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-version"),
+        ).json()
+        assert body["instrument_version"] == "ftnd-1.0.0"
+
+    # -- Severity band boundaries (all 11 totals) ------------------
+
+    @pytest.mark.parametrize("vec,expected_total,expected_severity", [
+        ([0, 0, 0, 0, 0, 0], 0, "very_low"),
+        ([1, 0, 0, 0, 0, 0], 1, "very_low"),
+        ([0, 0, 0, 2, 0, 0], 2, "very_low"),
+        ([0, 1, 1, 0, 1, 0], 3, "low"),
+        ([0, 1, 1, 0, 1, 1], 4, "low"),
+        ([2, 1, 0, 1, 1, 0], 5, "moderate"),
+        ([2, 1, 1, 1, 1, 0], 6, "high"),
+        ([3, 1, 0, 1, 1, 1], 7, "high"),
+        ([3, 1, 1, 1, 1, 1], 8, "very_high"),
+        ([3, 1, 1, 2, 1, 1], 9, "very_high"),
+        ([3, 1, 1, 3, 1, 1], 10, "very_high"),
+    ])
+    def test_severity_band_every_total(
+        self,
+        client: TestClient,
+        vec: list[int],
+        expected_total: int,
+        expected_severity: str,
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": vec},
+            headers=self._headers(
+                f"ftnd-band-{expected_total}"
+            ),
+        ).json()
+        assert body["total"] == expected_total
+        assert body["severity"] == expected_severity
+
+    # -- Positive-screen cutoff ------------------------------------
+
+    def test_below_cutoff_negative(self, client: TestClient) -> None:
+        # Total 3 (low band) is below the Fagerström 2012 clinical
+        # threshold of 4 -> negative screen.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 1, 1, 0, 1, 0]},
+            headers=self._headers("ftnd-below-cutoff"),
+        ).json()
+        assert body["total"] == 3
+        assert body["positive_screen"] is False
+
+    def test_at_cutoff_positive(self, client: TestClient) -> None:
+        # Total 4 — exact cutoff, positive.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 1, 1, 0, 1, 1]},
+            headers=self._headers("ftnd-at-cutoff"),
+        ).json()
+        assert body["total"] == 4
+        assert body["positive_screen"] is True
+
+    def test_above_cutoff_positive(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [2, 1, 0, 1, 1, 0]},
+            headers=self._headers("ftnd-above-cutoff"),
+        ).json()
+        assert body["total"] == 5
+        assert body["positive_screen"] is True
+
+    def test_cutoff_used_always_four(
+        self, client: TestClient
+    ) -> None:
+        # cutoff_used = 4 regardless of actual total.
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-cutoff-low"),
+        ).json()
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 3, 1, 1]},
+            headers=self._headers("ftnd-cutoff-high"),
+        ).json()
+        assert low["cutoff_used"] == 4
+        assert high["cutoff_used"] == 4
+
+    # -- Item-count validation -------------------------------------
+
+    def test_five_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-five"),
+        )
+        assert response.status_code == 422
+        assert "FTND" in response.json()["detail"]["message"] or \
+            "ftnd" in response.json()["detail"]["message"].lower() or \
+            "6" in response.json()["detail"]["message"]
+
+    def test_seven_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, 0, 0, 0, 0, 0, 0],
+            },
+            headers=self._headers("ftnd-seven"),
+        )
+        assert response.status_code == 422
+
+    def test_empty_items_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": []},
+            headers=self._headers("ftnd-empty"),
+        )
+        # Rejected at Pydantic min_length=1 layer.
+        assert response.status_code == 422
+
+    # -- Heterogeneous per-item range validation -------------------
+
+    def test_item_1_value_four_rejected(
+        self, client: TestClient
+    ) -> None:
+        # Item 1 max is 3.
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [4, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-item1-overrange"),
+        )
+        assert response.status_code == 422
+        assert "item 1" in response.json()["detail"]["message"]
+
+    def test_item_1_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [-1, 0, 0, 0, 0, 0],
+            },
+            headers=self._headers("ftnd-item1-negative"),
+        )
+        assert response.status_code == 422
+
+    def test_item_2_value_two_rejected(
+        self, client: TestClient
+    ) -> None:
+        # Item 2 max is 1 — a value of 2 must reject even though
+        # it would be valid for items 1 or 4.  This is the
+        # characteristic per-position validation pattern.
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 2, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-item2-binary"),
+        )
+        assert response.status_code == 422
+        assert "item 2" in response.json()["detail"]["message"]
+
+    def test_item_3_value_two_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 2, 0, 0, 0]},
+            headers=self._headers("ftnd-item3-binary"),
+        )
+        assert response.status_code == 422
+        assert "item 3" in response.json()["detail"]["message"]
+
+    def test_item_4_value_four_rejected(
+        self, client: TestClient
+    ) -> None:
+        # Item 4 max is 3 (cigarettes-per-day 4-point ordinal).
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 4, 0, 0]},
+            headers=self._headers("ftnd-item4-overrange"),
+        )
+        assert response.status_code == 422
+        assert "item 4" in response.json()["detail"]["message"]
+
+    def test_item_5_value_two_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 2, 0]},
+            headers=self._headers("ftnd-item5-binary"),
+        )
+        assert response.status_code == 422
+        assert "item 5" in response.json()["detail"]["message"]
+
+    def test_item_6_value_two_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 2]},
+            headers=self._headers("ftnd-item6-binary"),
+        )
+        assert response.status_code == 422
+        assert "item 6" in response.json()["detail"]["message"]
+
+    def test_error_message_names_position_specific_range(
+        self, client: TestClient
+    ) -> None:
+        # Heterogeneous scales mean the error message must name
+        # the item's specific range (not a generic range), so a
+        # caller can distinguish "you put a 3 in a binary slot"
+        # from "you put a 4 in a 4-point slot".
+        r_binary = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 3, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-binary-msg"),
+        ).json()
+        r_ordinal = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [5, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-ordinal-msg"),
+        ).json()
+        assert "0-1" in r_binary["detail"]["message"]
+        assert "0-3" in r_ordinal["detail"]["message"]
+
+    def test_value_far_out_of_range_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, 0, 0, 0, 0, 999],
+            },
+            headers=self._headers("ftnd-far-out"),
+        )
+        assert response.status_code == 422
+
+    # -- Type coercion at Pydantic layer ---------------------------
+
+    def test_string_numeric_coerced(
+        self, client: TestClient
+    ) -> None:
+        # Pydantic list[int] lax-mode: numeric string "1" coerces
+        # to 1.  Valid input should succeed after coercion.
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": ["0", "1", "1", "0", "1", "1"],
+            },
+            headers=self._headers("ftnd-str-numeric"),
+        ).json()
+        assert body["total"] == 4
+
+    def test_string_non_numeric_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, "foo", 0, 0, 0, 0],
+            },
+            headers=self._headers("ftnd-str-nonnum"),
+        )
+        assert response.status_code == 422
+
+    def test_float_whole_coerced(self, client: TestClient) -> None:
+        # Pydantic coerces 2.0 -> 2.
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [2.0, 1.0, 0.0, 1.0, 1.0, 0.0],
+            },
+            headers=self._headers("ftnd-float-whole"),
+        ).json()
+        assert body["total"] == 5
+
+    def test_float_fractional_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, 0, 0, 2.5, 0, 0],
+            },
+            headers=self._headers("ftnd-float-frac"),
+        )
+        assert response.status_code == 422
+
+    def test_bool_true_coerced_via_pydantic(
+        self, client: TestClient
+    ) -> None:
+        # Pydantic lax-mode: True -> 1.  JSON true for a binary
+        # FTND item should flow through as 1.
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, True, True, 0, True, True],
+            },
+            headers=self._headers("ftnd-bool-true"),
+        ).json()
+        assert body["total"] == 4
+        assert body["positive_screen"] is True
+
+    def test_bool_false_coerced_via_pydantic(
+        self, client: TestClient
+    ) -> None:
+        # Pydantic lax-mode: False -> 0.
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, False, False, 0, False, False],
+            },
+            headers=self._headers("ftnd-bool-false"),
+        ).json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_null_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ftnd",
+                "items": [0, None, 0, 0, 0, 0],
+            },
+            headers=self._headers("ftnd-null"),
+        )
+        assert response.status_code == 422
+
+    # -- Envelope shape: absent fields -----------------------------
+
+    def test_no_subscales_key(self, client: TestClient) -> None:
+        # FTND is unidimensional; no subscales returned.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-no-subscales"),
+        ).json()
+        assert body.get("subscales") is None
+
+    def test_no_scaled_score_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-no-scaled"),
+        ).json()
+        assert body.get("scaled_score") is None
+
+    def test_no_index_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-no-index"),
+        ).json()
+        assert body.get("index") is None
+
+    def test_no_triggering_items(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 3, 1, 1]},
+            headers=self._headers("ftnd-no-triggering"),
+        ).json()
+        assert body.get("triggering_items") is None
+
+    def test_requires_t3_false_at_ceiling(
+        self, client: TestClient
+    ) -> None:
+        # FTND never triggers T3 — no item probes acute risk.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 3, 1, 1]},
+            headers=self._headers("ftnd-ceiling-no-t3"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_no_t3_reason(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 3, 1, 1]},
+            headers=self._headers("ftnd-no-t3-reason"),
+        ).json()
+        assert body.get("t3_reason") is None
+
+    # -- Clinical vignettes ----------------------------------------
+
+    def test_vignette_social_smoker(
+        self, client: TestClient
+    ) -> None:
+        # Smokes >60 min after waking; prefers morning cig; <=10
+        # cigs/day; no morning dominance; no sick-bed smoking.
+        # Total 1 -> very_low -> negative screen.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 0, 1, 0, 0, 0]},
+            headers=self._headers("ftnd-social"),
+        ).json()
+        assert body["total"] == 1
+        assert body["severity"] == "very_low"
+        assert body["positive_screen"] is False
+
+    def test_vignette_light_regular_smoker(
+        self, client: TestClient
+    ) -> None:
+        # Wakes and smokes within 31-60 min; prefers morning cig;
+        # 11-20 cigs/day; no morning dominance; no sick-bed.
+        # Total 3 -> low -> negative screen (borderline).
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [1, 0, 1, 1, 0, 0]},
+            headers=self._headers("ftnd-light-regular"),
+        ).json()
+        assert body["total"] == 3
+        assert body["severity"] == "low"
+        assert body["positive_screen"] is False
+
+    def test_vignette_moderate_dependence(
+        self, client: TestClient
+    ) -> None:
+        # Wakes 6-30 min; some difficulty refraining; 11-20
+        # cigs/day; morning dominance.  Total 5 -> moderate ->
+        # positive.  Fiore 2008 cohort for pharmacotherapy.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [2, 1, 0, 1, 1, 0]},
+            headers=self._headers("ftnd-moderate"),
+        ).json()
+        assert body["total"] == 5
+        assert body["severity"] == "moderate"
+        assert body["positive_screen"] is True
+
+    def test_vignette_high_dependence(
+        self, client: TestClient
+    ) -> None:
+        # Classic high-dependence pattern: wakes 6-30 min;
+        # difficulty refraining; first-of-morning cig; 11-20
+        # cigs/day; morning dominance.  Total 6 -> high ->
+        # positive.  West 2007 combination-NRT cohort.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [2, 1, 1, 1, 1, 0]},
+            headers=self._headers("ftnd-high"),
+        ).json()
+        assert body["total"] == 6
+        assert body["severity"] == "high"
+        assert body["positive_screen"] is True
+
+    def test_vignette_very_high_dependence(
+        self, client: TestClient
+    ) -> None:
+        # Severe pattern: TTFC <= 5 min (Baker 2007 maximum
+        # dependence predictor); difficulty refraining;
+        # first-of-morning; 21-30 cigs/day; morning dominance;
+        # sick-bed smoking.  Total 9 -> very_high.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 2, 1, 1]},
+            headers=self._headers("ftnd-very-high"),
+        ).json()
+        assert body["total"] == 9
+        assert body["severity"] == "very_high"
+        assert body["positive_screen"] is True
+
+    def test_vignette_ceiling_maximum_dependence(
+        self, client: TestClient
+    ) -> None:
+        # Maximum possible FTND response — represents the most
+        # severely nicotine-dependent smoker profile.  Piper
+        # 2009 intensive-pharmacotherapy + CBT cohort.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 1, 1, 3, 1, 1]},
+            headers=self._headers("ftnd-ceiling-max"),
+        ).json()
+        assert body["total"] == 10
+        assert body["severity"] == "very_high"
+        assert body["positive_screen"] is True
+
+    def test_vignette_ttfc_within_5min_signal(
+        self, client: TestClient
+    ) -> None:
+        # Baker 2007 TTFC-within-5-min pattern.  Item 1 = 3 is
+        # the single strongest dependence predictor.  Clinician
+        # dashboards read the raw item 1 value from the assessment
+        # store for morning-craving-window intervention
+        # scheduling.  This test verifies that a high-TTFC
+        # response still scores correctly even when aggregate
+        # total is moderate (3 -> low band).
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [3, 0, 0, 0, 0, 0]},
+            headers=self._headers("ftnd-ttfc-signal"),
+        ).json()
+        assert body["total"] == 3
+        assert body["severity"] == "low"
+
+    def test_vignette_binary_only_positive(
+        self, client: TestClient
+    ) -> None:
+        # All four binary items positive, both ordinals at zero.
+        # Clinically unusual (light cigs/day with strong
+        # behavioral markers) but valid; scores 4 -> low band,
+        # positive screen.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 1, 1, 0, 1, 1]},
+            headers=self._headers("ftnd-binary-only"),
+        ).json()
+        assert body["total"] == 4
+        assert body["severity"] == "low"
+        assert body["positive_screen"] is True
+
+    def test_vignette_fagerstrom_2012_cutoff_revision(
+        self, client: TestClient
+    ) -> None:
+        # A patient at total 4 would have been classified as
+        # below the older Fagerström 1991 cutoff of >= 6 ("high
+        # dependence") and NOT flagged for pharmacotherapy.
+        # Under Fagerström 2012's >= 4 cutoff, this patient is
+        # flagged — consistent with Fiore 2008 and West 2007
+        # guidelines that "most smokers" benefit from
+        # pharmacotherapy.  Platform uses Fagerström 2012's
+        # revision.
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "ftnd", "items": [0, 1, 1, 0, 1, 1]},
+            headers=self._headers("ftnd-2012-revision"),
+        ).json()
+        assert body["total"] == 4
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 4

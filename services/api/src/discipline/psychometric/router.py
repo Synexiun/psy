@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21.
+MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +45,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1600,6 +1600,10 @@ from .scoring.dass21 import (
     InvalidResponseError as Dass21Invalid,
     score_dass21,
 )
+from .scoring.ftnd import (
+    InvalidResponseError as FtndInvalid,
+    score_ftnd,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1683,6 +1687,7 @@ Instrument = Literal[
     "iesr",
     "hads",
     "dass21",
+    "ftnd",
 ]
 
 
@@ -1748,6 +1753,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "iesr": 22,
     "hads": 14,
     "dass21": 21,
+    "ftnd": 6,
 }
 
 
@@ -5371,6 +5377,169 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=d.instrument_version,
         )
+    if payload.instrument == "ftnd":
+        # FTND — 6-item Fagerström Test for Nicotine Dependence
+        # (Heatherton, Kozlowski, Frecker & Fagerström 1991 British
+        # Journal of Addiction 86:1119-1127).  The most widely-used
+        # measure of PHYSICAL NICOTINE DEPENDENCE in clinical
+        # research and practice, introduced as a six-item revision
+        # of the 1978 Fagerström Tolerance Questionnaire (FTQ;
+        # Fagerström 1978 Addictive Behaviors 3:235-241) with the
+        # time-to-first-cigarette and cigarettes-per-day items
+        # re-weighted into four-point ordinal responses.
+        #
+        # Construct placement in the platform's addiction-screening
+        # roster:
+        #
+        # - AUDIT / AUDIT-C (Saunders 1993 / Bush 1998) — alcohol
+        #   use disorder.
+        # - DUDIT / DAST-10 (Berman 2005 / Skinner 1982) — illicit
+        #   / non-prescribed drug use.
+        # - PGSI (Ferris & Wynne 2001) — problem gambling.
+        # - SCOFF (Morgan 1999) — disordered eating.
+        # - CIUS (Meerkerk 2009) — compulsive internet use.
+        # - PACS (Flannery 1999) / Craving VAS — within-substance
+        #   craving intensity (alcohol / general).
+        # - FTND (Heatherton 1991) — physical NICOTINE dependence.
+        #
+        # Nicotine was the remaining substance-of-dependence gap in
+        # the platform's addiction roster.  Nicotine is the single
+        # most-used and most-difficult-to-quit substance of
+        # dependence globally (WHO 2019 Tobacco Report); absence
+        # from the roster constituted a measurement-infrastructure
+        # gap for a significant fraction of the target population.
+        #
+        # Why FTND, not a more recent measure (e.g. HSI Heaviness of
+        # Smoking Index or NDSS Nicotine Dependence Syndrome Scale)?
+        # FTND has the widest cross-cultural validation (Etter 1999
+        # French / Becoña 1998 Spanish / Schumann 2003 German /
+        # Radwan 2013 Arabic), the strongest pharmacotherapy-
+        # response evidence base (Piper 2006 Nicotine Tob Res
+        # 8:339-351; West 2007 Smoking Cessation Guidelines), and
+        # is the instrument almost all electronic-health-record
+        # FHIR exports key on (retaining FTND rather than the newer
+        # FTCD name per Fagerström 2012 rename keeps FHIR
+        # interoperability with EHR systems).
+        #
+        # Envelope shape and why it differs from prior instruments:
+        #
+        # HETEROGENEOUS per-item scales — FTND is the FIRST platform
+        # instrument with non-uniform item ranges.  Items 1 and 4
+        # are 0-3 (4-point ordinal); items 2, 3, 5, 6 are 0-1
+        # (binary).  The scorer enforces per-position ranges via
+        # ``FTND_ITEM_MAX = (3, 1, 1, 3, 1, 1)`` — a pattern that
+        # will be reused for any future instrument with mixed
+        # scales (e.g. CAGE 4-item 0-1, HSI 2-item mixed).
+        #
+        # Item meaning (Heatherton 1991 Appendix verbatim):
+        #
+        #     Item 1 — Time to first cigarette after waking
+        #              (0=>60min, 1=31-60, 2=6-30, 3=<=5).  [0-3]
+        #     Item 2 — Difficulty refraining in no-smoking places
+        #              (0=no, 1=yes).                       [0-1]
+        #     Item 3 — Which cigarette would you hate to give up
+        #              most (0=any other, 1=first one).     [0-1]
+        #     Item 4 — Cigarettes per day
+        #              (0<=10, 1=11-20, 2=21-30, 3>=31).    [0-3]
+        #     Item 5 — Smoke more in first hours after waking
+        #              (0=no, 1=yes).                       [0-1]
+        #     Item 6 — Smoke when ill in bed
+        #              (0=no, 1=yes).                       [0-1]
+        #
+        # - ``total``: 0-10 raw sum.  No reverse-keying — all six
+        #   items worded so higher raw = more dependence.  Uniform
+        #   higher-is-worse direction (same as PHQ-9 / GAD-7 /
+        #   AUDIT / DUDIT / DAST-10 / PSS-10 / DASS-21).
+        # - ``severity``: 5-band per Fagerström 2012 Nicotine Tob
+        #   Res 14(1):75-78 — very_low (0-2) / low (3-4) / moderate
+        #   (5) / high (6-7) / very_high (8-10).  Matches the
+        #   5-level severity rank introduced by DASS-21 (rather
+        #   than the 4-level HADS rank); the platform now has two
+        #   5-level severity instruments.
+        # - ``positive_screen``: True iff total >= 4 per Fagerström
+        #   2012 clinical threshold.  Replaces the older
+        #   Fagerström 1991 threshold of >= 6 — 2012 analysis
+        #   documented that >= 6 missed a clinically meaningful
+        #   population of moderate smokers who benefit from
+        #   pharmacotherapy.  The just-in-time intervention
+        #   philosophy also favors earlier identification over
+        #   specificity (see platform intervention-matching
+        #   design).
+        # - ``cutoff_used``: always 4.  Echoed for audit symmetry
+        #   with AUDIT-C / DUDIT / HADS envelope precedents where
+        #   the cutoff is a single integer.  (DASS-21 omitted this
+        #   field because three asymmetric per-subscale cutoffs
+        #   can't be represented by a single integer; FTND has one
+        #   cutoff so the field is populated.)
+        # - ``requires_t3``: always False.  No FTND item probes
+        #   ideation, intent, or plan.  Acute-risk screening stays
+        #   on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
+        # - No ``subscales`` — FTND is unidimensional per
+        #   Heatherton 1991 factor analysis.  Radzius 2003
+        #   (Nicotine Tob Res 5(2):255-262) proposed two-factor
+        #   (Smoking Rate / Morning Smoking) decomposition but
+        #   Fagerström 2012 retained the unidimensional
+        #   interpretation and the platform follows that
+        #   recommendation.
+        # - No ``index`` — total is the canonical score.
+        # - No ``triggering_items`` — no per-item acuity routing.
+        #
+        # Time-to-first-cigarette (TTFC, item 1) signal
+        # preservation:
+        #
+        # Baker, Piper, McCarthy, Majeskie & Fiore (2007
+        # Psychological Review 114(1):33-51) and Baker, Piper,
+        # McCarthy, Bolt, Smith, Kim, Colby, Conti, Giovino,
+        # Hatsukami, Hyland, Krishnan-Sarin, Niaura, Perkins &
+        # Toll (2007 Nicotine Tob Res 9(Suppl 4):S555-S570)
+        # established that TTFC alone carries as much
+        # dependence-severity variance as the remaining 5 FTND
+        # items combined.  TTFC <= 5 min (item 1 = 3) specifically
+        # predicts heavy-nicotine-intake patterns and morning-
+        # craving intensity.  Downstream analytics and clinician
+        # dashboards read TTFC from the stored raw items[0]; the
+        # scorer explicitly preserves raw pre-validation responses
+        # in the items tuple so TTFC is accessible without
+        # re-submitting the assessment.
+        #
+        # Clinical pairings the scorer output supports:
+        #
+        # - FTND high + PHQ-9 high — nicotine dependence with
+        #   comorbid depression.  Meta-analysis (Fluharty 2017
+        #   Nicotine Tob Res 19(1):3-13) shows bidirectional
+        #   causation; smoking-cessation RCTs excluding comorbid
+        #   depression over-estimate effect sizes in the general
+        #   population.  Platform-side: sequence nicotine
+        #   intervention with affect monitoring.
+        # - FTND high + AUDIT positive — nicotine + alcohol co-
+        #   dependence, the most common dual-substance pattern
+        #   (~70% of dependent smokers also drink at hazardous
+        #   levels per Falk 2006 Alcohol Research & Health 29:
+        #   162-171).  Platform-side: surface to clinician for
+        #   integrated protocol decision.
+        # - FTND low with positive DASS-S — stress-vulnerability
+        #   smoker — acute stress may drive dependence
+        #   progression.  Targets for stress-inoculation
+        #   (Meichenbaum 1985) as an addiction-prevention
+        #   intervention.
+        # - FTND trajectory — West 2007 documents that FTND
+        #   improvements of >= 1 point per month are clinically
+        #   meaningful indicators of cessation-process success;
+        #   RCI methodology applies.  TTFC transition from item 1
+        #   = 3 to item 1 = 0 ("no longer smokes within 5 min")
+        #   is a major clinical milestone frequently preceding
+        #   sustained abstinence.
+        f = score_ftnd(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="ftnd",
+            total=f.total,
+            severity=f.severity,
+            positive_screen=f.positive_screen,
+            cutoff_used=f.cutoff_used,
+            requires_t3=False,
+            instrument_version=f.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5547,6 +5716,7 @@ async def submit_assessment(
         IesrInvalid,
         HadsInvalid,
         Dass21Invalid,
+        FtndInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
