@@ -22295,3 +22295,736 @@ class TestTrajectoryHistoryEndpoint:
         # Deltas are against the baseline 10, not the prior reading.
         deltas = [p["delta"] for p in body["points"]]
         assert deltas == [1, -1, 2]
+
+
+class TestIesrRouting:
+    """End-to-end routing tests for the IES-R dispatcher branch.
+
+    Weiss & Marmar 1997 Impact of Event Scale-Revised — 22 items, 0-4
+    Likert, NO reverse-keying (all items distress-positive), three-
+    factor structure (Intrusion 8 items / Avoidance 8 items /
+    Hyperarousal 6 items).  Per-subscale sums: intrusion 0-32,
+    avoidance 0-32, hyperarousal 0-24.  Total = 0-88.
+
+    **HIGHER = MORE trauma-symptom severity** — uniform with PHQ-9 /
+    GAD-7 / PCL-5 / CORE-10; opposite of WHO-5 / SWLS / MSPSS / GSE.
+
+    Multi-subscale envelope — third instrument (after PANAS-10 and
+    MSPSS) to populate the ``subscales`` dict slot.  Weiss & Marmar
+    1997 factor-analytic derivation (n = 196; Gulf War veterans +
+    San Francisco earthquake survivors + Northridge earthquake
+    emergency workers); confirmed by Creamer 2003 (n = 386 Vietnam
+    veterans) and Beck 2008 (n = 182 MVA survivors).
+
+    Subscale position mapping (1-indexed per Weiss & Marmar 1997
+    Table 1):
+        Intrusion:    items 1, 2, 3, 6, 9, 14, 16, 20
+        Avoidance:    items 5, 7, 8, 11, 12, 13, 17, 22
+        Hyperarousal: items 4, 10, 15, 18, 19, 21
+
+    **Load-bearing position invariant**: item 2 ("trouble staying
+    asleep") → INTRUSION per Weiss & Marmar 1997 (nightmare-driven
+    sleep disturbance), item 15 ("trouble falling asleep") →
+    HYPERAROUSAL (sleep-onset arousal).  A DSM-5-cluster scorer
+    would place both in hyperarousal; this scorer MUST preserve the
+    Weiss & Marmar 1997 factor assignment or break clinical-trial
+    outcome compatibility.
+
+    Creamer 2003 cutoff: total ≥ 33 (ROC against CAPS; AUC = 0.88)
+    for probable PTSD.  ``positive_screen`` flags this;
+    ``cutoff_used`` surfaces 33.  Envelope ``severity`` stays
+    "continuous" — Creamer 2003 published a single cutoff, not
+    severity bands.
+
+    Clinical use cases:
+    1. Intrusion-dominant profile → Foa 2007 prolonged exposure
+       therapy indication.
+    2. Avoidance-dominant profile → Resick 2017 cognitive
+       processing therapy indication.
+    3. Hyperarousal-dominant profile + PSS-10 high → van der Kolk
+       2014 somatic regulation / Linehan 1993 DBT TIP grounding-
+       first.
+    4. IES-R high + AAQ-II high → Hayes 2006 ACT / Walser 2007 ACT
+       for PTSD.
+    5. IES-R high + ACEs ≥ 4 → Cloitre 2011 phase-based complex-
+       PTSD treatment / Herman 1992.
+    6. Najavits 2002 "Seeking Safety" PTSD+SUD — IES-R provides the
+       routine-outcome tracking.
+
+    T3 posture — NO item probes suicidality.  Item 4 (irritable /
+    angry), item 10 (jumpy / startled), and item 21 (watchful /
+    on-guard) are hyperarousal probes, NOT self-harm probes.  Item
+    15 (trouble falling asleep) is a sleep-onset probe, NOT a
+    hopelessness probe.  Active-risk screening stays on C-SSRS /
+    PHQ-9 item 9 / CORE-10 item 6.
+
+    Envelope: total + severity("continuous") + positive_screen +
+    cutoff_used(33) + subscales (no scaled_score, no index, no
+    triggering_items, requires_t3 always False).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ---------------------------------------------------
+
+    def test_max_distress_extremum_eighty_eight(
+        self, client: TestClient
+    ) -> None:
+        """Weiss & Marmar 1997 top-of-range: "Extremely" on all 22
+        items.  Raw [4]*22 → total 88, well above Creamer 2003
+        cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [4] * 22},
+            headers=self._headers("iesr-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "iesr"
+        assert body["total"] == 88
+        assert body["severity"] == "continuous"
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 33
+        assert body["requires_t3"] is False
+
+    def test_min_distress_extremum_zero(
+        self, client: TestClient
+    ) -> None:
+        """Weiss & Marmar 1997 bottom-of-range: "Not at all" on all 22
+        items.  Raw [0]*22 → total 0, below Creamer 2003 cutoff —
+        remitted/asymptomatic presentation."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [0] * 22},
+            headers=self._headers("iesr-min"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 33
+        assert body["requires_t3"] is False
+
+    def test_midpoint_total_forty_four(
+        self, client: TestClient
+    ) -> None:
+        """Mid-range uniform responding — all items = 2 ("Moderately").
+        Linear: 22 × 2 = 44 (above Creamer 2003 cutoff of 33)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [2] * 22},
+            headers=self._headers("iesr-mid"),
+        )
+        body = response.json()
+        assert body["total"] == 44
+        assert body["positive_screen"] is True
+
+    def test_at_creamer_2003_cutoff_exact(
+        self, client: TestClient
+    ) -> None:
+        """Total = 33 exactly → Creamer 2003 ROC boundary → positive.
+
+        Build: all intrusion items = 4 (8 × 4 = 32), plus one
+        avoidance item = 1.  Total 33 = cutoff; positive_screen
+        fires at the ≥ 33 boundary per Creamer 2003.
+        """
+        items = [0] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        for pos in intrusion_positions:
+            items[pos - 1] = 4
+        items[4] = 1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-cutoff-33"),
+        )
+        body = response.json()
+        assert body["total"] == 33
+        assert body["positive_screen"] is True
+
+    def test_one_below_cutoff_is_negative(
+        self, client: TestClient
+    ) -> None:
+        """Total = 32 → one below Creamer 2003 cutoff → NOT positive.
+
+        Build: all 8 intrusion items = 4, everything else 0.  Total 32
+        demonstrates the < 33 side of the cutoff.
+        """
+        items = [0] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        for pos in intrusion_positions:
+            items[pos - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-cutoff-32"),
+        )
+        body = response.json()
+        assert body["total"] == 32
+        assert body["positive_screen"] is False
+
+    # -- Subscale partitioning -------------------------------------------
+
+    def test_intrusion_isolation_via_router(
+        self, client: TestClient
+    ) -> None:
+        """Set intrusion items (1,2,3,6,9,14,16,20) to 4, others to 0.
+        Subscales dict should reflect intrusion=32 / avoidance=0 /
+        hyperarousal=0 at the wire layer."""
+        items = [0] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        for pos in intrusion_positions:
+            items[pos - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-intrusion-iso"),
+        )
+        body = response.json()
+        assert body["subscales"] == {
+            "intrusion": 32,
+            "avoidance": 0,
+            "hyperarousal": 0,
+        }
+        assert body["total"] == 32
+
+    def test_avoidance_isolation_via_router(
+        self, client: TestClient
+    ) -> None:
+        """Set avoidance items (5,7,8,11,12,13,17,22) to 4, others to 0."""
+        items = [0] * 22
+        avoidance_positions = (5, 7, 8, 11, 12, 13, 17, 22)
+        for pos in avoidance_positions:
+            items[pos - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-avoidance-iso"),
+        )
+        body = response.json()
+        assert body["subscales"] == {
+            "intrusion": 0,
+            "avoidance": 32,
+            "hyperarousal": 0,
+        }
+        assert body["total"] == 32
+
+    def test_hyperarousal_isolation_via_router(
+        self, client: TestClient
+    ) -> None:
+        """Set hyperarousal items (4,10,15,18,19,21) to 4, others to 0.
+        Hyperarousal max is 24 (6 items × 4), unequal to the 32
+        maxima of the other two subscales."""
+        items = [0] * 22
+        hyperarousal_positions = (4, 10, 15, 18, 19, 21)
+        for pos in hyperarousal_positions:
+            items[pos - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-hyperarousal-iso"),
+        )
+        body = response.json()
+        assert body["subscales"] == {
+            "intrusion": 0,
+            "avoidance": 0,
+            "hyperarousal": 24,
+        }
+        assert body["total"] == 24
+
+    def test_item_2_routes_to_intrusion_not_hyperarousal(
+        self, client: TestClient
+    ) -> None:
+        """Weiss & Marmar 1997 load-bearing invariant: item 2
+        ("trouble staying asleep") classifies as INTRUSION (nightmare-
+        driven), NOT hyperarousal.  A DSM-5 scorer would misroute
+        this; we preserve the factor-analytic assignment."""
+        items = [0] * 22
+        items[1] = 4  # item 2
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-item2-intrusion"),
+        )
+        body = response.json()
+        assert body["subscales"]["intrusion"] == 4
+        assert body["subscales"]["hyperarousal"] == 0
+        assert body["subscales"]["avoidance"] == 0
+
+    def test_item_15_routes_to_hyperarousal_not_intrusion(
+        self, client: TestClient
+    ) -> None:
+        """Weiss & Marmar 1997 load-bearing invariant: item 15
+        ("trouble falling asleep") classifies as HYPERAROUSAL
+        (sleep-onset arousal), distinct from item 2 nightmare-driven
+        sleep disturbance."""
+        items = [0] * 22
+        items[14] = 4  # item 15
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-item15-hyperarousal"),
+        )
+        body = response.json()
+        assert body["subscales"]["hyperarousal"] == 4
+        assert body["subscales"]["intrusion"] == 0
+        assert body["subscales"]["avoidance"] == 0
+
+    def test_subscale_position_order_matters(
+        self, client: TestClient
+    ) -> None:
+        """Reversing item order keeps total identical but shuffles
+        subscale sums — Weiss & Marmar 1997 factor assignments are
+        position-dependent."""
+        aligned = [4, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0, 4, 0, 0, 0, 0, 0]
+        reversed_ = list(reversed(aligned))
+
+        r1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": aligned},
+            headers=self._headers("iesr-aligned"),
+        ).json()
+        r2 = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": reversed_},
+            headers=self._headers("iesr-reversed"),
+        ).json()
+        assert r1["total"] == r2["total"]
+        assert r1["subscales"] != r2["subscales"]
+
+    # -- Acquiescence signature -------------------------------------------
+
+    @pytest.mark.parametrize(
+        "v,expected_total",
+        [(0, 0), (1, 22), (2, 44), (3, 66), (4, 88)],
+    )
+    def test_all_constant_total_is_linear_twenty_two_v(
+        self, client: TestClient, v: int, expected_total: int
+    ) -> None:
+        """No reverse-keying: all-``v`` total = 22v for v ∈ {0..4}.
+        Endpoint-only responders expose the full 88-point range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [v] * 22},
+            headers=self._headers(f"iesr-acq-{v}"),
+        )
+        body = response.json()
+        assert body["total"] == expected_total
+
+    def test_endpoint_gap_is_eighty_eight(
+        self, client: TestClient
+    ) -> None:
+        """All-4 minus all-0 = 88, full 0-88 range (100% endpoint
+        exposure)."""
+        r_max = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [4] * 22},
+            headers=self._headers("iesr-gap-max"),
+        ).json()
+        r_min = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [0] * 22},
+            headers=self._headers("iesr-gap-min"),
+        ).json()
+        assert r_max["total"] - r_min["total"] == 88
+
+    # -- Envelope fields --------------------------------------------------
+
+    def test_subscales_populated(
+        self, client: TestClient
+    ) -> None:
+        """IES-R IS a multi-subscale instrument — ``subscales`` MUST
+        be populated (not None).  Third such instrument after
+        PANAS-10 and MSPSS."""
+        response = _post(client, instrument="iesr", items=[2] * 22)
+        body = response.json()
+        assert body["subscales"] is not None
+        assert set(body["subscales"].keys()) == {
+            "intrusion",
+            "avoidance",
+            "hyperarousal",
+        }
+
+    def test_cutoff_used_is_thirty_three(
+        self, client: TestClient
+    ) -> None:
+        """Creamer 2003 cutoff surfaces for UI "positive at ≥ 33"
+        rendering."""
+        response = _post(client, instrument="iesr", items=[2] * 22)
+        body = response.json()
+        assert body["cutoff_used"] == 33
+
+    def test_instrument_version_surfaces(
+        self, client: TestClient
+    ) -> None:
+        """Pinned version string for downstream FHIR export."""
+        response = _post(client, instrument="iesr", items=[0] * 22)
+        body = response.json()
+        assert body["instrument_version"] == "iesr-1.0.0"
+
+    def test_index_absent(self, client: TestClient) -> None:
+        """IES-R has no index transformation — total IS the score."""
+        response = _post(client, instrument="iesr", items=[2] * 22)
+        body = response.json()
+        assert body.get("index") is None
+
+    def test_scaled_score_absent(self, client: TestClient) -> None:
+        """IES-R publishes no scaled-score transformation."""
+        response = _post(client, instrument="iesr", items=[2] * 22)
+        body = response.json()
+        assert body.get("scaled_score") is None
+
+    def test_triggering_items_absent(self, client: TestClient) -> None:
+        """No item-level acuity routing on IES-R."""
+        response = _post(client, instrument="iesr", items=[4] * 22)
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    # -- Severity envelope ------------------------------------------------
+
+    @pytest.mark.parametrize("v", [0, 1, 2, 3, 4])
+    def test_severity_continuous_across_range(
+        self, client: TestClient, v: int
+    ) -> None:
+        """Creamer 2003 published only a cutoff, no severity bands.
+        Envelope stays 'continuous' across the full response range."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [v] * 22},
+            headers=self._headers(f"iesr-severity-{v}"),
+        )
+        body = response.json()
+        assert body["severity"] == "continuous"
+
+    # -- T3 posture -------------------------------------------------------
+
+    def test_no_t3_even_at_max_hyperarousal(
+        self, client: TestClient
+    ) -> None:
+        """All hyperarousal items maxed — item 4 (irritable), item 10
+        (jumpy), item 21 (watchful) all = 4.  These are NOT self-harm
+        probes; requires_t3 stays False.  Active-risk screening
+        belongs to C-SSRS / PHQ-9 item 9 / CORE-10 item 6."""
+        items = [0] * 22
+        hyperarousal_positions = (4, 10, 15, 18, 19, 21)
+        for pos in hyperarousal_positions:
+            items[pos - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-hyper-no-t3"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_no_t3_at_all_fours(
+        self, client: TestClient
+    ) -> None:
+        """Ceiling response: all 22 items at 4; requires_t3 stays
+        False (no suicidality probe on IES-R)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [4] * 22},
+            headers=self._headers("iesr-ceiling-no-t3"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    # -- Item count/value/type validation --------------------------------
+
+    @pytest.mark.parametrize("count", [0, 1, 10, 15, 20, 21, 23, 24, 30])
+    def test_wrong_item_count_422(
+        self, client: TestClient, count: int
+    ) -> None:
+        """IES-R requires exactly 22 items."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [2] * count},
+            headers=self._headers(f"iesr-count-{count}"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_above_range_422(
+        self, client: TestClient
+    ) -> None:
+        """Value 5 exceeds 0-4 Likert."""
+        items = [2] * 21 + [5]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-bad-high"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_below_range_422(
+        self, client: TestClient
+    ) -> None:
+        """Negative value rejected (0 is the floor)."""
+        items = [2] * 21 + [-1]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-bad-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_numeric_string_coerces(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic lax mode: numeric string "4" coerces to int 4.
+        Documenting the wire-layer behavior established across the
+        roster."""
+        items: list[object] = [2] * 21 + ["4"]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-str-coerce"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 2 * 21 + 4
+
+    def test_non_numeric_string_rejects(
+        self, client: TestClient
+    ) -> None:
+        """Non-numeric string cannot coerce to int."""
+        items: list[object] = [2] * 21 + ["abc"]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-str-bad"),
+        )
+        assert response.status_code == 422
+
+    def test_non_whole_float_rejects(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic strict_int at wire layer rejects non-whole floats."""
+        items: list[object] = [2] * 21 + [2.5]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-float-bad"),
+        )
+        assert response.status_code == 422
+
+    def test_bool_true_coerces_to_one(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic lax mode: True → 1 at the wire layer, then the
+        scorer processes the int (the scorer-level bool-rejection
+        happens only when the Python caller passes raw bool)."""
+        items: list[object] = [True] * 22
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-bool-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 22
+
+    def test_bool_false_coerces_to_zero(
+        self, client: TestClient
+    ) -> None:
+        """False → 0 at the wire layer; clean all-zero presentation."""
+        items: list[object] = [False] * 22
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-bool-false"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_intrusion_dominant_pe_indication(
+        self, client: TestClient
+    ) -> None:
+        """Foa 2007 prolonged exposure indication: intrusion at
+        ceiling, avoidance and hyperarousal moderate.  Subscales dict
+        should show intrusion high relative to the others, total
+        above Creamer 2003 cutoff."""
+        items = [0] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        avoidance_positions = (5, 7, 8, 11, 12, 13, 17, 22)
+        hyperarousal_positions = (4, 10, 15, 18, 19, 21)
+        for pos in intrusion_positions:
+            items[pos - 1] = 4
+        for pos in avoidance_positions:
+            items[pos - 1] = 1
+        for pos in hyperarousal_positions:
+            items[pos - 1] = 1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-intrusion-dominant"),
+        )
+        body = response.json()
+        assert body["subscales"]["intrusion"] == 32
+        assert body["subscales"]["avoidance"] == 8
+        assert body["subscales"]["hyperarousal"] == 6
+        assert body["positive_screen"] is True
+
+    def test_avoidance_dominant_cpt_indication(
+        self, client: TestClient
+    ) -> None:
+        """Resick 2017 cognitive processing therapy indication:
+        avoidance at ceiling, intrusion and hyperarousal moderate."""
+        items = [0] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        avoidance_positions = (5, 7, 8, 11, 12, 13, 17, 22)
+        hyperarousal_positions = (4, 10, 15, 18, 19, 21)
+        for pos in intrusion_positions:
+            items[pos - 1] = 1
+        for pos in avoidance_positions:
+            items[pos - 1] = 4
+        for pos in hyperarousal_positions:
+            items[pos - 1] = 1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-avoidance-dominant"),
+        )
+        body = response.json()
+        assert body["subscales"]["avoidance"] == 32
+        assert body["subscales"]["intrusion"] == 8
+        assert body["subscales"]["hyperarousal"] == 6
+        assert body["positive_screen"] is True
+
+    def test_hyperarousal_dominant_somatic_grounding(
+        self, client: TestClient
+    ) -> None:
+        """van der Kolk 2014 somatic regulation / Linehan 1993 DBT TIP
+        indication: hyperarousal-dominant profile; grounding before
+        trauma-processing."""
+        items = [0] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        avoidance_positions = (5, 7, 8, 11, 12, 13, 17, 22)
+        hyperarousal_positions = (4, 10, 15, 18, 19, 21)
+        for pos in intrusion_positions:
+            items[pos - 1] = 1
+        for pos in avoidance_positions:
+            items[pos - 1] = 1
+        for pos in hyperarousal_positions:
+            items[pos - 1] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": items},
+            headers=self._headers("iesr-hyper-dominant"),
+        )
+        body = response.json()
+        assert body["subscales"]["hyperarousal"] == 24
+        assert body["subscales"]["intrusion"] == 8
+        assert body["subscales"]["avoidance"] == 8
+        assert body["positive_screen"] is True
+
+    def test_seeking_safety_complex_trauma_profile(
+        self, client: TestClient
+    ) -> None:
+        """Najavits 2002 'Seeking Safety' concurrent PTSD+SUD
+        framework — all three subscales elevated.  Cloitre 2011
+        phase-based treatment indicated."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [3] * 22},
+            headers=self._headers("iesr-seeking-safety"),
+        )
+        body = response.json()
+        assert body["subscales"]["intrusion"] == 24
+        assert body["subscales"]["avoidance"] == 24
+        assert body["subscales"]["hyperarousal"] == 18
+        assert body["total"] == 66
+        assert body["positive_screen"] is True
+
+    def test_subthreshold_trauma_monitoring_posture(
+        self, client: TestClient
+    ) -> None:
+        """All items low — total below Creamer 2003 cutoff.  The
+        trajectory layer still tracks week-over-week change; the
+        clinician-UI layer surfaces this as a monitoring (not
+        referral) posture."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [1] * 22},
+            headers=self._headers("iesr-subthreshold"),
+        )
+        body = response.json()
+        assert body["total"] == 22
+        assert body["positive_screen"] is False
+        assert body["severity"] == "continuous"
+
+    def test_remitted_post_treatment_profile(
+        self, client: TestClient
+    ) -> None:
+        """Post-treatment resolution — clean all-zero presentation.
+        Treatment-completion / maintenance phase."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [0] * 22},
+            headers=self._headers("iesr-remitted"),
+        )
+        body = response.json()
+        assert body["total"] == 0
+        assert body["subscales"] == {
+            "intrusion": 0,
+            "avoidance": 0,
+            "hyperarousal": 0,
+        }
+        assert body["positive_screen"] is False
+
+    def test_improving_trajectory_rci_10pt_delta(
+        self, client: TestClient
+    ) -> None:
+        """Jacobson 1991 RCI on IES-R ≈ 10.  Baseline 44 (all 2s) →
+        follow-up 24 (partial resolution) represents a reliable
+        change per Creamer 2003 α = 0.96 psychometrics."""
+        baseline = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [2] * 22},
+            headers=self._headers("iesr-rci-baseline"),
+        ).json()
+        assert baseline["total"] == 44
+
+        followup_items = [2] * 22
+        intrusion_positions = (1, 2, 3, 6, 9, 14, 16, 20)
+        avoidance_positions = (5, 7, 8, 11, 12, 13, 17, 22)
+        hyperarousal_positions = (4, 10, 15, 18, 19, 21)
+        for pos in intrusion_positions[:4]:
+            followup_items[pos - 1] = 0
+        for pos in avoidance_positions[:4]:
+            followup_items[pos - 1] = 0
+        for pos in hyperarousal_positions[:2]:
+            followup_items[pos - 1] = 0
+        followup = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": followup_items},
+            headers=self._headers("iesr-rci-followup"),
+        ).json()
+        assert followup["total"] == 24
+        assert baseline["total"] - followup["total"] >= 10
+
+    def test_ceiling_invariant_eighty_eight(
+        self, client: TestClient
+    ) -> None:
+        """Instrument ceiling: all-4 → total 88 and all three
+        subscales at their respective maxima (32/32/24).  Establishes
+        the ceiling invariant for trajectory-layer Δ normalization."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "iesr", "items": [4] * 22},
+            headers=self._headers("iesr-ceiling"),
+        )
+        body = response.json()
+        assert body["total"] == 88
+        assert body["subscales"] == {
+            "intrusion": 32,
+            "avoidance": 32,
+            "hyperarousal": 24,
+        }

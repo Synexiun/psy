@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10.
+MSPSS, GSE, CORE-10, IES-R.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +45,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1585,6 +1585,11 @@ from .scoring.core10 import (
     InvalidResponseError as Core10Invalid,
     score_core10,
 )
+from .scoring.iesr import (
+    IESR_SUBSCALES,
+    InvalidResponseError as IesrInvalid,
+    score_iesr,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1665,6 +1670,7 @@ Instrument = Literal[
     "mspss",
     "gse",
     "core10",
+    "iesr",
 ]
 
 
@@ -1727,6 +1733,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "mspss": 12,
     "gse": 10,
     "core10": 10,
+    "iesr": 22,
 }
 
 
@@ -4849,6 +4856,156 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             triggering_items=list(c.triggering_items) or None,
             instrument_version=c.instrument_version,
         )
+    if payload.instrument == "iesr":
+        # IES-R — 22-item Impact of Event Scale-Revised (Weiss &
+        # Marmar 1997).  The most widely-used self-report measure of
+        # subjective distress in response to a specific traumatic
+        # event.  Weiss & Marmar 1997 revised the original 15-item
+        # IES (Horowitz, Wilner & Alvarez 1979) by adding a 7-item
+        # hyperarousal subscale, yielding the current 22-item three-
+        # subscale instrument.  Creamer, Bell & Failla (2003; n=386
+        # Vietnam veterans) published the canonical psychometric
+        # validation: Cronbach α ≥ 0.87 per subscale, total α = 0.96,
+        # ROC AUC = 0.88 against CAPS structured diagnostic
+        # interview, and the widely-cited clinical cutoff of total
+        # ≥ 33 for probable PTSD.
+        #
+        # Construct placement in the platform's trauma roster:
+        #
+        # - PC-PTSD-5 (Prins 2016) is the 5-item TRIAGE screener —
+        #   any-3-positive → referral.  First-pass, not a severity
+        #   measure.
+        # - PCL-5 (Weathers 2013) is the 20-item DSM-5-ALIGNED
+        #   symptom severity measure.  Each item maps to a specific
+        #   DSM-5 Criterion B/C/D/E symptom.  Best for DSM-5
+        #   diagnostic-workup contexts.
+        # - IES-R (Weiss & Marmar 1997) is the 22-item FACTOR-
+        #   ANALYTIC three-subscale measure derived from Horowitz
+        #   1979's information-processing theory of trauma response.
+        #   Best for subjective-distress tracking and clinical-
+        #   trial outcome reporting — the three-subscale
+        #   decomposition maps to distinct treatment-selection
+        #   targets (see pairings below).
+        # - ACEs (Felitti 1998) is a 10-item LIFETIME-EXPOSURE count,
+        #   not a symptom-severity measure.
+        #
+        # Why both PCL-5 and IES-R in the roster?  They partition
+        # the trauma-symptom space differently.  PCL-5 follows
+        # DSM-5 cluster structure (4 clusters: B/C/D/E).  IES-R
+        # follows Weiss & Marmar 1997 factor structure (3 factors:
+        # intrusion/avoidance/hyperarousal).  PCL-5 separates
+        # negative cognitions/mood from avoidance; IES-R folds
+        # emotional numbing into avoidance.  Correlate moderately-
+        # to-strongly (r ≈ 0.80; Beck 2008) but neither is a strict
+        # superset.  Routine-outcome contexts usually use one;
+        # trauma-specialty clinics often run both concurrently.
+        #
+        # Three-subscale partitioning (Weiss & Marmar 1997 Table 1):
+        #
+        #     Intrusion     (8 items): 1, 2, 3, 6, 9, 14, 16, 20
+        #     Avoidance     (8 items): 5, 7, 8, 11, 12, 13, 17, 22
+        #     Hyperarousal  (6 items): 4, 10, 15, 18, 19, 21
+        #
+        # Load-bearing distinction: item 2 ("trouble staying asleep")
+        # classifies as INTRUSION (Weiss & Marmar 1997 grouped
+        # nightmare-driven sleep disturbance under intrusion per
+        # Horowitz Criterion B4), item 15 ("trouble falling asleep")
+        # classifies as HYPERAROUSAL (sleep-onset arousal).  A DSM-5
+        # cluster mapping would merge both into hyperarousal.  The
+        # scorer preserves the Weiss & Marmar 1997 factor-analytic
+        # assignment — a client that "corrects" the mapping would
+        # invalidate clinical-trial outcome compatibility.
+        #
+        # No reverse-keying — Weiss & Marmar 1997 pinned all 22
+        # items as distress-positive (higher = more symptom
+        # severity).  Uniform direction with PHQ-9 / GAD-7 / PCL-5
+        # / CORE-10; opposite of WHO-5 / SWLS / MSPSS / GSE.
+        #
+        # Clinical cutoff: total ≥ 33 (Creamer 2003 ROC against
+        # CAPS; AUC = 0.88).  The ``positive_screen`` field flags
+        # this; ``cutoff_used`` surfaces the applied cutoff (33) so
+        # the UI can render "probable PTSD — refer for CAPS-5
+        # structured diagnostic interview at ≥ 33".
+        #
+        # Clinical pairings the scorer output supports:
+        #
+        # - IES-R high total + PCL-5 high total — convergent PTSD
+        #   signal.  Clinician-UI surfaces CAPS-5 structured-
+        #   interview workup.
+        # - IES-R intrusion high + avoidance low (intrusion-
+        #   dominant profile) — prolonged exposure therapy
+        #   indication (Foa 2007 PE; Rauch 2009 massed PE).
+        # - IES-R avoidance high + intrusion low (avoidance-
+        #   dominant profile) — cognitive processing therapy
+        #   indication (Resick 2017 CPT) with emphasis on stuck-
+        #   points and trauma-related cognitions.
+        # - IES-R hyperarousal high + PSS-10 high (physiological
+        #   dysregulation) — priority grounding / somatic-regulation
+        #   intervention (Linehan 1993 DBT TIP / paced breathing;
+        #   van der Kolk 2014 somatic work) BEFORE trauma-
+        #   processing protocols.
+        # - IES-R high + AAQ-II high (symptom-severity plus
+        #   experiential avoidance) — Acceptance and Commitment
+        #   Therapy indication (Hayes 2006; Walser 2007 ACT for
+        #   PTSD).
+        # - IES-R high + ACEs ≥ 4 (symptom-severity plus complex-
+        #   trauma history) — complex-PTSD workup per ICD-11;
+        #   phase-based treatment per Cloitre 2011 / Herman 1992.
+        # - IES-R + Najavits 2002 "Seeking Safety" — concurrent
+        #   PTSD+SUD intervention framework; IES-R provides the
+        #   routine-outcome tracking instrument.
+        # - IES-R trajectory — Jacobson & Truax 1991 RCI ≈ 10
+        #   from Creamer 2003 α = 0.96 and SD ≈ 18.  A 10-point
+        #   IES-R total delta is clinically meaningful across
+        #   trauma-focused treatment episodes.
+        #
+        # T3 posture — no IES-R item probes suicidality.  Item 4
+        # ("irritable and angry"), item 10 ("jumpy and easily
+        # startled"), and item 21 ("watchful and on-guard") are
+        # hyperarousal probes, NOT self-harm or ideation probes.
+        # Item 15 ("trouble falling asleep") is a sleep-onset
+        # probe, NOT a hopelessness probe.  Active-risk screening
+        # stays on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.  A
+        # high IES-R combined with high PHQ-9 surfaces at the
+        # clinician-UI layer as a C-SSRS follow-up prompt, NOT as
+        # a scorer-layer T3 flag.  Same renderer-versus-scorer-
+        # layer boundary established for SWLS / MSPSS / UCLA-3 /
+        # GSE.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: 0-88 sum of all 22 items.
+        # - ``severity``: literal ``"continuous"`` — Creamer 2003
+        #   published a single cutoff, no bands.  Envelope stays
+        #   continuous per CLAUDE.md non-negotiable #9 (never hand-
+        #   roll severity thresholds that aren't in the source
+        #   publication).
+        # - ``subscales``: three-subscale dict keyed by
+        #   IESR_SUBSCALES ("intrusion" / "avoidance" /
+        #   "hyperarousal") — the third multi-subscale instrument
+        #   after PANAS-10 (affect) and MSPSS (social support).
+        # - ``positive_screen``: True if total ≥ 33 (Creamer 2003).
+        # - ``cutoff_used``: 33 (Creamer 2003).
+        # - ``requires_t3``: always False (no suicidality probe).
+        # - No ``index`` — the total IS the published score.
+        # - No ``scaled_score`` — no transformation applied.
+        # - No ``triggering_items`` — no item-level acuity routing.
+        i = score_iesr(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="iesr",
+            total=i.total,
+            severity=i.severity,
+            positive_screen=i.positive_screen,
+            cutoff_used=i.cutoff_used,
+            requires_t3=False,
+            subscales={
+                IESR_SUBSCALES[0]: i.intrusion,
+                IESR_SUBSCALES[1]: i.avoidance,
+                IESR_SUBSCALES[2]: i.hyperarousal,
+            },
+            instrument_version=i.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5022,6 +5179,7 @@ async def submit_assessment(
         MspssInvalid,
         GseInvalid,
         Core10Invalid,
+        IesrInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
