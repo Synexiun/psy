@@ -24039,3 +24039,833 @@ class TestHadsRouting:
         assert response["subscales"] == {"anxiety": 10, "depression": 10}
         assert response["positive_screen"] is False
         assert response["severity"] == "mild"
+
+
+class TestDass21Routing:
+    """End-to-end routing tests for the DASS-21 dispatcher branch.
+
+    Lovibond & Lovibond 1995 original DASS-42; Henry & Crawford 2005
+    n=1,794 short-form CFA validation; Antony 1998 n=717 clinical-
+    group severity-threshold publication.  21 items at 0-3 Likert;
+    no reverse-keying; three non-overlapping subscales (Depression
+    7 items / Anxiety 7 items / Stress 7 items).  Per-subscale range
+    0-21; total 0-63.
+
+    **HIGHER = MORE distress** — uniform with PHQ-9 / GAD-7 / HADS /
+    CORE-10; opposite of WHO-5 / MSPSS / SWLS / GSE.
+
+    Fifth multi-subscale instrument (after PANAS-10 / MSPSS / IES-R /
+    HADS) to populate the ``subscales`` envelope slot.  First
+    instrument to use the 5-band severity set (normal / mild /
+    moderate / severe / extremely_severe).
+
+    Subscale partition (Lovibond 1995 Section 3; Henry & Crawford
+    2005 Table 1 CFA factor loadings — non-overlapping):
+
+        Depression (7 items): 3, 5, 10, 13, 16, 17, 21
+        Anxiety    (7 items): 2, 4, 7, 9, 15, 19, 20
+        Stress     (7 items): 1, 6, 8, 11, 12, 14, 18
+
+    Severity bands (Antony 1998 / Henry & Crawford 2005 per-subscale
+    thresholds on native DASS-21 scale — asymmetric by design,
+    derived from Lovibond 1995 DASS-42 halved per second-edition
+    manual convention):
+
+        Depression:  0-4 normal / 5-6 mild / 7-10 moderate /
+                     11-13 severe / 14-21 extremely severe
+        Anxiety:     0-3 normal / 4-5 mild / 6-7 moderate /
+                     8-9 severe / 10-21 extremely severe
+        Stress:      0-7 normal / 8-9 mild / 10-12 moderate /
+                     13-16 severe / 17-21 extremely severe
+
+    The asymmetric thresholds are LOAD-BEARING — Henry & Crawford
+    2005 Appendix B shows a symmetric-thresholds implementation
+    mis-classifies ≈ 18% of a general-population sample.
+
+    Per-subscale moderate-band "clinically elevated" cutoffs:
+        Depression ≥ 7, Anxiety ≥ 6, Stress ≥ 10
+    ``positive_screen`` = any subscale meets its respective
+    moderate threshold.
+
+    Overall ``severity`` = worst-of-three-subscale-bands per a
+    5-level rank (normal < mild < moderate < severe <
+    extremely_severe).  HADS was 4-level worst-of-two; DASS-21
+    extends both the width (2 → 3 subscales) and depth (4 → 5
+    bands) of the worst-of pattern.
+
+    T3 posture — NO DASS-21 item probes active suicidality.
+    Item 17 ("I felt I wasn't worth much as a person") is a
+    WORTHLESSNESS probe — clinically concerning but NOT equivalent
+    to PHQ-9 item 9's active-risk probe.  Active-risk screening
+    stays on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.  Same
+    renderer-versus-scorer boundary used for HADS / IES-R / MSPSS /
+    SWLS / GSE.
+
+    Construct placement — FIRST instrument in the roster to
+    measure all three tripartite dimensions (depression / anxiety
+    / stress) in a SINGLE validated administration.  DASS-21's
+    Stress subscale identifies the ISOLATED-STRESS presentation
+    (stress moderate+, depression + anxiety normal) that
+    PHQ-9 / GAD-7 / HADS would miss entirely — the
+    clinical-recommendation-changing use case.
+
+    Envelope: total + severity(worst-of-three) + positive_screen
+    (any ≥ subscale-moderate) + subscales (depression / anxiety /
+    stress); NO cutoff_used (three asymmetric thresholds, no
+    single integer); no scaled_score, no index, no triggering_items,
+    requires_t3 always False.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    @staticmethod
+    def _items_for(dep: int, anx: int, stress: int) -> list[int]:
+        """Build a 21-item raw vector producing subscale sums
+        (depression=dep, anxiety=anx, stress=stress) per the Lovibond
+        1995 partition."""
+        assert 0 <= dep <= 21 and 0 <= anx <= 21 and 0 <= stress <= 21
+        items = [0] * 21
+        for positions, target in (
+            ((3, 5, 10, 13, 16, 17, 21), dep),
+            ((2, 4, 7, 9, 15, 19, 20), anx),
+            ((1, 6, 8, 11, 12, 14, 18), stress),
+        ):
+            remaining = target
+            for pos in positions:
+                c = min(3, remaining)
+                items[pos - 1] = c
+                remaining -= c
+                if remaining == 0:
+                    break
+        return items
+
+    # -- Envelope shape ---------------------------------------------------
+
+    def test_all_zeros_total_zero(self, client: TestClient) -> None:
+        """All raw items = 0 → subscales all 0, severity normal, no
+        positive screen.  The asymptomatic-baseline envelope."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [0] * 21},
+            headers=self._headers("dass21-all-zeros"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "dass21"
+        assert body["total"] == 0
+        assert body["subscales"] == {
+            "depression": 0, "anxiety": 0, "stress": 0
+        }
+        assert body["severity"] == "normal"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_all_threes_total_sixty_three(
+        self, client: TestClient
+    ) -> None:
+        """All raw items = 3 (maximum) → each subscale 21, total 63,
+        all three subscales extremely severe."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [3] * 21},
+            headers=self._headers("dass21-all-threes"),
+        )
+        body = response.json()
+        assert body["total"] == 63
+        assert body["subscales"] == {
+            "depression": 21, "anxiety": 21, "stress": 21
+        }
+        assert body["severity"] == "extremely_severe"
+        assert body["positive_screen"] is True
+
+    def test_all_ones_total_twenty_one(
+        self, client: TestClient
+    ) -> None:
+        """All raw items = 1 → each subscale 7.  Severity: depression
+        moderate (7), anxiety moderate (7), stress normal (7).
+        Worst-of-three = moderate."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 21},
+            headers=self._headers("dass21-all-ones"),
+        )
+        body = response.json()
+        assert body["total"] == 21
+        assert body["subscales"] == {
+            "depression": 7, "anxiety": 7, "stress": 7
+        }
+        assert body["severity"] == "moderate"
+        assert body["positive_screen"] is True
+
+    def test_all_twos_total_forty_two(
+        self, client: TestClient
+    ) -> None:
+        """All raw items = 2 → each subscale 14.  Severity:
+        depression extremely_severe (14), anxiety extremely_severe
+        (14), stress severe (14).  Worst-of-three = extremely_severe."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [2] * 21},
+            headers=self._headers("dass21-all-twos"),
+        )
+        body = response.json()
+        assert body["total"] == 42
+        assert body["subscales"] == {
+            "depression": 14, "anxiety": 14, "stress": 14
+        }
+        assert body["severity"] == "extremely_severe"
+        assert body["positive_screen"] is True
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        """Pinned instrument_version for downstream FHIR export."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 21},
+            headers=self._headers("dass21-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "dass21-1.0.0"
+
+    # -- Subscale partitioning --------------------------------------------
+
+    def test_only_depression_elevated(
+        self, client: TestClient
+    ) -> None:
+        """Burst on depression items → depression populated,
+        anxiety and stress at zero.  Verifies Lovibond 1995
+        partition."""
+        items = self._items_for(15, 0, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-only-dep"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 15, "anxiety": 0, "stress": 0
+        }
+
+    def test_only_anxiety_elevated(self, client: TestClient) -> None:
+        items = self._items_for(0, 15, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-only-anx"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 0, "anxiety": 15, "stress": 0
+        }
+
+    def test_only_stress_elevated(self, client: TestClient) -> None:
+        items = self._items_for(0, 0, 15)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-only-str"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 0, "anxiety": 0, "stress": 15
+        }
+
+    @pytest.mark.parametrize("pos", [3, 5, 10, 13, 16, 17, 21])
+    def test_depression_position_isolates(
+        self, client: TestClient, pos: int
+    ) -> None:
+        """Each of the 7 depression positions, isolated, contributes
+        only to depression — verifies non-overlap."""
+        items = [0] * 21
+        items[pos - 1] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers(f"dass21-pos-dep-{pos}"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 3, "anxiety": 0, "stress": 0
+        }
+
+    @pytest.mark.parametrize("pos", [2, 4, 7, 9, 15, 19, 20])
+    def test_anxiety_position_isolates(
+        self, client: TestClient, pos: int
+    ) -> None:
+        items = [0] * 21
+        items[pos - 1] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers(f"dass21-pos-anx-{pos}"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 0, "anxiety": 3, "stress": 0
+        }
+
+    @pytest.mark.parametrize("pos", [1, 6, 8, 11, 12, 14, 18])
+    def test_stress_position_isolates(
+        self, client: TestClient, pos: int
+    ) -> None:
+        items = [0] * 21
+        items[pos - 1] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers(f"dass21-pos-str-{pos}"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 0, "anxiety": 0, "stress": 3
+        }
+
+    # -- Depression severity-band boundaries -----------------------------
+
+    @pytest.mark.parametrize(
+        "dep_score,band",
+        [
+            (0, "normal"),
+            (4, "normal"),
+            (5, "mild"),
+            (6, "mild"),
+            (7, "moderate"),
+            (10, "moderate"),
+            (11, "severe"),
+            (13, "severe"),
+            (14, "extremely_severe"),
+            (21, "extremely_severe"),
+        ],
+    )
+    def test_depression_severity_boundaries(
+        self, client: TestClient, dep_score: int, band: str
+    ) -> None:
+        """DASS-D bands (Antony 1998): 0-4 normal / 5-6 mild / 7-10
+        moderate / 11-13 severe / 14-21 extremely_severe.  Anxiety /
+        stress at 0 (normal); overall severity = depression's band."""
+        items = self._items_for(dep_score, 0, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers(f"dass21-dep-band-{dep_score}"),
+        ).json()
+        assert response["subscales"]["depression"] == dep_score
+        assert response["severity"] == band
+
+    # -- Anxiety severity-band boundaries --------------------------------
+
+    @pytest.mark.parametrize(
+        "anx_score,band",
+        [
+            (0, "normal"),
+            (3, "normal"),
+            (4, "mild"),
+            (5, "mild"),
+            (6, "moderate"),
+            (7, "moderate"),
+            (8, "severe"),
+            (9, "severe"),
+            (10, "extremely_severe"),
+            (21, "extremely_severe"),
+        ],
+    )
+    def test_anxiety_severity_boundaries(
+        self, client: TestClient, anx_score: int, band: str
+    ) -> None:
+        """DASS-A bands (Antony 1998): 0-3 normal / 4-5 mild / 6-7
+        moderate / 8-9 severe / 10-21 extremely_severe.  Lower
+        thresholds than DASS-D — reflects population rarity of
+        anxiety-arousal symptoms."""
+        items = self._items_for(0, anx_score, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers(f"dass21-anx-band-{anx_score}"),
+        ).json()
+        assert response["subscales"]["anxiety"] == anx_score
+        assert response["severity"] == band
+
+    # -- Stress severity-band boundaries ---------------------------------
+
+    @pytest.mark.parametrize(
+        "stress_score,band",
+        [
+            (0, "normal"),
+            (7, "normal"),
+            (8, "mild"),
+            (9, "mild"),
+            (10, "moderate"),
+            (12, "moderate"),
+            (13, "severe"),
+            (16, "severe"),
+            (17, "extremely_severe"),
+            (21, "extremely_severe"),
+        ],
+    )
+    def test_stress_severity_boundaries(
+        self, client: TestClient, stress_score: int, band: str
+    ) -> None:
+        """DASS-S bands (Antony 1998): 0-7 normal / 8-9 mild / 10-12
+        moderate / 13-16 severe / 17-21 extremely_severe.  Higher
+        thresholds than DASS-A — reflects population commonness of
+        stress endorsement."""
+        items = self._items_for(0, 0, stress_score)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers(f"dass21-str-band-{stress_score}"),
+        ).json()
+        assert response["subscales"]["stress"] == stress_score
+        assert response["severity"] == band
+
+    # -- Overall severity = worst-of-three --------------------------------
+
+    def test_severity_worst_depression_extreme(
+        self, client: TestClient
+    ) -> None:
+        """Depression extremely_severe (14) + anxiety normal (0) +
+        stress normal (0) → overall extremely_severe."""
+        items = self._items_for(14, 0, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-worst-dep-extreme"),
+        ).json()
+        assert response["severity"] == "extremely_severe"
+
+    def test_severity_worst_anxiety_severe(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety severe (8) + others normal → overall severe."""
+        items = self._items_for(0, 8, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-worst-anx-severe"),
+        ).json()
+        assert response["severity"] == "severe"
+
+    def test_severity_worst_stress_moderate(
+        self, client: TestClient
+    ) -> None:
+        """Stress moderate (10) + others normal → overall moderate."""
+        items = self._items_for(0, 0, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-worst-str-mod"),
+        ).json()
+        assert response["severity"] == "moderate"
+
+    def test_severity_mixed_bands(self, client: TestClient) -> None:
+        """Mild depression (5) + moderate anxiety (6) + normal
+        stress (0) → moderate."""
+        items = self._items_for(5, 6, 0)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-mixed"),
+        ).json()
+        assert response["severity"] == "moderate"
+
+    def test_severity_extremely_severe_beats_all(
+        self, client: TestClient
+    ) -> None:
+        """Any subscale extremely_severe → overall extremely_severe.
+        Anxiety 10 (extreme), depression 5 (mild), stress 6 (normal)
+        → overall extremely_severe."""
+        items = self._items_for(5, 10, 6)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-extreme-wins"),
+        ).json()
+        assert response["severity"] == "extremely_severe"
+
+    # -- Positive-screen subscale independence ---------------------------
+
+    def test_positive_screen_depression_only(
+        self, client: TestClient
+    ) -> None:
+        """Depression moderate (7) + anxiety and stress below their
+        respective cutoffs → positive_screen True (depression ≥ 7)."""
+        items = self._items_for(7, 5, 9)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-pos-dep-only"),
+        ).json()
+        assert response["positive_screen"] is True
+
+    def test_positive_screen_anxiety_only(
+        self, client: TestClient
+    ) -> None:
+        """Anxiety at cutoff (6) + others below → positive True."""
+        items = self._items_for(6, 6, 9)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-pos-anx-only"),
+        ).json()
+        assert response["positive_screen"] is True
+
+    def test_positive_screen_stress_only(
+        self, client: TestClient
+    ) -> None:
+        """Stress at cutoff (10) + others below → positive True."""
+        items = self._items_for(6, 5, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-pos-str-only"),
+        ).json()
+        assert response["positive_screen"] is True
+
+    def test_negative_screen_all_below_cutoffs(
+        self, client: TestClient
+    ) -> None:
+        """All three below their respective moderate thresholds →
+        positive_screen False.  Depression 6 / anxiety 5 / stress 9 —
+        the just-below boundary for all three."""
+        items = self._items_for(6, 5, 9)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-neg-below"),
+        ).json()
+        assert response["positive_screen"] is False
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        """DASS-21 envelope omits cutoff_used — three per-subscale
+        thresholds (7 / 6 / 10) cannot be represented by a single
+        integer.  Distinct from HADS (single cutoff 11 surfaces) and
+        AUDIT-C (single sex-keyed cutoff)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 21},
+            headers=self._headers("dass21-no-cutoff"),
+        ).json()
+        assert response.get("cutoff_used") is None
+
+    # -- Item count validation -------------------------------------------
+
+    def test_twenty_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 20},
+            headers=self._headers("dass21-short"),
+        )
+        assert response.status_code == 422
+
+    def test_twenty_two_items_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 22},
+            headers=self._headers("dass21-long"),
+        )
+        assert response.status_code == 422
+
+    def test_empty_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": []},
+            headers=self._headers("dass21-empty"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value range validation -------------------------------------
+
+    def test_value_negative_rejected(self, client: TestClient) -> None:
+        items = [1] * 21
+        items[0] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_value_four_rejected(self, client: TestClient) -> None:
+        """DASS-21 is 0-3 Likert; 4 is PHQ-9 / GAD-7 max but not
+        DASS."""
+        items = [1] * 21
+        items[5] = 4
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-over"),
+        )
+        assert response.status_code == 422
+
+    def test_value_far_out_of_range_rejected(
+        self, client: TestClient
+    ) -> None:
+        items = [1] * 21
+        items[20] = 100
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-far-out"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-type / Pydantic-coercion boundary --------------------------
+
+    def test_string_non_numeric_rejected(
+        self, client: TestClient
+    ) -> None:
+        items: list[object] = [1] * 21
+        items[5] = "moderate"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-str-nonnum"),
+        )
+        assert response.status_code == 422
+
+    def test_string_numeric_coerced(self, client: TestClient) -> None:
+        """Pydantic lax-mode: "2" → 2 → 201."""
+        items: list[object] = [1] * 21
+        items[0] = "2"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-str-num"),
+        )
+        assert response.status_code == 201
+
+    def test_float_whole_coerced(self, client: TestClient) -> None:
+        items: list[object] = [1] * 21
+        items[0] = 2.0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-float-whole"),
+        )
+        assert response.status_code == 201
+
+    def test_float_fractional_rejected(
+        self, client: TestClient
+    ) -> None:
+        items: list[object] = [1] * 21
+        items[0] = 2.5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-float-frac"),
+        )
+        assert response.status_code == 422
+
+    def test_bool_true_coerced_via_pydantic(
+        self, client: TestClient
+    ) -> None:
+        """Wire-layer Pydantic lax-mode coerces bool → int.  The
+        strict-bool rejection fires only on direct-Python scorer
+        calls."""
+        items: list[object] = [1] * 21
+        items[0] = True
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-bool-true"),
+        )
+        assert response.status_code == 201
+
+    def test_bool_false_coerced_via_pydantic(
+        self, client: TestClient
+    ) -> None:
+        items: list[object] = [0] * 21
+        items[0] = False
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-bool-false"),
+        )
+        assert response.status_code == 201
+
+    def test_null_rejected(self, client: TestClient) -> None:
+        items: list[object] = [1] * 21
+        items[0] = None
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-null"),
+        )
+        assert response.status_code == 422
+
+    # -- Unused envelope fields ------------------------------------------
+
+    def test_no_scaled_score_key(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 21},
+            headers=self._headers("dass21-no-scaled"),
+        ).json()
+        assert response.get("scaled_score") is None
+
+    def test_no_index_key(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [1] * 21},
+            headers=self._headers("dass21-no-index"),
+        ).json()
+        assert response.get("index") is None
+
+    def test_no_triggering_items(self, client: TestClient) -> None:
+        """DASS-21 has no per-item acuity routing — no T3 item."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [3] * 21},
+            headers=self._headers("dass21-no-trig"),
+        ).json()
+        assert response.get("triggering_items") is None
+
+    def test_requires_t3_always_false_even_at_ceiling(
+        self, client: TestClient
+    ) -> None:
+        """Ceiling profile (all 3s) → total 63, all subscales
+        extremely_severe, but requires_t3 is False.  DASS-21 has
+        no suicidality probe by design — Lovibond 1995 kept active-
+        risk screening off the instrument."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [3] * 21},
+            headers=self._headers("dass21-t3-ceiling"),
+        ).json()
+        assert response["total"] == 63
+        assert response["severity"] == "extremely_severe"
+        assert response["requires_t3"] is False
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_vignette_asymptomatic_baseline(
+        self, client: TestClient
+    ) -> None:
+        """Henry & Crawford 2005 n=1,794 community sample: mean
+        scores approximately (dep 5.5 / anx 3.6 / str 8.1).  This
+        vignette: all normal — a below-community-mean profile."""
+        items = self._items_for(3, 2, 6)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-vignette-baseline"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 3, "anxiety": 2, "stress": 6
+        }
+        assert response["severity"] == "normal"
+        assert response["positive_screen"] is False
+
+    def test_vignette_mdd_depression_dominant(
+        self, client: TestClient
+    ) -> None:
+        """Antony 1998 MDD group mean: dep 12.8 / anx 6.6 / str 9.9.
+        Profile: severe depression, moderate anxiety, mild stress.
+        The DSM-IV MDD presentation through DASS-21."""
+        items = self._items_for(13, 7, 9)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-vignette-mdd"),
+        ).json()
+        assert response["severity"] == "severe"
+        assert response["positive_screen"] is True
+
+    def test_vignette_panic_disorder_anxiety_dominant(
+        self, client: TestClient
+    ) -> None:
+        """Antony 1998 panic-disorder group mean: dep 7.5 / anx 10.0
+        / str 10.5.  Extremely-severe anxiety with moderate
+        depression + moderate stress — the DASS-A-dominant PANIC
+        pattern.  PHQ-9 / GAD-7 might miss the autonomic-arousal
+        signal that DASS-A picks up."""
+        items = self._items_for(7, 10, 10)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-vignette-panic"),
+        ).json()
+        assert response["severity"] == "extremely_severe"
+        assert response["positive_screen"] is True
+
+    def test_vignette_isolated_stress(
+        self, client: TestClient
+    ) -> None:
+        """ISOLATED-STRESS profile — DASS-S moderate with DASS-D /
+        DASS-A both normal.  This is the CLINICAL-RECOMMENDATION-
+        CHANGING presentation where tripartite decomposition
+        matters: PHQ-9 / GAD-7 / HADS would miss or mislabel this
+        entirely.  Routes to stress-inoculation (Meichenbaum 1985)
+        / problem-solving / time-management rather than mood-
+        disorder protocols."""
+        items = self._items_for(3, 3, 11)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-vignette-isolated-stress"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 3, "anxiety": 3, "stress": 11
+        }
+        assert response["severity"] == "moderate"
+        assert response["positive_screen"] is True
+
+    def test_vignette_ceiling_extremely_severe(
+        self, client: TestClient
+    ) -> None:
+        """All three subscales at ceiling — total 63.  Routes to
+        urgent psychiatric evaluation AND a C-SSRS follow-up.  The
+        scorer itself reports requires_t3=False — DASS-21 has no
+        suicidality probe; the clinician-UI layer enforces C-SSRS
+        escalation."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": [3] * 21},
+            headers=self._headers("dass21-vignette-ceiling"),
+        ).json()
+        assert response["subscales"] == {
+            "depression": 21, "anxiety": 21, "stress": 21
+        }
+        assert response["total"] == 63
+        assert response["severity"] == "extremely_severe"
+        assert response["requires_t3"] is False
+
+    def test_vignette_ronk_rci_improvement(
+        self, client: TestClient
+    ) -> None:
+        """Ronk 2013 MCID ≈ 3 points per subscale.  Baseline DASS-D
+        = 10 (moderate) → followup DASS-D = 7 (moderate at
+        threshold).  Delta = 3 → clinically meaningful improvement."""
+        baseline = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dass21",
+                "items": self._items_for(10, 5, 9),
+            },
+            headers=self._headers("dass21-ronk-baseline"),
+        ).json()
+        followup = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "dass21",
+                "items": self._items_for(7, 5, 9),
+            },
+            headers=self._headers("dass21-ronk-followup"),
+        ).json()
+        assert baseline["subscales"]["depression"] == 10
+        assert followup["subscales"]["depression"] == 7
+        assert (
+            baseline["subscales"]["depression"]
+            - followup["subscales"]["depression"]
+        ) >= 3
+
+    def test_vignette_transdiagnostic_mixed(
+        self, client: TestClient
+    ) -> None:
+        """Mixed moderate across all three subscales — transdiagnostic
+        pattern routing to Barlow 2010 Unified Protocol."""
+        items = self._items_for(10, 7, 12)
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "dass21", "items": items},
+            headers=self._headers("dass21-vignette-transdiagnostic"),
+        ).json()
+        assert response["severity"] == "moderate"
+        assert response["positive_screen"] is True

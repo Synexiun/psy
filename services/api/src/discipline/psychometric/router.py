@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10, IES-R, HADS.
+MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +45,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1595,6 +1595,11 @@ from .scoring.hads import (
     InvalidResponseError as HadsInvalid,
     score_hads,
 )
+from .scoring.dass21 import (
+    DASS21_SUBSCALES,
+    InvalidResponseError as Dass21Invalid,
+    score_dass21,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1677,6 +1682,7 @@ Instrument = Literal[
     "core10",
     "iesr",
     "hads",
+    "dass21",
 ]
 
 
@@ -1741,6 +1747,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "core10": 10,
     "iesr": 22,
     "hads": 14,
+    "dass21": 21,
 }
 
 
@@ -5209,6 +5216,161 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=h.instrument_version,
         )
+    if payload.instrument == "dass21":
+        # DASS-21 — 21-item Depression Anxiety Stress Scales short
+        # form (Lovibond & Lovibond 1995 original 42-item DASS;
+        # Henry & Crawford 2005 n=1,794 short-form CFA validation;
+        # Antony 1998 n=717 clinical-group severity thresholds).
+        # The abbreviated version of the 42-item DASS-42 preserving
+        # the full three-factor (depression / anxiety / stress)
+        # factor-analytic structure in half the administration time.
+        #
+        # Construct placement in the platform's mood / anxiety /
+        # stress roster:
+        #
+        # - PHQ-9 (Kroenke 2001) measures DSM-IV-criterion MDD on
+        #   9 items; includes somatic items (sleep, fatigue,
+        #   appetite, psychomotor, concentration) that capture the
+        #   full DSM-IV-MDD criterion set.  Best for primary-care
+        #   DSM-aligned workup.  Item 9 T3 routing.
+        # - GAD-7 (Spitzer 2006) measures generalized anxiety /
+        #   WORRY on 7 items.  Best for primary care.
+        # - HADS (Zigmond & Snaith 1983) measures cognitive
+        #   anxiety and cognitive depression on 14 items with NO
+        #   somatic items — medical-comorbidity-robust.
+        # - PHQ-15 (Kroenke 2002) measures somatization on 15
+        #   somatic items (complementary pole to HADS).
+        # - PSS-10 (Cohen 1983) measures PERCEIVED STRESS —
+        #   cognitive appraisal of stressors — on 10 items.  The
+        #   ENVIRONMENT-AS-STRESSFUL construct.
+        # - DASS-21 (Lovibond 1995 / Henry & Crawford 2005)
+        #   measures DEPRESSION, ANXIETY, and STRESS on 21 items
+        #   in a SINGLE administration.  Tripartite (Clark & Watson
+        #   1991) decomposition: DEPRESSION = anhedonia + low
+        #   positive affect; ANXIETY = autonomic arousal + high
+        #   negative affect (PANIC-spectrum, not GAD-style worry);
+        #   STRESS = tension + irritability + difficulty relaxing
+        #   (the ORGANISM-AS-STRESSED pole complementary to PSS-10's
+        #   APPRAISAL pole).
+        #
+        # Why DASS-21 alongside PHQ-9 / GAD-7 / HADS / PSS-10?
+        # Each of the prior instruments measures ONE or TWO of the
+        # three tripartite dimensions; DASS-21 is the ONLY
+        # instrument in the roster that measures all three in a
+        # single validated administration.  The STRESS subscale in
+        # particular identifies the ISOLATED-STRESS presentation
+        # (DASS-S moderate-or-above with DASS-D / DASS-A both
+        # normal) that is the CLINICAL-RECOMMENDATION-CHANGING
+        # pattern: PHQ-9 / GAD-7 / HADS would miss this entirely.
+        # Isolated-stress routes to stress-inoculation
+        # (Meichenbaum 1985) / problem-solving training rather
+        # than mood-disorder protocols.
+        #
+        # Partitioning (Lovibond 1995 Section 3; Henry & Crawford
+        # 2005 Table 1 CFA factor loadings; non-overlapping):
+        #
+        #     Depression (7): 3, 5, 10, 13, 16, 17, 21
+        #     Anxiety    (7): 2, 4, 7, 9, 15, 19, 20
+        #     Stress     (7): 1, 6, 8, 11, 12, 14, 18
+        #
+        # No reverse-keying.  All 21 items worded so higher raw =
+        # more distress.  Uniform direction with PHQ-9 / GAD-7 /
+        # HADS / CORE-10; opposite of WHO-5 / MSPSS / SWLS / GSE.
+        #
+        # Severity bands (Antony 1998 / Henry & Crawford 2005 on
+        # the native DASS-21 scale, derived from Lovibond 1995
+        # DASS-42 thresholds halved per the second-edition
+        # manual — PER-SUBSCALE and ASYMMETRIC by design):
+        #
+        #     Depression:  0-4 normal / 5-6 mild / 7-10 moderate /
+        #                  11-13 severe / 14-21 extremely severe
+        #     Anxiety:     0-3 normal / 4-5 mild / 6-7 moderate /
+        #                  8-9 severe / 10-21 extremely severe
+        #     Stress:      0-7 normal / 8-9 mild / 10-12 moderate /
+        #                  13-16 severe / 17-21 extremely severe
+        #
+        # The asymmetric thresholds are LOAD-BEARING — a DASS-21
+        # implementation that uses symmetric thresholds across the
+        # three subscales (common shortcut in unvalidated
+        # implementations) mis-classifies approximately 18% of a
+        # general population sample per Henry & Crawford 2005
+        # Appendix B.  Per CLAUDE.md non-negotiable #9 (never
+        # hand-roll severity thresholds), the asymmetric thresholds
+        # stay verbatim.
+        #
+        # Clinical cutoffs — per-subscale moderate-band lower
+        # bound per Antony 1998 "clinically elevated" convention:
+        #     Depression ≥ 7, Anxiety ≥ 6, Stress ≥ 10
+        # ``positive_screen`` flags if ANY subscale meets its
+        # respective moderate threshold.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: 0-63 sum of all 21 items (= dep + anx + str
+        #   since the partition is non-overlapping).
+        # - ``severity``: worst-of-three per a 5-level rank
+        #   (normal < mild < moderate < severe <
+        #   extremely_severe).  HADS was 4-level worst-of-two;
+        #   DASS-21 extends both the width (2 → 3 subscales) and
+        #   depth (4 → 5 bands) of the worst-of pattern.
+        # - ``subscales``: three-subscale dict keyed by
+        #   DASS21_SUBSCALES ("depression" / "anxiety" / "stress")
+        #   — fifth multi-subscale instrument after PANAS-10 /
+        #   MSPSS / IES-R / HADS.
+        # - ``positive_screen``: True if any subscale at-or-above
+        #   its moderate threshold (Antony 1998 dep ≥ 7 / anx ≥ 6
+        #   / str ≥ 10).
+        # - NO ``cutoff_used`` — the three subscales have
+        #   different moderate thresholds (7 / 6 / 10) so no
+        #   single integer represents the per-subscale cutoffs.
+        #   Clients rendering DASS-21 results must surface the
+        #   per-subscale severities from ``subscales`` alongside
+        #   the overall ``severity`` rather than a single cutoff.
+        # - ``requires_t3``: always False — NO DASS-21 item probes
+        #   active suicidality.  Item 17 ("I felt I wasn't worth
+        #   much as a person") is a WORTHLESSNESS probe —
+        #   clinically concerning but NOT equivalent to PHQ-9 item
+        #   9's active-risk probe.  Active-risk screening stays on
+        #   C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
+        # - No ``index`` — total / subscales ARE the published
+        #   scores.
+        # - No ``scaled_score`` — no transformation applied.
+        # - No ``triggering_items`` — no per-item acuity routing.
+        #
+        # Clinical pairings the scorer output supports:
+        #
+        # - DASS-D high + PHQ-9 high — convergent MDD signal
+        #   across tripartite (DASS-D: anhedonia-dominant) and
+        #   DSM-IV (PHQ-9: full criterion set) frames.
+        # - DASS-A high + GAD-7 low — PANIC / AUTONOMIC-AROUSAL
+        #   pattern (DASS-A: physiological; GAD-7: worry).  Routes
+        #   to interoceptive-exposure / PACE / panic-disorder
+        #   protocols rather than generalized-worry CBT.
+        # - DASS-S high + PSS-10 high — convergent stress-response
+        #   signal from both ORGANISM (DASS) and APPRAISAL (PSS)
+        #   perspectives.
+        # - DASS-S high + DASS-D and DASS-A normal — ISOLATED
+        #   stress profile (the tripartite-decomposition-
+        #   specific presentation).
+        # - DASS-21 + CD-RISC-10 — distress-resilience pairing.
+        # - DASS-21 trajectory — Ronk 2013 MCID ≈ 3 points per
+        #   subscale; RCI methodology confirms clinical
+        #   significance for a 3+ point subscale delta.
+        d = score_dass21(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="dass21",
+            total=d.total,
+            severity=d.severity,
+            positive_screen=d.positive_screen,
+            requires_t3=False,
+            subscales={
+                DASS21_SUBSCALES[0]: d.depression,
+                DASS21_SUBSCALES[1]: d.anxiety,
+                DASS21_SUBSCALES[2]: d.stress,
+            },
+            instrument_version=d.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5384,6 +5546,7 @@ async def submit_assessment(
         Core10Invalid,
         IesrInvalid,
         HadsInvalid,
+        Dass21Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
