@@ -26216,3 +26216,594 @@ class TestBriefCopeRouting:
         ).json()
         assert body_low["subscales"]["acceptance"] == 2
         assert body["subscales"]["acceptance"] > body_low["subscales"]["acceptance"]
+
+
+# =============================================================================
+# WEMWBS — Tennant 2007 Warwick-Edinburgh Mental Wellbeing Scale
+# =============================================================================
+
+
+class TestWemwbsRouting:
+    """End-to-end routing tests for the WEMWBS dispatcher branch.
+
+    Warwick-Edinburgh Mental Wellbeing Scale (Tennant et al. 2007
+    *The Warwick-Edinburgh Mental Well-being Scale (WEMWBS):
+    Development and UK validation*, Health and Quality of Life
+    Outcomes 5:63) — 14-item self-report measure of mental
+    wellbeing, 1-5 Likert, total **14-70**, HIGHER = MORE
+    WELLBEING.  Unidimensional per Tennant 2007 CFA.  No reverse-
+    keying — all 14 items positively worded to prevent the
+    method-artifact two-factor structure that plagues RSES
+    (Marsh 1996 critique).
+
+    Envelope shape:
+
+    - ``total``: 14-70 sum of the 14 items.
+    - ``severity``: always ``"continuous"`` — Tennant 2007 did
+      not publish clinical bands; Stewart-Brown 2012 preliminary
+      tertile thresholds are not validated cutoffs.  Trajectory
+      layer applies Jacobson-Truax RCI on raw total.
+    - ``requires_t3``: always False — no item probes ideation.
+    - **NO** ``positive_screen``, ``cutoff_used``, ``subscales``
+      (unidimensional), ``index`` (no transformation),
+      ``triggering_items`` (no per-item acuity routing).
+
+    Clinical role:
+
+    - Fills the positive-wellbeing dimension gap.  Detects the
+      Keyes 2002 languishing-without-clinical-symptoms pattern
+      (PHQ-9-low + GAD-7-low + WEMWBS-low → positive-psychology
+      routing rather than symptom-focused content).
+    - Post-acute ceiling metric after PHQ-9 / GAD-7 hit floor.
+    - Epidemiological benchmark against Tennant 2007 UK
+      n = 348 mean 50.7 SD 8.8 and Stewart-Brown 2009 Scottish
+      n = 2,073 mean 51.6 SD 8.7 (both available in the
+      aggregate-only enterprise dashboard).
+
+    Direction: Higher = MORE wellbeing.  Same direction as WHO-5 /
+    BRS / LOT-R / RSES / MAAS / CD-RISC-10; opposite of PHQ-9 /
+    GAD-7 / AUDIT / DUDIT / FTND / PSS-10 / DASS-21.
+
+    No safety items.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Happy path ------------------------------------------------
+
+    def test_floor_all_ones_total_fourteen(
+        self, client: TestClient
+    ) -> None:
+        """Minimum endorsement — all 14 items at 1 ('None of the
+        time').  Total = 14 = 14 × 1.  Clinically: the Keyes 2002
+        languishing signature.  Could co-occur with low PHQ-9 /
+        GAD-7; platform intervention-matching routes to positive-
+        psychology content."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [1] * 14},
+            headers=self._headers("wemwbs-floor"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "wemwbs"
+        assert body["total"] == 14
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_ceiling_all_fives_total_seventy(
+        self, client: TestClient
+    ) -> None:
+        """Maximum endorsement — all 14 items at 5 ('All of the
+        time').  Total = 70 = 14 × 5.  Clinically: Seligman 2011
+        flourishing ceiling."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [5] * 14},
+            headers=self._headers("wemwbs-ceiling"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 70
+        assert body["severity"] == "continuous"
+
+    def test_midpoint_all_threes_total_forty_two(
+        self, client: TestClient
+    ) -> None:
+        """Midpoint endorsement — all 14 items at 3 ('Some of the
+        time').  Total = 42 = 14 × 3.  One SD below the Tennant
+        2007 population mean of 50.7."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-mid"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 42
+
+    def test_instrument_version_pinned(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-version"),
+        ).json()
+        assert body["instrument_version"] == "wemwbs-1.0.0"
+
+    def test_requires_t3_always_false_at_min(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [1] * 14},
+            headers=self._headers("wemwbs-t3-min"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_requires_t3_always_false_at_max(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [5] * 14},
+            headers=self._headers("wemwbs-t3-max"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    # -- Severity always "continuous" ------------------------------
+
+    @pytest.mark.parametrize("items,expected_total,label", [
+        ([1] * 14, 14, "floor"),
+        ([2] * 14, 28, "low"),
+        ([3] * 14, 42, "mid"),
+        ([4] * 14, 56, "high"),
+        ([5] * 14, 70, "ceiling"),
+    ])
+    def test_severity_always_continuous(
+        self,
+        client: TestClient,
+        items: list[int],
+        expected_total: int,
+        label: str,
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers(f"wemwbs-cont-{label}"),
+        ).json()
+        assert body["total"] == expected_total
+        assert body["severity"] == "continuous"
+
+    def test_stewart_brown_2012_tertile_threshold_not_surfaced(
+        self, client: TestClient
+    ) -> None:
+        """Stewart-Brown 2012 suggested preliminary tertile
+        thresholds (< 40 "very low", 40-59 "average", 60+ "above
+        average") but explicitly stated they are not validated
+        clinical cutoffs.  The scorer emits ``"continuous"`` at
+        every total; any UI band must be computed at the
+        rendering layer from user-relative RCI deltas."""
+        # Score at each published "tertile" — all return "continuous".
+        below_low = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [2] * 14},  # 28
+            headers=self._headers("wemwbs-sb-1"),
+        ).json()
+        mid = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [4] * 14},  # 56
+            headers=self._headers("wemwbs-sb-2"),
+        ).json()
+        above_high = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [5] * 14},  # 70
+            headers=self._headers("wemwbs-sb-3"),
+        ).json()
+        assert below_low["severity"] == "continuous"
+        assert mid["severity"] == "continuous"
+        assert above_high["severity"] == "continuous"
+
+    # -- Item-count validation -------------------------------------
+
+    def test_rejects_thirteen_items(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 13},
+            headers=self._headers("wemwbs-short"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_fifteen_items(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 15},
+            headers=self._headers("wemwbs-long"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_empty_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": []},
+            headers=self._headers("wemwbs-empty"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_message_names_fourteen(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 10},
+            headers=self._headers("wemwbs-msg"),
+        )
+        assert response.status_code == 422
+        assert "14" in str(response.json())
+
+    # -- Item-range validation -------------------------------------
+
+    def test_rejects_item_below_one(self, client: TestClient) -> None:
+        items = [3] * 14
+        items[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-low"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_above_five(self, client: TestClient) -> None:
+        items = [3] * 14
+        items[7] = 6
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-high"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        items = [3] * 14
+        items[13] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_range_message_names_position(
+        self, client: TestClient
+    ) -> None:
+        items = [3] * 14
+        items[6] = 7
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-pos-msg"),
+        )
+        assert response.status_code == 422
+        assert "7" in str(response.json())  # 1-indexed position 7
+
+    # -- Pydantic type coercion ------------------------------------
+
+    def test_rejects_string_items(self, client: TestClient) -> None:
+        items: list[Any] = [3] * 14
+        items[0] = "four"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-str"),
+        )
+        assert response.status_code == 422
+
+    def test_numeric_string_coerces_via_pydantic_lax_mode(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic ``list[int]`` coerces ``"4"`` → 4 BEFORE the
+        scorer.  Within 1-5 → accepted."""
+        items: list[Any] = [3] * 14
+        items[0] = "4"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-numstr"),
+        )
+        assert response.status_code == 201
+        # 3 at position 0 replaced by 4 → total = 42 + 1 = 43.
+        assert response.json()["total"] == 43
+
+    def test_rejects_float_with_decimal(
+        self, client: TestClient
+    ) -> None:
+        items: list[Any] = [3] * 14
+        items[0] = 3.5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-frac"),
+        )
+        assert response.status_code == 422
+
+    def test_accepts_whole_float(self, client: TestClient) -> None:
+        items: list[Any] = [3] * 14
+        items[0] = 4.0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-whole-float"),
+        )
+        assert response.status_code == 201
+
+    def test_true_coerced_to_one_is_valid(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``true`` → 1 — at the floor of
+        WEMWBS's 1-5 range.  Accepted.  Same pattern as SWLS /
+        Brief COPE / UCLA-3 (all 1-based scales)."""
+        items: list[Any] = [3] * 14
+        items[0] = True
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-true"),
+        )
+        assert response.status_code == 201
+
+    def test_false_coerced_to_zero_is_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``false`` → 0, which is BELOW
+        WEMWBS's 1-5 range.  Rejected by range check."""
+        items: list[Any] = [3] * 14
+        items[0] = False
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Envelope shape (deliberately-absent fields) ---------------
+
+    def test_no_positive_screen_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-no-screen"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_no_subscales_field(self, client: TestClient) -> None:
+        """Unidimensional per Tennant 2007 CFA; envelope omits
+        subscales or returns empty."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-no-sub"),
+        ).json()
+        subscales = body.get("subscales")
+        assert subscales is None or subscales == {}
+
+    def test_no_index_field(self, client: TestClient) -> None:
+        """WHO-5 index transformation (raw × 4) is specific to
+        WHO-5's 0-25 range.  WEMWBS publishes raw 14-70 without
+        index."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-no-index"),
+        ).json()
+        assert body.get("index") is None
+
+    def test_no_triggering_items_field(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-no-trig"),
+        ).json()
+        assert body.get("triggering_items") is None
+
+    def test_assessment_id_is_uuid(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [3] * 14},
+            headers=self._headers("wemwbs-uuid"),
+        ).json()
+        uuid.UUID(body["assessment_id"])
+
+    # -- Clinical vignettes ----------------------------------------
+
+    def test_vignette_flourishing_seligman_2011(
+        self, client: TestClient
+    ) -> None:
+        """Seligman 2011 flourishing profile — high endorsement
+        across all items.  Total 70, post-recovery ceiling."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [5] * 14},
+            headers=self._headers("wemwbs-flourish"),
+        ).json()
+        assert body["total"] == 70
+        assert body["severity"] == "continuous"
+
+    def test_vignette_languishing_keyes_2002(
+        self, client: TestClient
+    ) -> None:
+        """Keyes 2002 languishing — uniformly low wellbeing
+        endorsement.  Platform routes this pattern to positive-
+        psychology content even without clinical-symptom co-
+        occurrence.  The intervention-matching engine combines
+        WEMWBS low with PHQ-9 / GAD-7 results to decide whether
+        the pathway is:
+
+        - WEMWBS low + PHQ-9 normal → pure languishing; positive-
+          psychology / behavioral activation.
+        - WEMWBS low + PHQ-9 elevated → comorbid; depression-CBT
+          first, positive-psychology in maintenance."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [1] * 14},
+            headers=self._headers("wemwbs-languish"),
+        ).json()
+        assert body["total"] == 14
+        assert body["severity"] == "continuous"
+
+    def test_vignette_tennant_2007_population_norm(
+        self, client: TestClient
+    ) -> None:
+        """Tennant 2007 UK n = 348 population mean = 50.7, SD =
+        8.8.  A user at total 51 is at population norm — not a
+        clinical flag on its own; RCI-based trajectory
+        interprets direction of change rather than absolute
+        value.  Vector totals to 51 via 9 × 4 + 5 × 3."""
+        items = [4] * 9 + [3] * 5
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-tennant-mean"),
+        ).json()
+        assert body["total"] == 51
+
+    def test_vignette_stewart_brown_2009_scottish_norm(
+        self, client: TestClient
+    ) -> None:
+        """Stewart-Brown 2009 Scottish n = 2,073 mean = 51.6,
+        SD = 8.7.  Two population norms agree within SEM
+        confirming cross-national stability.  Vector totals
+        to 52."""
+        items = [4] * 10 + [3] * 4
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-scotland-mean"),
+        ).json()
+        assert body["total"] == 52
+
+    def test_vignette_recovery_trajectory_early(
+        self, client: TestClient
+    ) -> None:
+        """Early in recovery — occasional wellbeing endorsement
+        (mostly 2s with a few 3s).  Jacobson-Truax RCI in the
+        trajectory layer compares to baseline and subsequent
+        assessments to detect clinically meaningful change."""
+        items = [2, 2, 3, 2, 2, 3, 2, 3, 2, 2, 3, 2, 2, 3]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-traj-early"),
+        ).json()
+        assert body["total"] == 33
+
+    def test_vignette_recovery_trajectory_late(
+        self, client: TestClient
+    ) -> None:
+        """Late in recovery — frequent wellbeing endorsement
+        (mostly 4s and 5s).  RCI between this and the early
+        trajectory assessment is the primary clinical signal."""
+        items = [4, 5, 4, 4, 4, 5, 4, 4, 4, 5, 4, 4, 5, 4]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-traj-late"),
+        ).json()
+        assert body["total"] == 60
+
+    def test_vignette_mixed_burnout_adjacent(
+        self, client: TestClient
+    ) -> None:
+        """Mixed profile — user high on cognitive-evaluative
+        items (6 dealing-with-problems, 7 thinking-clearly, 10
+        confident, 11 able-to-make-up-mind) but low on energy
+        and affective items (3 relaxed, 5 energy, 14 cheerful).
+        The 'functioning but exhausted' pattern common in
+        burnout-adjacent presentations."""
+        items = [3, 4, 2, 3, 2, 5, 5, 4, 3, 5, 5, 3, 4, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-burnout"),
+        ).json()
+        assert body["total"] == 50
+        # Despite the internal pattern, severity stays continuous.
+        assert body["severity"] == "continuous"
+
+    def test_vignette_rci_determinism(
+        self, client: TestClient
+    ) -> None:
+        """RCI assumes deterministic scoring.  Identical input
+        must yield identical total / severity / instrument_version
+        across repeated calls."""
+        items = [3, 4, 2, 5, 1, 4, 3, 2, 5, 1, 4, 3, 2, 5]
+        first = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-rci-1"),
+        ).json()
+        second = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": items},
+            headers=self._headers("wemwbs-rci-2"),
+        ).json()
+        assert first["total"] == second["total"]
+        assert first["severity"] == second["severity"]
+        assert first["instrument_version"] == second["instrument_version"]
+
+    def test_vignette_direction_higher_equals_more_wellbeing(
+        self, client: TestClient
+    ) -> None:
+        """Direction guarantee: total 70 (all 5s) > total 14
+        (all 1s).  Same direction as WHO-5 / BRS / LOT-R / RSES /
+        MAAS / CD-RISC-10; OPPOSITE of PHQ-9 / GAD-7 / AUDIT /
+        DUDIT / FTND / PSS-10 / DASS-21.  Guards against
+        accidental introduction of reverse-keying in future
+        edits (Marsh 1996 method-artifact concern is the specific
+        design reason WEMWBS is all-positive)."""
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [5] * 14},
+            headers=self._headers("wemwbs-dir-high"),
+        ).json()
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [1] * 14},
+            headers=self._headers("wemwbs-dir-low"),
+        ).json()
+        assert high["total"] > low["total"]
+        assert high["total"] == 70
+        assert low["total"] == 14
+
+    def test_vignette_post_acute_ceiling_metric(
+        self, client: TestClient
+    ) -> None:
+        """Post-acute monitoring use case: users whose PHQ-9 and
+        GAD-7 have hit the floor (0) no longer discriminate on
+        those instruments.  WEMWBS provides the ceiling metric
+        that captures continued recovery — a user transitioning
+        from post-acute symptom-absent to flourishing will show
+        WEMWBS gains while PHQ-9 / GAD-7 stay at zero."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "wemwbs", "items": [4] * 14},
+            headers=self._headers("wemwbs-post-acute"),
+        ).json()
+        assert body["total"] == 56
+        # Above population mean (50.7) but below flourishing
+        # ceiling (70) — the maintenance-phase target zone.
+        assert body["severity"] == "continuous"

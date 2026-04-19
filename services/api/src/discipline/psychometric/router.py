@@ -5,7 +5,7 @@ GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
-MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE.
+MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -45,7 +45,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1609,6 +1609,10 @@ from .scoring.brief_cope import (
     InvalidResponseError as BriefCopeInvalid,
     score_brief_cope,
 )
+from .scoring.wemwbs import (
+    InvalidResponseError as WemwbsInvalid,
+    score_wemwbs,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1694,6 +1698,7 @@ Instrument = Literal[
     "dass21",
     "ftnd",
     "brief_cope",
+    "wemwbs",
 ]
 
 
@@ -1761,6 +1766,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "dass21": 21,
     "ftnd": 6,
     "brief_cope": 28,
+    "wemwbs": 14,
 }
 
 
@@ -5706,6 +5712,100 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             subscales=b.subscales,
             instrument_version=b.instrument_version,
         )
+    if payload.instrument == "wemwbs":
+        # WEMWBS — 14-item self-report mental wellbeing scale
+        # (Tennant et al. 2007 Health and Quality of Life Outcomes
+        # 5:63).  1-5 Likert per item, total **14-70**, positively
+        # worded throughout (no reverse-keying), unidimensional per
+        # Tennant 2007 CFA (CFI = 0.93).  HIGHER = MORE WELLBEING
+        # — same direction as WHO-5 index / BRS / LOT-R / RSES /
+        # MAAS / CD-RISC-10.
+        #
+        # Construct placement — WEMWBS fills the platform's
+        # POSITIVE WELLBEING dimension gap.  Existing instruments
+        # measure:
+        #
+        # - Symptoms / distress (PHQ-9 / GAD-7 / HADS / DASS-21 /
+        #   PCL-5 / OCI-R / ISI / CORE-10).
+        # - Affect (PANAS-10 — momentary).
+        # - Self-concept (RSES / GSE — evaluative).
+        # - Regulatory capacity (DERS-16 / AAQ-II / MAAS / TAS-20 /
+        #   FFMQ-15 / ERQ / RRS-10 / SCS-SF).
+        # - Trait resilience (CD-RISC-10 / BRS / LOT-R).
+        # - Social support (MSPSS / UCLA-3 / SWLS).
+        #
+        # None directly measures POSITIVE FUNCTIONING — flourishing,
+        # engagement, purpose, positive affect, psychological
+        # functioning.  WHO-5 is the closest existing surface but
+        # is a short depression-adjacent screen (Topp 2015 — WHO-5
+        # index <= 50% triggers depression screening).  WEMWBS is
+        # a DEDICATED wellbeing measure, broader than WHO-5 and
+        # not framed as a depression proxy.
+        #
+        # Why WEMWBS matters for Discipline OS — the platform's
+        # therapeutic frame is RECOVERY, not just symptom
+        # reduction.  Clinical patterns it surfaces:
+        #
+        # 1. **Languishing-without-symptoms** (Keyes 2002 J Health
+        #    Soc Behav 43:207-222).  A user can be PHQ-9-low,
+        #    GAD-7-low, AND WEMWBS-low.  Intervention-matching
+        #    routes to positive-psychology content (gratitude,
+        #    values, meaning-making, behavioral activation per
+        #    Seligman 2011 / Lyubomirsky 2005) rather than
+        #    treating the user as "well" because symptom scores
+        #    are absent.
+        # 2. **Post-acute monitoring.**  Users who have completed
+        #    the acute intervention phase transition to long-term
+        #    wellbeing monitoring.  WEMWBS supplies the ceiling
+        #    metric when PHQ-9 / GAD-7 have hit the floor and no
+        #    longer discriminate.
+        # 3. **Epidemiological benchmarking.**  UK NHS / ONS /
+        #    Scottish Health Survey use WEMWBS as a population
+        #    wellbeing indicator.  The platform's aggregate-only
+        #    enterprise dashboards can compare user-population
+        #    wellbeing against published norms (Tennant 2007
+        #    n = 348 mean 50.7 SD 8.8; Stewart-Brown 2009 n =
+        #    2,073 mean 51.6 SD 8.7) while maintaining k >= 5 /
+        #    differential-privacy constraints.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: sum of all 14 items, 14-70.
+        # - ``severity``: always ``"continuous"``.  Tennant 2007
+        #   did not publish clinical bands.  Stewart-Brown 2012
+        #   suggested preliminary population-tertile thresholds
+        #   but explicitly stated they are not validated clinical
+        #   cutoffs.  Same pattern as RSES for instruments
+        #   without published bands.  Trajectory layer applies
+        #   Jacobson-Truax RCI on the raw total.
+        # - ``requires_t3``: always False — no item probes
+        #   ideation.
+        # - No ``positive_screen`` — WEMWBS is not a screen.
+        # - No ``cutoff_used`` — no cutoff.
+        # - No ``subscales`` — unidimensional per Tennant 2007 CFA.
+        # - No ``index`` — the WHO-5 index (raw × 4 = 0-100
+        #   percentage-like) is specific to WHO-5's 0-25 range
+        #   and the published index convention; WEMWBS publishes
+        #   raw 14-70 totals without index transformation.
+        # - No ``triggering_items`` — no per-item acuity routing.
+        #
+        # Direction: Higher = MORE wellbeing.  No reverse-keying
+        # (all 14 items positively worded by design; Tennant 2007
+        # specifically avoided negatively-worded items to prevent
+        # the method-artifact two-factor structure that plagues
+        # RSES per Marsh 1996).
+        #
+        # T3 posture — WEMWBS has NO safety items.  Acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
+        w = score_wemwbs(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="wemwbs",
+            total=w.total,
+            severity=w.severity,
+            requires_t3=False,
+            instrument_version=w.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -5884,6 +5984,7 @@ async def submit_assessment(
         Dass21Invalid,
         FtndInvalid,
         BriefCopeInvalid,
+        WemwbsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
