@@ -11896,6 +11896,330 @@ class TestRrs10Routing:
         assert response.json()["instrument"] == "rrs10"
 
 
+class TestMaasRouting:
+    """End-to-end routing tests for the MAAS dispatcher branch.
+
+    Brown & Ryan 2003 Mindful Attention Awareness Scale, 15 items,
+    1-6 Likert, unidimensional, continuous-sentinel severity.
+    Novel wire shape: continuous + NO subscales at 15 items.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    def test_min_all_ones_returns_total_15(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [1] * 15},
+            headers=self._headers("maas-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "maas"
+        assert body["total"] == 15
+
+    def test_max_all_sixes_returns_total_90(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [6] * 15},
+            headers=self._headers("maas-max"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 90
+
+    def test_community_mean_approx(self, client: TestClient) -> None:
+        # Brown & Ryan 2003 community mean ≈ 4.1 × 15 = 61.5.
+        # All-4s gives sum = 60 (≈ mean 4.0).  Pin that this
+        # community-mean-adjacent profile scores cleanly.
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [4] * 15},
+            headers=self._headers("maas-community"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 60
+
+    def test_no_subscales_field_on_wire(
+        self, client: TestClient
+    ) -> None:
+        """Pin the unidimensional wire contract.  MAAS is the first
+        continuous 15-item instrument with no subscale map — a
+        regression that silently surfaced a `subscales` key would
+        constitute a psychometric fabrication (Brown & Ryan 2003
+        extracted a single factor)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [3] * 15},
+            headers=self._headers("maas-no-subs"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # Either the key is absent, or it is explicitly None / empty —
+        # accept any shape that conveys "no subscale data".
+        assert not body.get("subscales")
+
+    def test_continuous_severity_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """Brown & Ryan 2003 published no bands — router must emit
+        the continuous sentinel, not a banded severity string."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [6] * 15},
+            headers=self._headers("maas-sev"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["severity"] == "continuous"
+        assert body["severity"] not in {
+            "minimal",
+            "mild",
+            "moderate",
+            "moderately_severe",
+            "severe",
+            "none",
+        }
+
+    def test_requires_t3_always_false(self, client: TestClient) -> None:
+        """MAAS has no safety item; requires_t3 is hard-coded False
+        even at floor (maximum dispositional mindlessness)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [1] * 15},
+            headers=self._headers("maas-no-t3"),
+        )
+        assert response.status_code == 201
+        assert response.json()["requires_t3"] is False
+
+    def test_cutoff_used_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [3] * 15},
+            headers=self._headers("maas-no-cutoff"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["cutoff_used"] is None
+        assert body.get("positive_screen") is None
+
+    def test_triggering_items_none(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [6] * 15},
+            headers=self._headers("maas-no-trig"),
+        )
+        assert response.status_code == 201
+        assert response.json().get("triggering_items") is None
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [1] * 15},
+            headers=self._headers("maas-ver"),
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument_version"] == "maas-1.0.0"
+
+    def test_fourteen_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [1] * 14},
+            headers=self._headers("maas-count-14"),
+        )
+        assert response.status_code in (400, 422)
+
+    def test_sixteen_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [1] * 16},
+            headers=self._headers("maas-count-16"),
+        )
+        assert response.status_code in (400, 422)
+
+    def test_five_items_rejected(self, client: TestClient) -> None:
+        """MAAS-5 is a valid short form (Osman 2016) but NOT the
+        MAAS-15 endpoint's contract.  Mis-wiring a MAAS-5 submission
+        to this endpoint would silently score 5 items and produce
+        a dangerously low total — reject it here."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [5] * 5},
+            headers=self._headers("maas-count-5"),
+        )
+        assert response.status_code in (400, 422)
+
+    def test_value_zero_rejected(self, client: TestClient) -> None:
+        """0 is the floor on PHQ-9 but NOT MAAS (1-6 Likert).  A
+        caller reflexively using 0-indexed Likert would silently
+        produce a total 15 points below the real value; catch it."""
+        items = [0] + [1] * 14
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": items},
+            headers=self._headers("maas-val-0"),
+        )
+        assert response.status_code == 422
+
+    def test_value_seven_rejected(self, client: TestClient) -> None:
+        """7 is accepted by ERQ (1-7) but NOT MAAS (1-6)."""
+        items = [7] + [1] * 14
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": items},
+            headers=self._headers("maas-val-7"),
+        )
+        assert response.status_code == 422
+
+    def test_higher_total_means_more_mindful_wire(
+        self, client: TestClient
+    ) -> None:
+        """Pin the directional contract on the wire.  A regression
+        that silently added a reverse-keying step would invert the
+        scoring direction — the prototypically-mindless respondent
+        (all 1s) would end up scoring higher than the prototypically-
+        mindful respondent (all 6s)."""
+        mindless = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [1] * 15},
+            headers=self._headers("maas-dir-low"),
+        )
+        mindful = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [6] * 15},
+            headers=self._headers("maas-dir-high"),
+        )
+        assert mindless.status_code == 201
+        assert mindful.status_code == 201
+        # The dispositionally-mindful respondent must score higher
+        # than the dispositionally-mindless respondent.
+        assert mindful.json()["total"] > mindless.json()["total"]
+
+    def test_mbrp_pre_post_delta_representable(
+        self, client: TestClient
+    ) -> None:
+        """Bowen 2014 MBRP RCT outcome — MAAS increases from
+        baseline to post-intervention follow-up.  Pin that both
+        plausible endpoints round-trip cleanly."""
+        pre = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [3] * 15},
+            headers=self._headers("maas-mbrp-pre"),
+        )
+        post = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [5] * 15},
+            headers=self._headers("maas-mbrp-post"),
+        )
+        assert pre.status_code == 201 and post.status_code == 201
+        assert pre.json()["total"] == 45
+        assert post.json()["total"] == 75
+
+    def test_history_projects_maas(self, client: TestClient) -> None:
+        user = "user-maas-history"
+        post_response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "maas",
+                "items": [4] * 15,
+                "user_id": user,
+            },
+            headers=self._headers("maas-hist"),
+        )
+        assert post_response.status_code == 201
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        entries = [
+            entry
+            for entry in history.json()["items"]
+            if entry["instrument"] == "maas"
+        ]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["total"] == 60
+        assert entry["severity"] == "continuous"
+
+    def test_coexists_with_rrs10_mindfulness_rumination_dyad(
+        self, client: TestClient
+    ) -> None:
+        """MAAS + RRS-10 — the opposite-pole pair.  Brooding
+        rumination is what keeps a feeling alive; mindful attention
+        is the skill that short-circuits that loop.  Both must
+        persist independently, with distinct subscale shapes
+        (RRS-10 has 2 subscales, MAAS has 0)."""
+        user = "user-maas-rrs10-dyad"
+        rrs = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "rrs10",
+                "items": [4, 1, 4, 1, 1, 4, 4, 4, 1, 1],
+                "user_id": user,
+            },
+            headers=self._headers("maas-rrs10-coexist-rrs"),
+        )
+        ma = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "maas",
+                "items": [2] * 15,
+                "user_id": user,
+            },
+            headers=self._headers("maas-rrs10-coexist-ma"),
+        )
+        assert rrs.status_code == 201 and ma.status_code == 201
+        # RRS-10 has 2 subscales; MAAS has none.
+        assert len(rrs.json()["subscales"]) == 2
+        assert not ma.json().get("subscales")
+        # Both surface continuous-sentinel severity.
+        assert rrs.json()["severity"] == "continuous"
+        assert ma.json()["severity"] == "continuous"
+
+    def test_coexists_with_phq9_banded_path_unaffected(
+        self, client: TestClient
+    ) -> None:
+        """PHQ-9 banded severity path must remain unaffected by
+        MAAS dispatch being in the router."""
+        ma = client.post(
+            "/v1/assessments",
+            json={"instrument": "maas", "items": [4] * 15},
+            headers=self._headers("maas-phq9-coexist-ma"),
+        )
+        phq = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [0] * 9},
+            headers=self._headers("maas-phq9-coexist-phq"),
+        )
+        assert ma.status_code == 201 and phq.status_code == 201
+        assert ma.json()["severity"] == "continuous"
+        assert phq.json()["severity"] == "none"
+
+    def test_ignores_mdq_fields_when_supplied(
+        self, client: TestClient
+    ) -> None:
+        """MAAS dispatch ignores MDQ-specific fields that might
+        leak through on a polymorphic client payload."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "maas",
+                "items": [3] * 15,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "sex": "male",
+            },
+            headers=self._headers("maas-ignore-extra"),
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument"] == "maas"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

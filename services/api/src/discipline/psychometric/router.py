@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10.
+CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -716,6 +716,48 @@ Safety routing:
   content, but the Treynor 2003 10-item subset does not — this
   is one of the reasons the 10-item version was extracted.
   See ``scoring/rrs10.py``.
+- MAAS (Brown & Ryan 2003): 15 items, 1-6 Likert.  Measures
+  **trait mindful attention** — the dispositional frequency of
+  present-moment awareness versus automatic-pilot cognitive
+  absorption.  The most widely validated single-facet measure of
+  mindfulness; Brown & Ryan 2003 deliberately restricted the
+  construct to the attentional / awareness component (no
+  acceptance / non-judgment / compassion overlays) for
+  psychometric cleanness.  Single-factor unidimensional — Brown
+  & Ryan 2003 EFA, Carlson & Brown 2005 CFA, MacKillop & Anderson
+  2007 IRT all confirm.  Novel envelope shape on the platform:
+  **continuous + NO subscales** at 15 items (prior unidimensional-
+  continuous instruments shipped with ≤ 16 items include PSWQ 16,
+  CD-RISC-10, K6 6, BRS 6, DTCQ-8 — MAAS joins this group).
+  Clinically load-bearing: mindful attention is the exact
+  capacity that every in-app grounding / urge-surfing / 3-minute-
+  breathing-space tool is training.  Baseline MAAS stratifies
+  users into mindfulness-first vs cognitive-first intervention
+  sequences; repeat MAAS is the outcome measure for whether the
+  mindfulness-based tool variants are producing dispositional
+  change (Bowen 2014 MBRP RCT used MAAS as its primary trait-
+  mindfulness outcome).  The 15 items are all worded in the
+  MINDLESSNESS direction (e.g. "I find myself doing things
+  without paying attention") and the Likert anchors run 1 =
+  almost always [mindless] to 6 = almost never [mindless] — so
+  the native total is already higher = more mindful, requiring
+  NO flip arithmetic at the scorer layer.  Total 15-90.  Brown
+  & Ryan 2003 report the MEAN (1.0-6.0); the platform stores
+  the SUM for integer auditability, and renderers divide by
+  15 to recover the published-literature comparison metric.
+  **Continuous-sentinel severity** — Brown & Ryan 2003
+  published no validated bands.  Descriptive ranges exist in
+  the literature (Carmody 2008 MBSR pre ≈ 3.8, post ≈ 4.3 on
+  the mean metric) but are sample-dependent, not cutoffs.
+  Hand-rolling thresholds would violate CLAUDE.md's "Don't
+  hand-roll severity thresholds" rule.  Router emits
+  ``severity="continuous"`` (uniform with DERS-16 / ERQ / BRS /
+  PSWQ / SDS / K6 / SCS-SF / RRS-10 / CD-RISC-10 / LOT-R).
+  ``cutoff_used`` / ``positive_screen`` / ``subscales`` NOT set.
+  Higher-is-better direction (uniform with WHO-5 / CD-RISC-10 /
+  LOT-R / DTCQ-8 / BRS / SCS-SF total).  No T3 — the 15 items
+  probe attentional default patterns; none probe suicidality.
+  See ``scoring/maas.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -805,6 +847,10 @@ from .scoring.k10 import (
 from .scoring.k6 import (
     InvalidResponseError as K6Invalid,
     score_k6,
+)
+from .scoring.maas import (
+    InvalidResponseError as MaasInvalid,
+    score_maas,
 )
 from .scoring.lotr import (
     InvalidResponseError as LotrInvalid,
@@ -929,6 +975,7 @@ Instrument = Literal[
     "erq",
     "scssf",
     "rrs10",
+    "maas",
 ]
 
 
@@ -974,6 +1021,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "erq": 10,
     "scssf": 12,
     "rrs10": 10,
+    "maas": 15,
 }
 
 
@@ -2518,6 +2566,58 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=rr.instrument_version,
         )
+    if payload.instrument == "maas":
+        # Brown & Ryan 2003 Mindful Attention Awareness Scale — 15-item
+        # dispositional trait-mindfulness measure.  Single-factor
+        # (Brown & Ryan 2003 EFA, Carlson & Brown 2005 CFA, MacKillop
+        # & Anderson 2007 IRT).  The platform's primary outcome
+        # measure for mindfulness-based tool variants (grounding,
+        # urge-surfing, 3-minute breathing space, body scan, 5-4-3-2-1
+        # sensory) — Bowen 2014 MBRP RCT used MAAS as its primary
+        # trait-mindfulness outcome, and the same logic carries
+        # here: MAAS is the dispositional signal for whether the
+        # mindfulness-based interventions are changing the patient's
+        # default attentional mode, not just their in-session state.
+        # Baseline MAAS also gates treatment sequence: low MAAS at
+        # enrollment routes to attention-training BEFORE cognitive
+        # or exposure work, because those tools assume a patient
+        # who can notice their own internal state.
+        # All 15 items are worded in the MINDLESSNESS direction; the
+        # 1-6 Likert anchors (1 = almost always [mindless], 6 = almost
+        # never [mindless]) mean the native total already reads
+        # higher = more mindful — no flip arithmetic at the scorer.
+        # **Novel wire shape on this platform**: continuous + NO
+        # subscales at 15 items.  Other unidimensional-continuous
+        # instruments shipped: PSWQ 16, CD-RISC-10 10, K6 6, BRS 6,
+        # DTCQ-8 8.  MAAS fits the family but is the second-largest
+        # (after PSWQ).  Total 15-90; the downstream renderer divides
+        # by 15 to produce the Brown & Ryan 2003 published mean
+        # metric (1.0-6.0) for descriptive comparison against the
+        # community (≈ 4.1) / MBSR-post (≈ 4.3; Carmody 2008) /
+        # SUD-sample (≈ 3.2-3.5; Bowen 2014 baseline) ranges.
+        # **Continuous-sentinel** — no validated bands; Brown & Ryan
+        # 2003 and every subsequent major validation (Carlson 2005,
+        # MacKillop 2007, Christopher 2009, Park 2013 systematic
+        # review) treat MAAS as dispositional continuous.  Router
+        # emits ``severity="continuous"`` (uniform with DERS-16 /
+        # ERQ / BRS / PSWQ / SDS / K6 / SCS-SF / RRS-10 / CD-RISC-
+        # 10 / LOT-R).
+        # Higher-is-better direction (uniform with WHO-5 / CD-RISC-
+        # 10 / LOT-R / DTCQ-8 / BRS / SCS-SF total).
+        # ``cutoff_used`` / ``positive_screen`` / ``subscales`` NOT
+        # set.  No T3 — the 15 items probe attentional default
+        # patterns; none probe suicidality.  Acute ideation
+        # screening stays on PHQ-9 item 9 / C-SSRS.  See
+        # ``scoring/maas.py``.
+        ma = score_maas(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="maas",
+            total=ma.total,
+            severity="continuous",
+            requires_t3=False,
+            instrument_version=ma.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2674,6 +2774,7 @@ async def submit_assessment(
         ErqInvalid,
         ScsSfInvalid,
         Rrs10Invalid,
+        MaasInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
