@@ -10386,6 +10386,524 @@ class TestTas20Routing:
         assert body["severity"] == "possible_alexithymia"
 
 
+class TestErqRouting:
+    """ERQ (Gross & John 2003) router dispatch.
+
+    Wire contract invariants:
+    - **Continuous-sentinel severity** — the ``severity`` field
+      carries the literal ``"continuous"`` sentinel (uniform with
+      DERS-16 / BRS / PSWQ / SDS / K6 / CD-RISC-10 / LOT-R / PACS /
+      BIS-11).  ERQ has no published severity bands — Gross & John
+      2003 report it as a dispositional continuous measure.
+    - **Subscales populated** — the ``subscales`` map carries keys
+      ``reappraisal`` / ``suppression`` with subscale sums.
+      **Reappraisal+Suppression = Total** (tautology of the coverage
+      invariant: every item lives in exactly one subscale, no
+      reverse-keying).  Same envelope shape as DERS-16 (continuous +
+      subscales); distinct from TAS-20 (banded + subscales).
+    - **Novel 1-7 Likert envelope** — 0 rejects (below floor), 8
+      rejects (above ceiling).  Distinct from prior envelopes
+      (1-5 for TAS-20 / DERS-16 / PSWQ; 0-3 for PHQ-9 / GAD-7;
+      0-5 for WHO-5; 0-4 for LOT-R; 0-10 for VAS/Ruler).
+    - **No reverse-keyed items** — all 10 items are endorsement-
+      direction for their subscale, so raw=post for scoring (unlike
+      TAS-20 / LOT-R / PSWQ which flip 3-5 items arithmetically).
+    - No ``cutoff_used`` / ``positive_screen`` — no binary cutoff.
+    - ``requires_t3`` is always False — no safety item.
+    - ``triggering_items`` is None — no firing-item concept.
+    - 10 items required (same count as LOT-R / DAST-10 / K10 / etc.;
+      dispatch is by ``instrument`` key, not by count).
+    - Cross-instrument coexistence: ERQ + TAS-20 + DERS-16 (the
+      three-layer emotion-processing architecture — identification
+      upstream, strategy choice midstream, execution downstream),
+      and ERQ + PHQ-9 (suppression-elevated patients respond slower
+      to standard CBT — the router must preserve both signals for
+      the intervention-selection layer).
+    """
+
+    def test_all_fours_is_forty_midline(self, client: TestClient) -> None:
+        """Every item at 4 (midline neutral on 1-7 scale) → total 40.
+
+        Reappraisal sum = 6 × 4 = 24.
+        Suppression sum = 4 × 4 = 16.
+        Total = 10 × 4 = 40.  No severity band is emitted; only the
+        continuous-sentinel literal.
+        """
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": "user-erq-mid",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "erq"
+        assert body["total"] == 40
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_all_ones_minimum_total(self, client: TestClient) -> None:
+        """Every item at 1 (strongly disagree) → total 10 (floor).
+
+        Reappraisal 6, Suppression 4.  No 0-floor reading — ERQ
+        anchors at 1, uniform with DERS-16 / TAS-20 / K6 / K10.
+        """
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [1] * 10,
+                "user_id": "user-erq-ones",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "continuous"
+        subs = body["subscales"]
+        assert subs["reappraisal"] == 6
+        assert subs["suppression"] == 4
+
+    def test_all_sevens_maximum_total(self, client: TestClient) -> None:
+        """Every item at 7 (strongly agree) → total 70 (ceiling).
+
+        Both strategies maximally endorsed — Reappraisal 42,
+        Suppression 28.  A patient who tries everything; clinically
+        often pairs with anxious-achiever profile on Big Five
+        (Gross & John 2003 convergent validity study).
+        """
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [7] * 10,
+                "user_id": "user-erq-sevens",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 70
+        subs = body["subscales"]
+        assert subs["reappraisal"] == 42
+        assert subs["suppression"] == 28
+
+    def test_pure_reappraiser_profile_wire(self, client: TestClient) -> None:
+        """Reappraisal items at 7, suppression items at 1.
+
+        Items 1/3/5/7/8/10 = 7 (reappraisal = 42).
+        Items 2/4/6/9     = 1 (suppression = 4).
+        Total = 46.  The "protective profile" (Aldao 2010) — on the
+        wire the client can read ``subscales['reappraisal']`` as
+        the dominant signal.
+        """
+        # Reappraisal positions (1-indexed): 1, 3, 5, 7, 8, 10.
+        items = [7, 1, 7, 1, 7, 1, 7, 7, 1, 7]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": items,
+                "user_id": "user-erq-reappraiser",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 46
+        subs = body["subscales"]
+        assert subs["reappraisal"] == 42
+        assert subs["suppression"] == 4
+
+    def test_pure_suppressor_profile_wire(self, client: TestClient) -> None:
+        """Suppression items at 7, reappraisal items at 1.
+
+        Items 2/4/6/9     = 7 (suppression = 28).
+        Items 1/3/5/7/8/10 = 1 (reappraisal = 6).
+        Total = 34.  The "highest-concern profile" — suppressor
+        clinically correlates with depression, cardiovascular risk,
+        interpersonal dysfunction, and SUD relapse.  On the wire
+        ``subscales['suppression']`` dominates despite the total
+        being below the all-fours midline (40).  This is the
+        reason aggregate total is clinically secondary to the
+        subscale pair.
+        """
+        items = [1, 7, 1, 7, 1, 7, 1, 1, 7, 1]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": items,
+                "user_id": "user-erq-suppressor",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 34
+        subs = body["subscales"]
+        assert subs["reappraisal"] == 6
+        assert subs["suppression"] == 28
+
+    def test_subscales_always_populated_wire(self, client: TestClient) -> None:
+        """Even on an all-neutral submission the ``subscales`` map
+        is present on the envelope with both keys.  Clients must
+        not special-case the "empty subscales" shape for ERQ."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": "user-erq-subs-present",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        subs = body["subscales"]
+        assert subs is not None
+        assert set(subs.keys()) == {"reappraisal", "suppression"}
+        assert isinstance(subs["reappraisal"], int)
+        assert isinstance(subs["suppression"], int)
+
+    def test_cutoff_used_not_populated(self, client: TestClient) -> None:
+        """ERQ has no binary cutoff; ``cutoff_used`` must remain
+        the unset/None sentinel.  This separates ERQ from AUDIT-C
+        / MDQ / PHQ-2 / GAD-2 / PC-PTSD-5 at the envelope level."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": "user-erq-cutoff-none",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+        assert body.get("positive_screen") is None
+
+    def test_triggering_items_is_none(self, client: TestClient) -> None:
+        """ERQ has no firing-item concept — ``triggering_items``
+        stays None, uniform with DERS-16 / TAS-20 / PHQ-9 (when no
+        item 9 fires) / GAD-7."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [7] * 10,
+                "user_id": "user-erq-trig-none",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": "user-erq-version",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["instrument_version"] == "erq-1.0.0"
+
+    def test_nine_items_rejects(self, client: TestClient) -> None:
+        """ERQ requires exactly 10 items — router rejects with 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 9,
+                "user_id": "user-erq-nine",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_eleven_items_rejects(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 11,
+                "user_id": "user-erq-eleven",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_zero_rejects_below_floor(self, client: TestClient) -> None:
+        """0 fails — floor is 1 (distinguishes ERQ from PHQ-9 /
+        GAD-7 / PSS-10 which accept 0)."""
+        bad = [4] * 10
+        bad[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": bad,
+                "user_id": "user-erq-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_eight_rejects_above_ceiling(self, client: TestClient) -> None:
+        """8 fails — ceiling is 7 (distinguishes ERQ's novel 1-7
+        envelope from TAS-20 / DERS-16 / PSWQ's 1-5 ceiling)."""
+        bad = [4] * 10
+        bad[0] = 8
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": bad,
+                "user_id": "user-erq-eight",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_seven_accepts_ceiling(self, client: TestClient) -> None:
+        """7 accepts — pins the upper boundary on the novel 1-7
+        envelope that other scorers on this dispatcher do NOT
+        accept."""
+        items = [1, 7, 1, 7, 1, 7, 1, 7, 1, 7]
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": items,
+                "user_id": "user-erq-seven",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+    def test_persists_raw_items_with_subscales(
+        self, client: TestClient
+    ) -> None:
+        """POST persists the raw 10-tuple to the repository, and
+        the subscale map to the record's subscales field.  Audit-
+        trail invariant: no reverse-keying on ERQ means raw IS
+        post-flip (same value), but the record still pins the raw
+        integers so a future instrument revision that changed
+        scoring cannot silently re-interpret historical data."""
+        user = "user-erq-persist"
+        raw = [2, 6, 3, 5, 1, 7, 4, 3, 5, 6]
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": raw,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        repo = get_assessment_repository()
+        records = repo.history_for(user, limit=10)
+        assert len(records) == 1
+        rec = records[0]
+        assert rec.instrument == "erq"
+        assert rec.severity == "continuous"
+        assert tuple(rec.raw_items) == tuple(raw)
+        assert rec.subscales is not None
+        assert set(rec.subscales.keys()) == {"reappraisal", "suppression"}
+        # Reappraisal items 1, 3, 5, 7, 8, 10 →
+        # raw[0]+raw[2]+raw[4]+raw[6]+raw[7]+raw[9]
+        # = 2 + 3 + 1 + 4 + 3 + 6 = 19
+        assert rec.subscales["reappraisal"] == 19
+        # Suppression items 2, 4, 6, 9 →
+        # raw[1]+raw[3]+raw[5]+raw[8] = 6 + 5 + 7 + 5 = 23
+        assert rec.subscales["suppression"] == 23
+
+    def test_history_projects_erq(self, client: TestClient) -> None:
+        user = "user-erq-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        entry = items[0]
+        assert entry["instrument"] == "erq"
+        assert entry["total"] == 40
+        assert entry["severity"] == "continuous"
+
+    def test_coexists_with_tas20_and_ders16_three_layer_framework(
+        self, client: TestClient
+    ) -> None:
+        """ERQ (strategy choice) + TAS-20 (identification) + DERS-16
+        (execution) — the three-layer emotion-processing architecture.
+        All three must persist cleanly, with the router producing
+        THREE distinct envelope shapes:
+        - TAS-20: banded severity + subscales (3 keys).
+        - DERS-16: continuous-sentinel + subscales (5 keys).
+        - ERQ: continuous-sentinel + subscales (2 keys).
+        The intervention-selection layer reads all three — order
+        and envelope-shape differentiation matter."""
+        user = "user-erq-three-layer"
+        ta = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "tas20",
+                "items": [3] * 20,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert ta.status_code == 201
+        ta_body = ta.json()
+        assert ta_body["severity"] == "possible_alexithymia"
+        assert len(ta_body["subscales"]) == 3
+
+        de = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ders16",
+                "items": [3] * 16,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert de.status_code == 201
+        de_body = de.json()
+        assert de_body["severity"] == "continuous"
+        assert len(de_body["subscales"]) == 5
+
+        er = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert er.status_code == 201
+        er_body = er.json()
+        assert er_body["severity"] == "continuous"
+        assert len(er_body["subscales"]) == 2
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert {"tas20", "ders16", "erq"}.issubset(instruments)
+
+    def test_coexists_with_phq9_suppression_cbt_risk_profile(
+        self, client: TestClient
+    ) -> None:
+        """ERQ + PHQ-9 co-persist — high suppression + depression
+        flags the "slow CBT responder" profile documented in the
+        emotion-regulation literature.  The router must not leak
+        PHQ-9 safety-item routing into the ERQ branch; the ERQ
+        submission stays requires_t3=False regardless of any
+        concurrent PHQ-9 item-9 activity."""
+        user = "user-erq-phq9"
+        phq = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "phq9",
+                "items": [1] * 9,
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert phq.status_code == 201
+
+        # Pure-suppressor pattern.
+        er = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [1, 7, 1, 7, 1, 7, 1, 1, 7, 1],
+                "user_id": user,
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert er.status_code == 201
+        er_body = er.json()
+        assert er_body["requires_t3"] is False
+
+        hist = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        instruments = {r["instrument"] for r in hist.json()["items"]}
+        assert "phq9" in instruments
+        assert "erq" in instruments
+
+    def test_continuous_sentinel_like_ders16_not_banded_like_tas20(
+        self, client: TestClient
+    ) -> None:
+        """Pins that ERQ joins the continuous-sentinel cluster
+        (``severity="continuous"``) rather than the banded cluster
+        that TAS-20 rejoined in Sprint 55.  A renderer that
+        hardcoded banded handling after TAS-20 must not apply it to
+        ERQ — the two instruments ship different envelope shapes
+        despite both being post-TAS-20 subscale-bearing Likert
+        instruments."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "user_id": "user-erq-continuous",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        body = response.json()
+        assert body["severity"] == "continuous"
+        assert body["severity"] not in (
+            "non_alexithymic",
+            "possible_alexithymia",
+            "alexithymic",
+        )
+
+    def test_ignores_mdq_and_sex_fields(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "erq",
+                "items": [4] * 10,
+                "sex": "male",
+                "concurrent_symptoms": True,
+                "functional_impairment": "moderate",
+                "user_id": "user-erq-ignores",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "erq"
+        assert body["severity"] == "continuous"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

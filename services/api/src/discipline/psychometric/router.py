@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R, TAS-20.
+CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -590,6 +590,51 @@ Safety routing:
   binary cutoff.  No T3 — the 20 items probe emotion-
   identification / description / externally-oriented cognition;
   none probe suicidality.  See ``scoring/tas20.py``.
+- ERQ (Gross & John 2003): 10 items, 1-7 Likert.  Measures
+  **emotion-regulation strategy choice** — cognitive reappraisal
+  (antecedent-focused, applied early in the emotion-generative
+  cycle) vs expressive suppression (response-focused, applied
+  after the emotion is active).  Two-subscale structure per
+  Gross & John 2003 Study 1 CFA: reappraisal (6 items: 1, 3, 5,
+  7, 8, 10) and suppression (4 items: 2, 4, 6, 9) — surfaced via
+  the ``subscales`` map with keys ``reappraisal`` / ``suppression``
+  (uniform with DERS-16 / TAS-20 subscale dispatch shape).  **No
+  reverse-keyed items** — all 10 items are endorsement-direction
+  for their subscale, so subscale sums operate on raw values
+  directly (distinguishing ERQ from TAS-20 / LOT-R / PSWQ which
+  require arithmetic-reflection flips).  **Novel Likert envelope**
+  — 1-7 points (vs 1-5 for TAS-20 / DERS-16 / PSWQ, 0-3 for PHQ-9
+  / GAD-7, 0-5 for WHO-5, 0-4 for LOT-R).  **Continuous-sentinel
+  band** — Gross & John 2003 published no severity cutoffs; ERQ
+  is a dispositional continuous measure, interpreted by the
+  subscale PROFILE (the ``reappraisal, suppression`` 2-tuple) not
+  by an aggregate classification.  Router emits the continuous-
+  sentinel ``severity="continuous"`` literal (uniform with DERS-16 /
+  BRS / PSWQ / SDS / K6 / CD-RISC-10 / LOT-R / PACS / BIS-11).
+  Clinical framing: the **strategy-choice layer** completing the
+  three-layer emotion-processing architecture (TAS-20 upstream =
+  can the patient IDENTIFY the emotion; ERQ midstream = WHICH
+  strategy does the patient REACH FOR; DERS-16 downstream = can
+  the patient EXECUTE the chosen regulation).  The intervention-
+  selection layer reads all three to route process-level work:
+  high TAS-20 DIF → affect-labeling first; TAS-20 OK + ERQ
+  suppression-dominant → cognitive-reappraisal training before
+  skill-building; TAS-20 OK + ERQ reappraisal already high +
+  DERS-16 high → distress-tolerance capacity work.  Clinical
+  asymmetry (Aldao 2010 meta-analysis of 114 studies): higher
+  reappraisal predicts BETTER outcomes, higher suppression
+  predicts WORSE outcomes — but the router emits both subscale
+  sums without imposing a directional frame, because the
+  clinically relevant signal is the PROFILE (both values), not
+  a pooled "good vs bad regulation" score.  Pairs with PHQ-9 /
+  GAD-7 (suppression-elevated patients respond slower to standard
+  CBT), AAQ-II (suppression correlates with but is not identical
+  to experiential avoidance), and relapse-prevention signals
+  (Bonn-Miller 2011 — suppression predicts substance-use relapse
+  more strongly than reappraisal protects).  ``cutoff_used`` /
+  ``positive_screen`` NOT set — ERQ has no binary cutoff.  No T3
+  — the 10 items probe self-rated strategy use; none probe
+  suicidality.  See ``scoring/erq.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -653,6 +698,10 @@ from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
 from .scoring.ders16 import (
     InvalidResponseError as Ders16Invalid,
     score_ders16,
+)
+from .scoring.erq import (
+    InvalidResponseError as ErqInvalid,
+    score_erq,
 )
 from .scoring.dtcq8 import (
     InvalidResponseError as Dtcq8Invalid,
@@ -788,6 +837,7 @@ Instrument = Literal[
     "pswq",
     "lotr",
     "tas20",
+    "erq",
 ]
 
 
@@ -830,6 +880,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pswq": 16,
     "lotr": 10,
     "tas20": 20,
+    "erq": 10,
 }
 
 
@@ -2159,6 +2210,84 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=ta.instrument_version,
         )
+    if payload.instrument == "erq":
+        # Gross & John 2003 Emotion Regulation Questionnaire — the
+        # validated 10-item measure of strategy choice: cognitive
+        # reappraisal (antecedent-focused, applied early in the
+        # emotion-generative cycle) vs expressive suppression
+        # (response-focused, applied after the emotion is active).
+        # Clinically: the STRATEGY-CHOICE layer completing the three-
+        # layer emotion-processing architecture that TAS-20 (upstream
+        # IDENTIFY) and DERS-16 (downstream EXECUTE) frame.  The
+        # intervention-selection layer reads the 3-instrument profile:
+        #   (a) high TAS-20 DIF → affect-labeling FIRST (strategy
+        #       choice is moot if the emotion can't be named);
+        #   (b) TAS-20 OK + ERQ suppression-dominant → cognitive-
+        #       reappraisal training BEFORE skill-building (patient
+        #       is regulating but via a strategy that paradoxically
+        #       amplifies the state — Gross 1998, Butler 2003);
+        #   (c) TAS-20 OK + ERQ reappraisal already high + DERS-16
+        #       high → distress-tolerance capacity work (patient
+        #       knows the right strategy but emotional load has
+        #       overwhelmed execution capacity).
+        # Aldao 2010 meta-analysis (114 studies): higher reappraisal
+        # predicts BETTER outcomes on every indicator studied (mood,
+        # life satisfaction, interpersonal functioning, health);
+        # higher suppression predicts WORSE outcomes on the same
+        # indicators.  Bonn-Miller 2011 / Hofmann 2012: suppression
+        # predicts substance-use / compulsive-behavior relapse more
+        # strongly than reappraisal protects — the platform reads
+        # elevated suppression as a preemptive relapse-risk signal.
+        # 10 items, 1-7 Likert (1 = strongly disagree, 7 = strongly
+        # agree).  **NO reverse-keyed items** — all 10 items are
+        # endorsement-direction for their subscale, distinguishing
+        # ERQ from TAS-20 / LOT-R / PSWQ (arithmetic-reflection flips
+        # required for those).  Two subscales per Gross & John 2003
+        # Study 1 CFA: reappraisal (6 items: 1, 3, 5, 7, 8, 10),
+        # suppression (4 items: 2, 4, 6, 9).  Surfaced via the
+        # ``subscales`` map with keys ``reappraisal`` / ``suppression``
+        # (uniform with DERS-16 / TAS-20 subscale dispatch shape).
+        # **Novel Likert envelope** (1-7) vs prior instruments (1-5
+        # for TAS-20 / DERS-16 / PSWQ; 0-3 for PHQ-9 / GAD-7; 0-5
+        # for WHO-5; 0-4 for LOT-R).
+        # **Continuous-sentinel band** — Gross & John 2003 published
+        # no severity cutoffs; ERQ is a dispositional continuous
+        # measure interpreted by the subscale PROFILE (the
+        # ``reappraisal, suppression`` 2-tuple), not by an aggregate
+        # classification.  Hand-rolling bands (e.g. median-split the
+        # normative sample) would violate CLAUDE.md's "Don't hand-roll
+        # severity thresholds" rule and collapse the clinically
+        # critical 2-tuple signal into a single ordinal.  Router
+        # emits the continuous-sentinel ``severity="continuous"``
+        # literal (uniform with DERS-16 / BRS / PSWQ / SDS / K6 /
+        # CD-RISC-10 / LOT-R / PACS / BIS-11).
+        # Direction note: the two subscales go OPPOSITE clinical
+        # directions at the aggregate level — higher reappraisal is
+        # protective, higher suppression is risk-elevating — but the
+        # router emits both subscale sums without imposing a
+        # directional frame, because the relevant signal is the
+        # PROFILE (both values), not a pooled direction.  Downstream
+        # trajectory coverage (when added) will register reappraisal
+        # in the higher-is-better partition and suppression in the
+        # higher-is-worse partition.
+        # ``cutoff_used`` / ``positive_screen`` NOT set — ERQ has no
+        # binary cutoff.  No T3 — the 10 items probe self-rated
+        # strategy use; none probe suicidality.  Acute ideation
+        # screening stays on PHQ-9 item 9 / C-SSRS.  See
+        # ``scoring/erq.py``.
+        er = score_erq(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="erq",
+            total=er.total,
+            severity="continuous",
+            requires_t3=False,
+            subscales={
+                "reappraisal": er.subscale_reappraisal,
+                "suppression": er.subscale_suppression,
+            },
+            instrument_version=er.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2312,6 +2441,7 @@ async def submit_assessment(
         PswqInvalid,
         LotrInvalid,
         Tas20Invalid,
+        ErqInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
