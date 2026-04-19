@@ -4,7 +4,7 @@ PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
-UCLA-3.
+UCLA-3, CIUS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -41,7 +41,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3 have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1275,6 +1275,59 @@ Safety routing:
   made for brevity.  Linear signature: total = 3v for every
   all-v constant vector.  ``items`` field = raw input
   (identity under no-reverse-keying).  See ``scoring/ucla3.py``.
+- CIUS (Meerkerk 2009): 14 items, 0-4 Likert, ZERO reverse-
+  keyed items.  The Compulsive Internet Use Scale developed
+  by Meerkerk, Van Den Eijnden, Vermulst & Garretsen
+  (CyberPsychology & Behavior 2009, 12(1):1-6) on a Dutch
+  adolescent / adult sample (n = 447 derivation + n = 16,925
+  cross-validation).  Cronbach α = 0.89; single-factor CFA
+  confirmed by Guertler 2014 on n = 2,512 German sample.
+  Fills the platform's **behavioral-addiction substrate /
+  digital compensation gap** — directly follows the Caplan
+  2003 compensatory-internet-use thread opened by FNE-B
+  (social-anxiety-driven digital escape) and UCLA-3
+  (loneliness-driven digital substitution).  Three
+  addiction-relevant clinical use cases drive the
+  measurement: (1) Caplan 2003 compensatory-internet-use
+  detection — the FNE-B / UCLA-3 / CIUS triad differentiates
+  socially-avoidant digital compensation (high FNE-B + low
+  UCLA-3 + high CIUS → exposure + use limits) from
+  isolation-compensating digital substitution (low FNE-B +
+  high UCLA-3 + high CIUS → structural social-contact
+  building + use limits); (2) cross-addiction relapse-risk
+  detection per Koob 2005 allostatic-reward-deficiency
+  theory — rising CIUS trajectory in a recovering user is an
+  early-warning signal that the brain is finding alternative
+  allostatic load rather than resolving it; (3) ICD-11 6C51
+  Gaming Disorder / DSM-5 Section III IGD overlap for
+  clinical-completeness surfacing alongside AUDIT / DAST-10
+  in the substance-use panel.  Items (Meerkerk 2009 Table 1,
+  abbreviated): 1. difficult-to-stop, 2. continue-despite-
+  intention, 3. others-say-use-less, 4. prefer-Internet-over-
+  others, 5. short-of-sleep, 6. think-when-offline, 7. look-
+  forward-to-next-session, 8. should-use-less, 9.
+  unsuccessfully-tried-cut-down, 10. rush-homework-to-use,
+  11. neglect-obligations, 12. go-online-when-down, 13.
+  escape-negative-feelings-via-Internet, 14. restless-when-
+  cannot-use.  Response scale 0 ("Never"), 1 ("Seldom"),
+  2 ("Sometimes"), 3 ("Often"), 4 ("Very often").  Total =
+  raw sum (no flipping), range 0-56.  HIGHER = more
+  compulsive use (lower-is-better direction).  NO bands —
+  Meerkerk 2009 published no cutpoints; Guertler 2014's
+  >= 21 / >= 28 thresholds are secondary literature excluded
+  per CLAUDE.md.  NO T3 — no item probes suicidality;
+  withdrawal-like restlessness (item 14) is behavioral-
+  addiction criterion, NOT active-risk ideation.  Special
+  validation property: CIUS is the FIRST platform instrument
+  with a valid 0-response.  Pydantic coerces JSON
+  ``false -> 0`` which is now in range; the scorer's bool
+  rejection (run BEFORE range check) protects against
+  serialization bugs that would silently score ``False`` as
+  "never" (zero compulsivity).  Acquiescence signature:
+  total = 14v linear, endpoint-gap = 56 (full range — the
+  widest on the platform, uniform with UCLA-3's proportion-
+  of-range).  ``items`` field = raw input (identity under
+  zero-reverse-keying).  See ``scoring/cius.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1477,6 +1530,10 @@ from .scoring.ucla3 import (
     InvalidResponseError as Ucla3Invalid,
     score_ucla3,
 )
+from .scoring.cius import (
+    InvalidResponseError as CiusInvalid,
+    score_cius,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1552,6 +1609,7 @@ Instrument = Literal[
     "stai6",
     "fneb",
     "ucla3",
+    "cius",
 ]
 
 
@@ -1609,6 +1667,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "stai6": 6,
     "fneb": 12,
     "ucla3": 3,
+    "cius": 14,
 }
 
 
@@ -4084,6 +4143,105 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=u.instrument_version,
         )
+    if payload.instrument == "cius":
+        # CIUS — 14-item Compulsive Internet Use Scale (Meerkerk,
+        # Van Den Eijnden, Vermulst & Garretsen, CyberPsychology
+        # & Behavior 2009, 12(1):1-6).  Dutch adolescent / adult
+        # derivation sample (n = 447 derivation + n = 16,925
+        # cross-validation); Cronbach α = 0.89; single-factor CFA
+        # confirmed by Guertler 2014 on a German n = 2,512 sample.
+        # All 14 items are negatively worded (compulsive-use
+        # symptom descriptions) — ZERO reverse-keyed positions,
+        # so raw sum = scored total.  Total range 0-56.
+        #
+        # Response scale is Meerkerk 2009's ORIGINAL 0-based 5-
+        # point Likert: 0 ("Never"), 1 ("Seldom"), 2 ("Sometimes"),
+        # 3 ("Often"), 4 ("Very often").  This is deliberate —
+        # Meerkerk 2009 scored "Never" as semantically ZERO
+        # compulsivity (not just "low"), and the r = 0.70+
+        # convergent validity with Young 1998 IAT is anchored on
+        # the 0-4 scale.  CIUS is the first platform instrument
+        # with a valid 0-response, which creates a specific
+        # bool-coercion concern (see §validation below).
+        #
+        # The instrument fills the platform's **behavioral-
+        # addiction substrate / digital compensation gap**.
+        # Three addiction-relevant use cases drive the measurement:
+        #   - Caplan 2003 compensatory-internet-use detection.
+        #     Caplan's preference-for-online-social-interaction
+        #     model predicts that high FNE-B (social-evaluation
+        #     anxiety) or high UCLA-3 (loneliness) drives
+        #     problematic internet use as an affect-regulation
+        #     substitute.  The triad FNE-B + UCLA-3 + CIUS lets
+        #     the platform differentiate:
+        #       - High FNE-B + low UCLA-3 + high CIUS →
+        #         socially-avoidant digital compensation
+        #         (treatment: in-vivo exposure + use limits,
+        #         NOT more online socialization).
+        #       - Low FNE-B + high UCLA-3 + high CIUS →
+        #         isolation-compensating digital substitution
+        #         (treatment: structural social-contact
+        #         building + use limits).
+        #       - High FNE-B + high UCLA-3 + high CIUS →
+        #         combined protocol; digital compensation is
+        #         doing both jobs.
+        #   - Cross-addiction relapse-risk detection.  Koob
+        #     2005 allostatic-reward-deficiency theory predicts
+        #     that abstinence from a primary addictive substrate
+        #     often produces compensatory engagement with a
+        #     secondary behavioral substrate.  For a recovering
+        #     alcohol-use-disorder user, a rising CIUS
+        #     trajectory over 3-6 months is a canonical early-
+        #     warning signal of relapse pressure on the primary
+        #     substrate — the brain is finding alternative
+        #     allostatic load rather than resolving it.
+        #   - ICD-11 / DSM-5 behavioral-addiction overlap.
+        #     ICD-11 codes Gaming Disorder (6C51) under
+        #     "Disorders Due to Addictive Behaviours"; DSM-5
+        #     Section III lists Internet Gaming Disorder for
+        #     further study.  CIUS captures the broader
+        #     internet-as-substrate construct (not gaming-
+        #     specific) for clinical-completeness surfacing
+        #     alongside AUDIT / DAST-10 / DUDIT / PGSI in the
+        #     substance-use panel.
+        #
+        # §validation: CIUS is the FIRST platform instrument
+        # where ``0`` is a valid response value.  Pydantic
+        # ``list[int]`` coerces JSON ``false → 0`` which is now
+        # in range, so the scorer's bool rejection is LOAD-
+        # BEARING: without it, a serialization bug would silently
+        # score ``False`` responses as "never" (semantic "zero
+        # compulsivity") rather than raising.  The scorer runs
+        # the ``isinstance(value, bool)`` check BEFORE the range
+        # check precisely for this reason, and tests pin the
+        # distinction explicitly.
+        #
+        # No bands — Meerkerk 2009 derivation paper did not
+        # publish primary-source cutpoints; Guertler 2014
+        # proposed >= 21 as "at risk" and >= 28 as "high risk"
+        # but these are later-literature secondary derivations,
+        # NOT primary-source anchors.  Per CLAUDE.md "no hand-
+        # rolled severity thresholds" rule, severity =
+        # "continuous" and clinical-significance lives at the
+        # trajectory layer via Jacobson-Truax RCI on the raw
+        # 0-56 total.  No T3 gating — no item probes
+        # suicidality; "feel restless, frustrated, or irritated
+        # when cannot use the Internet" (item 14) is a
+        # Griffiths 1998 withdrawal-symptom construct, NOT
+        # ideation; active-risk screening stays on C-SSRS /
+        # PHQ-9 item 9.  Envelope: banded+total (no subscales,
+        # scaled_score, positive_screen, cutoff_used,
+        # triggering_items) — same shape as RSES / STAI-6 /
+        # FNE-B / UCLA-3.  See ``scoring/cius.py``.
+        c = score_cius(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="cius",
+            total=c.total,
+            severity=c.severity,
+            requires_t3=False,
+            instrument_version=c.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -4252,6 +4410,7 @@ async def submit_assessment(
         Stai6Invalid,
         FnebInvalid,
         Ucla3Invalid,
+        CiusInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

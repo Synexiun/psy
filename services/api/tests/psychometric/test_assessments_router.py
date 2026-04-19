@@ -17684,6 +17684,764 @@ class TestUcla3Routing:
         assert body["total"] == 9
 
 
+class TestCiusRouting:
+    """End-to-end routing tests for the CIUS dispatcher branch.
+
+    Meerkerk, Van Den Eijnden, Vermulst & Garretsen (CyberPsych &
+    Behavior 2009, 12(1):1-6) — 14-item Compulsive Internet Use
+    Scale.  0-4 Likert ("Never" .. "Very often"), NO reverse keying,
+    total 0-56, single factor confirmed via EFA/CFA on three Dutch
+    adult/adolescent samples (α = 0.89, six-month r = 0.70-0.76,
+    Young 1998 IAT r ≈ 0.70 convergent validity).
+
+    Scoring convention note — **CIUS IS THE FIRST PLATFORM
+    INSTRUMENT WHERE 0 IS A VALID RESPONSE**.  Downstream consequence:
+    the scorer's explicit ``isinstance(value, bool)`` rejection
+    BEFORE the range check is load-bearing.  On every other scorer
+    (PHQ-9 0-3, GAD-7 0-3, AUDIT-C 0-4, C-SSRS 0-1, WHO-5 0-5,
+    PSS-10 0-4, and so on), Pydantic's JSON ``false`` → 0 is
+    actually a valid range value too — but those scorers have
+    already been reviewing their own 0-as-valid-value semantics
+    for so long that the bool-rejection invariant here deserves
+    explicit router-layer reinforcement.  Two dedicated tests
+    below pin both coercion directions: ``true`` → 1 (valid Likert
+    "Rarely") AND ``false`` → 0 (valid Likert "Never") — the LATTER
+    being unique to CIUS among the instruments documented by this
+    test module at the time of sprint 71.
+
+    Higher = more compulsive internet use; aligns with PHQ-9 /
+    GAD-7 / AUDIT / STAI-6 / FNE-B / UCLA-3 / SHAPS "higher-is-
+    worse" convention.  NO reverse-keying means the acquiescence
+    signature is the trivial linear ``total = 14v`` for any
+    all-v constant vector.  Endpoint-only-responder gap is the
+    full 0-56 range (all-4s minus all-0s = 56) — matches UCLA-3
+    in relative terms (100% of range) but on an absolute scale
+    nine-fold larger.
+
+    Clinical use cases for Discipline OS:
+    1. Digital-behavior urge trigger for Marlatt 1985 negative-
+       emotional-states and social-pressure relapse determinants
+       (pp. 137-142, 189-215): compulsive internet use is BOTH
+       an outcome variable for problematic-use clients AND a
+       proximal cross-addictive substitution channel for AUD/
+       OUD clients in early recovery (Koob 2005 allostatic
+       reward deficiency model).
+    2. Caplan 2003 compensatory-internet-use — FNE-B + UCLA-3 + CIUS
+       triad: socially-avoidant (FNE-B-high) lonely (UCLA-3-high)
+       clients use the internet compulsively (CIUS-high) as an
+       isolating-but-reinforcing coping strategy.  Intervention
+       requires addressing the antecedent construct (social-
+       evaluation anxiety + structural isolation), NOT the
+       behavior itself as an acute CBT target.
+    3. ICD-11 6C51 "Gaming disorder" and 6C5Y "other specified
+       disorders due to addictive behaviours" — CIUS provides
+       continuous monitoring on internet-mediated compulsive
+       engagement without committing to a categorical diagnosis
+       that ICD-10 does not recognise.  Guertler 2014 proposed
+       ≥21 "at risk" and ≥28 "compulsive" cutpoints from a
+       German general-population sample; those are secondary-
+       literature splits and **NOT pinned here** per CLAUDE.md
+       non-negotiable #9 ("Don't hand-roll severity thresholds").
+    4. Jacobson & Truax 1991 RCI at the trajectory layer pins
+       the ≈5-point MCID from the α=0.89 Dutch sample; CBT-CIUS
+       responder signature is pre-56 → post-14 (delta 42).
+
+    T3 posture — NOT safety-adjacent.  Compulsive internet use
+    has documented associations with depression (Young 1998) and
+    social anxiety (Caplan 2003), but those associations surface
+    through PHQ-9 and FNE-B respectively.  The CIUS instrument
+    itself measures a behavior-frequency construct and MUST NOT
+    trigger T3 escalation even at the maximum (14 × "Very often").
+    Active-risk surveillance stays on C-SSRS / PHQ-9 item 9.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ----------------------------------------------------
+
+    def test_max_total_fifty_six(self, client: TestClient) -> None:
+        """Meerkerk 2009 ceiling: "Very often" on all fourteen items.
+        Raw [4]*14.  No reverse keying → total = 56.  Clinically the
+        extreme-compulsive-gamer / pornography-binge profile that
+        Guertler 2014 ≥28 would categorize well above the German
+        general-population compulsive-user threshold; we surface
+        only the raw total because ≥28 is secondary literature."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "cius"
+        assert body["total"] == 56
+        assert body["severity"] == "continuous"
+
+    def test_min_total_zero(self, client: TestClient) -> None:
+        """Meerkerk 2009 floor: "Never" on all fourteen items.  Raw
+        [0]*14.  **CRITICAL** — this is the first platform instrument
+        where a valid clinical response is 0 on every item.  Total 0
+        is a legitimate scored response for a non-user or a client
+        whose internet use is not compulsive in any dimension."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 14},
+            headers=self._headers("cius-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "cius"
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_midpoint_twenty_eight(self, client: TestClient) -> None:
+        """Raw [2]*14 = 28, the arithmetic midpoint of the 0-56 range.
+        Numerically coincident with Guertler 2014's "compulsive" cut,
+        but the platform MUST NOT fire any band here — that cutpoint
+        is secondary literature and un-pinned."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 14},
+            headers=self._headers("cius-mid"),
+        )
+        body = response.json()
+        assert body["total"] == 28
+        assert body["severity"] == "continuous"
+
+    # -- Acquiescence signature — linear total = 14v ----------------------
+
+    def test_acquiescence_all_zeros_yields_zero(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=0: total = 14×0 = 0.  No reverse-keying
+        offset.  **UNIQUE TO CIUS** — every other platform instrument's
+        all-minimum acquiescence baseline is a positive value (FNE-B
+        28, STAI-6 15, UCLA-3 3).  All-zero is a valid scored response,
+        not a validation failure, because 0 is a valid CIUS Likert value."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 14},
+            headers=self._headers("cius-acq-0"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+
+    def test_acquiescence_all_ones_yields_fourteen(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=1: total = 14×1 = 14.  Contrast FNE-B
+        4v+24 = 28 (baseline + scale-flip offset) and STAI-6 constant
+        15 (symmetric reverse-keying collapse)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [1] * 14},
+            headers=self._headers("cius-acq-1"),
+        )
+        body = response.json()
+        assert body["total"] == 14
+
+    def test_acquiescence_all_twos_yields_twenty_eight(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=2: total = 14×2 = 28."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 14},
+            headers=self._headers("cius-acq-2"),
+        )
+        body = response.json()
+        assert body["total"] == 28
+
+    def test_acquiescence_all_threes_yields_forty_two(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=3: total = 14×3 = 42."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [3] * 14},
+            headers=self._headers("cius-acq-3"),
+        )
+        body = response.json()
+        assert body["total"] == 42
+
+    def test_acquiescence_all_fours_yields_fifty_six(
+        self, client: TestClient
+    ) -> None:
+        """Linear formula v=4: total = 14×4 = 56.  Full-range
+        acquiescence endpoint."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-acq-4"),
+        )
+        body = response.json()
+        assert body["total"] == 56
+
+    def test_acquiescence_gap_is_fifty_six(self, client: TestClient) -> None:
+        """Pin the endpoint-exposure: all-4s minus all-0s = 56, which
+        is the full 0-56 range (100%).  Matches UCLA-3's 100%-of-range
+        endpoint exposure (highest on the platform in relative terms)
+        but on a nine-fold larger absolute scale.  Meerkerk 2009
+        treated this as acceptable because the high Cronbach α=0.89
+        implies coherent positive-wording interpretation overrides
+        acquiescence bias in practice."""
+        r_low = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 14},
+            headers=self._headers("cius-gap-0"),
+        ).json()
+        r_high = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-gap-4"),
+        ).json()
+        assert r_high["total"] - r_low["total"] == 56
+
+    # -- Envelope fields — no subscales/cutoff/screen/scaled/trigger ------
+
+    def test_envelope_has_no_subscales(self, client: TestClient) -> None:
+        """Meerkerk 2009 factor-analytic derivation confirmed SINGLE
+        factor (EFA across three Dutch samples, CFI > 0.95 in each);
+        envelope MUST NOT carry subscales."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 14},
+            headers=self._headers("cius-no-subscales"),
+        )
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_envelope_has_no_cutoff_used(self, client: TestClient) -> None:
+        """Meerkerk 2009 published NO cutpoints (continuous dimensional
+        measure by design).  Guertler 2014 ≥21/≥28 are secondary
+        literature and NOT pinned per CLAUDE.md non-negotiable #9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 14},
+            headers=self._headers("cius-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_envelope_has_no_positive_screen(self, client: TestClient) -> None:
+        """No categorical screen — CIUS is a continuous dimensional
+        measure.  Guertler 2014 "at risk" / "compulsive" labels stay
+        at the clinician-interpretation layer, not the envelope."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-no-screen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_envelope_has_no_scaled_score(self, client: TestClient) -> None:
+        """CIUS reports the raw 0-56 total; no scaled mapping to a
+        different range or to the Young 1998 IAT 20-100 range (even
+        though r ≈ 0.70 convergent validity would support a rough
+        mapping)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 14},
+            headers=self._headers("cius-no-scaled"),
+        )
+        body = response.json()
+        assert body.get("scaled_score") is None
+
+    def test_envelope_has_no_triggering_items(
+        self, client: TestClient
+    ) -> None:
+        """triggering_items is C-SSRS-only (risk-band audit trail).
+        CIUS is continuous; no item individually flags."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-no-triggering"),
+        )
+        body = response.json()
+        assert body.get("triggering_items") is None
+
+    # -- Severity always continuous ---------------------------------------
+
+    def test_severity_continuous_at_minimum(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 14},
+            headers=self._headers("cius-sev-min"),
+        )
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_guertler_at_risk_21(
+        self, client: TestClient
+    ) -> None:
+        """Guertler 2014 "at risk" boundary = 21.  Platform MUST fire
+        NO band here — Guertler is secondary literature per CLAUDE.md
+        non-negotiable #9.  Construct this total as [2,2,2,2,2,2,2,
+        2,2,2,1,0,0,0] = 14+7+0 = 21."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 0, 0, 0]},
+            headers=self._headers("cius-sev-guertler-21"),
+        )
+        body = response.json()
+        assert body["total"] == 21
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_guertler_compulsive_28(
+        self, client: TestClient
+    ) -> None:
+        """Guertler 2014 "compulsive" boundary = 28 (numerically the
+        Meerkerk 2009 midpoint).  Platform MUST fire NO band — this
+        coincides with the all-2s midpoint and is secondary literature."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 14},
+            headers=self._headers("cius-sev-guertler-28"),
+        )
+        body = response.json()
+        assert body["total"] == 28
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_maximum(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-sev-max"),
+        )
+        body = response.json()
+        assert body["total"] == 56
+        assert body["severity"] == "continuous"
+
+    # -- T3 posture -------------------------------------------------------
+
+    def test_maximum_total_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Raw [4]*14 = total 56 is the maximum-compulsion extremum.
+        Young 1998 and Caplan 2003 document strong depression /
+        social-anxiety associations with internet-use dimensions,
+        but those associations surface through PHQ-9 / FNE-B.
+        The CIUS instrument itself MUST NOT set requires_t3.
+        Active-risk screening stays on C-SSRS / PHQ-9 item 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-t3-max"),
+        )
+        body = response.json()
+        assert body["total"] == 56
+        assert body["requires_t3"] is False
+
+    def test_isolated_single_item_max_does_not_require_t3(
+        self, client: TestClient
+    ) -> None:
+        """Item 14 ("restless when cannot use internet") alone at
+        max with all others at 0.  Raw [0]*13 + [4] = 4.  Withdrawal-
+        phenomena item — DSM-5 flagged but MUST NOT set T3 in
+        isolation at the assessment layer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 13 + [4]},
+            headers=self._headers("cius-t3-restless"),
+        )
+        body = response.json()
+        assert body["total"] == 4
+        assert body["requires_t3"] is False
+
+    # -- No-reverse-keying wire pins --------------------------------------
+
+    def test_items_pass_through_unchanged_item1(
+        self, client: TestClient
+    ) -> None:
+        """CIUS has ZERO reverse-keying.  Raising item 1 from 0 to 4
+        with others at 0 raises the total by exactly 4 (the raw Likert
+        step × 1 item).  Contrast FNE-B reverse-item positions which
+        DROP the total by 4 when raised."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 14},
+            headers=self._headers("cius-pass-1-base"),
+        ).json()
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] + [0] * 13},
+            headers=self._headers("cius-pass-1-raised"),
+        ).json()
+        assert raised["total"] - base["total"] == 4
+
+    def test_items_pass_through_unchanged_item7(
+        self, client: TestClient
+    ) -> None:
+        """Item 7 (preference for internet over offline company).
+        Raised alone 0→4, total becomes 4.  Caplan 2003 compensatory-
+        internet-use signature item."""
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 6 + [4] + [0] * 7},
+            headers=self._headers("cius-pass-7"),
+        ).json()
+        assert raised["total"] == 4
+
+    def test_items_pass_through_unchanged_item14(
+        self, client: TestClient
+    ) -> None:
+        """Item 14 ("restless when cannot use internet") pass-through.
+        Withdrawal-phenomena probe; raised alone 0→4, total = 4."""
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 13 + [4]},
+            headers=self._headers("cius-pass-14"),
+        ).json()
+        assert raised["total"] == 4
+
+    def test_item_ordering_does_not_affect_total(
+        self, client: TestClient
+    ) -> None:
+        """Pin a specific asymmetric pattern across items and reverse
+        it — CIUS has no reverse-keyed positions, so order reversal
+        MUST yield the same total.  This guards against accidental
+        FNE-B (reverse at 2/4/7/10) or FFMQ-15 patterning logic
+        leaking through the dispatcher for CIUS payloads."""
+        forward = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4]},
+            headers=self._headers("cius-order-fwd"),
+        ).json()
+        reversed_items = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4, 3, 2, 1, 0, 0, 0, 0, 0, 0, 1, 2, 3, 4][::-1]},
+            headers=self._headers("cius-order-rev"),
+        ).json()
+        assert forward["total"] == reversed_items["total"] == 20
+
+    # -- Item count traps -------------------------------------------------
+
+    def test_rejects_thirteen_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 13},
+            headers=self._headers("cius-ic-13"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_fifteen_items(self, client: TestClient) -> None:
+        """Guards against accidental FFMQ-15 (15 items) being routed
+        through the CIUS scorer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 15},
+            headers=self._headers("cius-ic-15"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_twenty_items(self, client: TestClient) -> None:
+        """Guards against accidental Young 1998 IAT (20 items, 1-5
+        Likert) being routed through the CIUS scorer — convergent
+        validity of r ≈ 0.70 is published but the scorers are
+        dimensionally distinct."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2] * 20},
+            headers=self._headers("cius-ic-20"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_zero_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": []},
+            headers=self._headers("cius-ic-0"),
+        )
+        assert response.status_code == 422
+
+    # -- Item value traps -------------------------------------------------
+
+    def test_accepts_item_value_zero(self, client: TestClient) -> None:
+        """**CIUS-UNIQUE**: 0 is a VALID Likert value ("Never").
+        This test explicitly pins the 0-acceptance invariant that
+        distinguishes CIUS from every other platform instrument
+        documented above (FNE-B / STAI-6 / UCLA-3 / PHQ-9 / GAD-7
+        all REJECT 0 in at least one of their validation layers).
+        0 on every item yields total 0, which is the legitimate
+        non-user profile."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]},
+            headers=self._headers("cius-iv-0-ok"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+
+    def test_rejects_item_value_five(self, client: TestClient) -> None:
+        """CIUS is 0-4 Likert; 5 is above range.  Guards against
+        accidental Young 1998 IAT 1-5 Likert value being submitted."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [5] + [0] * 13},
+            headers=self._headers("cius-iv-5"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_negative_one(self, client: TestClient) -> None:
+        """Below-range rejection — -1 is not a valid Likert value."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [-1] + [0] * 13},
+            headers=self._headers("cius-iv-neg1"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_value_ninety_nine(self, client: TestClient) -> None:
+        """Far-above-range rejection — 99 guards against accidental
+        percentage-scale submission."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [99] + [0] * 13},
+            headers=self._headers("cius-iv-99"),
+        )
+        assert response.status_code == 422
+
+    # -- Item type traps --------------------------------------------------
+
+    def test_rejects_string_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": ["two"] + [0] * 13},
+            headers=self._headers("cius-iv-str"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_float_with_decimal(self, client: TestClient) -> None:
+        """Pydantic ``list[int]`` rejects 2.5 as non-integer."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [2.5] + [0] * 13},
+            headers=self._headers("cius-iv-fl"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic bool-coercion — CIUS-UNIQUE both directions -------------
+
+    def test_true_coerced_to_one_is_valid(self, client: TestClient) -> None:
+        """Pydantic's ``list[int]`` coerces JSON ``true`` → 1 BEFORE
+        the scorer sees it.  On CIUS's 0-4 scale, 1 is a valid
+        response ("Rarely").  With item 1 as True and items 2-14 all
+        0, total = 1."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [True] + [0] * 13},
+            headers=self._headers("cius-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 1
+
+    def test_false_coerced_to_zero_is_accepted_at_wire_layer_unique_to_cius(
+        self, client: TestClient
+    ) -> None:
+        """**CIUS-UNIQUE WIRE-LAYER BEHAVIOR** — the only instrument
+        on the platform for which JSON ``false`` in an items array
+        round-trips to HTTP 201 with a legitimate scored total.
+
+        Pydantic's ``list[int]`` TYPE-ERASES the JSON boolean: by
+        the time the scorer receives the value it is already a
+        Python ``int`` with value 0, no longer a ``bool``.  The
+        scorer's defensive ``isinstance(value, bool)`` rejection
+        is load-bearing for DIRECT Python calls (covered in
+        ``test_cius_scoring.py::TestItemTypeValidation``) — when
+        an internal service passes a literal ``False`` into
+        ``score_cius`` without going through the HTTP wire, the
+        scorer raises.  But over HTTP, Pydantic runs first.
+
+        Contrast with UCLA-3 / FNE-B / STAI-6 / PHQ-9 / GAD-7 /
+        AUDIT-C / WHO-5 / PSS-10: on those scales 0 is OUTSIDE
+        the valid range (or outside that specific Likert floor),
+        so the range check rejects the former-false-now-0 value
+        and the round-trip returns 422.  CIUS is the first
+        instrument where 0 is a legitimate Likert response
+        ("Never" on Meerkerk 2009), so the range check passes
+        and the scorer produces total = 0 for a single False in
+        an otherwise all-zero vector.
+
+        Clinical implication: a malformed mobile/web client that
+        ships JSON booleans instead of integers WILL silently get
+        a "floor" score for CIUS only.  The downstream renderer
+        must treat CIUS floor scores as a data-quality signal
+        (validate client schema adherence) rather than as the
+        unambiguous "non-user" profile it represents when the
+        integers were sent deliberately.  This invariant is
+        pinned here so that any future attempt to "fix" the
+        bool-accept-as-int behavior at the wire layer is visible
+        as a breaking change to clients that depend on it."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [False] + [0] * 13},
+            headers=self._headers("cius-false"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+
+    def test_all_false_coerced_to_all_zero_is_accepted_at_wire_layer(
+        self, client: TestClient
+    ) -> None:
+        """Vector of all False values.  Each coerces to int 0 at the
+        Pydantic wire layer, type-erasing the Python ``bool``.  The
+        scorer receives fourteen int-0s, passes range validation,
+        passes the now-moot bool check (bools no longer present),
+        and produces total = 0.
+
+        This is the extreme version of the single-False test
+        above — an entire vector of booleans round-trips as a
+        legitimate "non-user" scored response.  Pins the wire-
+        layer type-erasure invariant across the full vector,
+        complementing the direct-Python-call bool-rejection
+        invariant in ``test_cius_scoring.py``."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [False] * 14},
+            headers=self._headers("cius-false-vec"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_vignette_non_user(self, client: TestClient) -> None:
+        """Client reports no compulsive-use features on any item.
+        Raw [0]*14 = total 0.  Legitimate clinical response; the
+        "floor" is not a validation failure."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [0] * 14},
+            headers=self._headers("cius-vig-nonuser"),
+        )
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+
+    def test_vignette_moderate_meerkerk_mean_profile(
+        self, client: TestClient
+    ) -> None:
+        """Meerkerk 2009 Dutch general-population adult sample mean
+        ≈ 10-16 on the 0-56 range (varies across the three samples).
+        Profile of mild-frequency use across most items with a
+        couple of null items.  Raw [1]*14 + 2 = 16."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [1, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2]},
+            headers=self._headers("cius-vig-meerkerk-mean"),
+        )
+        body = response.json()
+        assert body["total"] == 16
+        assert body["severity"] == "continuous"
+
+    def test_vignette_caplan_compensatory_profile(
+        self, client: TestClient
+    ) -> None:
+        """Caplan 2003 compensatory-internet-use signature: socially-
+        avoidant (high FNE-B) lonely (high UCLA-3) client uses
+        internet compulsively to avoid face-to-face interaction.
+        Profile: items 7 ("prefer internet over offline company")
+        and 9 ("neglect obligations") elevated; moderate across
+        items 1/2/5/6/11 (control-loss and preoccupation); lower
+        on items 13/14 (withdrawal) because the use is AVOIDANT,
+        not addiction-withdrawal pattern.  Total 33."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [3, 3, 1, 2, 3, 3, 4, 2, 4, 1, 3, 2, 1, 1]},
+            headers=self._headers("cius-vig-caplan"),
+        )
+        body = response.json()
+        assert body["total"] == 33
+        assert body["severity"] == "continuous"
+
+    def test_vignette_gaming_maximal_profile(
+        self, client: TestClient
+    ) -> None:
+        """ICD-11 6C51 Gaming disorder extremum — all 14 items at
+        maximum frequency.  Raw [4]*14 = 56.  Surfaces the extreme-
+        compulsion profile without firing Guertler 2014 ≥28
+        secondary-literature bands."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-vig-gaming-max"),
+        )
+        body = response.json()
+        assert body["total"] == 56
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_recovery_compensation_profile(
+        self, client: TestClient
+    ) -> None:
+        """Koob 2005 allostatic cross-addiction profile: AUD client
+        in early recovery (3 months abstinent) presents increased
+        CIUS as internet use compensates for loss of the primary
+        reward.  Profile: elevated control-loss (items 1, 3, 5) and
+        preoccupation (items 2, 6, 10), moderate neglect (items 8,
+        9), and rising withdrawal (items 13, 14).  Total 31."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [3, 3, 3, 1, 3, 3, 1, 2, 2, 3, 1, 1, 2, 3]},
+            headers=self._headers("cius-vig-koob"),
+        )
+        body = response.json()
+        assert body["total"] == 31
+        assert body["severity"] == "continuous"
+
+    def test_vignette_cbt_responder_delta(
+        self, client: TestClient
+    ) -> None:
+        """CBT-CIUS 12-week trial responder signature — pre-treatment
+        extreme-compulsion profile (56) reduces to mild-frequency
+        maintenance profile (14) post-treatment.  Delta 42 is vastly
+        larger than the Jacobson 1991 RCI MCID (≈5 points derived
+        from α=0.89 and Dutch-sample SD); documents unambiguous
+        clinical response in the trajectory layer."""
+        pre = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-vig-cbt-pre"),
+        ).json()
+        post = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [1] * 14},
+            headers=self._headers("cius-vig-cbt-post"),
+        ).json()
+        assert pre["total"] == 56
+        assert post["total"] == 14
+        assert pre["total"] - post["total"] == 42
+
+    def test_vignette_triad_dissociation_high_cius_low_fneb_low_ucla3(
+        self, client: TestClient
+    ) -> None:
+        """FNE-B / UCLA-3 / CIUS triad dissociation: gaming-
+        disorder client with normal social skills (low FNE-B) and
+        active peer network (low UCLA-3) but extreme compulsive
+        gaming (CIUS = 56).  This profile rules out the Caplan 2003
+        compensatory-use framing and points toward primary
+        behavioral-addiction pathology (ICD-11 6C51) rather than
+        secondary anxiety / loneliness substitution.  Intervention
+        target accordingly: gaming-specific CBT-I / habit-reversal,
+        NOT social-skills training or structural-contact building."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "cius", "items": [4] * 14},
+            headers=self._headers("cius-vig-triad-dissoc"),
+        )
+        body = response.json()
+        assert body["total"] == 56
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
