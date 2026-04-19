@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI.
+ACEs, PGSI, BRS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -881,6 +881,52 @@ Safety routing:
   risk elevation (Moghaddam 2015: 3.4x attempt risk) is handled
   at the PROFILE level (PGSI + PHQ-9 + C-SSRS), not via per-
   PGSI-item T3 triggering.  See ``scoring/pgsi.py``.
+- BRS (Smith 2008): 6 items, 1-5 Likert.  Measures **ecological /
+  outcome resilience** — the capacity to BOUNCE BACK from stress
+  — and is deliberately shipped ALONGSIDE CD-RISC-10 which measures
+  **agentic resilience** (the resources that produce recovery).
+  Smith 2008 §3 framed the distinction as resource-vs-outcome:
+  CD-RISC ≈ "I have the resources to weather adversity"; BRS ≈
+  "I do, in fact, bounce back from adversity".  The clinical
+  value of shipping both is the DISCREPANCY profile — high
+  CD-RISC + low BRS = resilience-supporting resources present
+  but not deployed (Beck 1967 cognitive-triad interference with
+  resource deployment); intervention framing shifts to behavioral
+  activation (Martell 2010) or values-based committed action (ACT
+  per Hayes 2012), not resource-building.  Three items are
+  positively worded (1, 3, 5: "I tend to bounce back...") and
+  three are negatively worded (2, 4, 6: "It is hard for me to
+  snap back..." — reverse-scored at the scorer; ``6 - raw``
+  idiom shared with TAS-20 / PSWQ / LOT-R).  The three-positive /
+  three-negative symmetry is the Smith 2008 acquiescence-bias
+  control design — by construction both uniform-response
+  extremes (all-1s and all-5s) produce post-flip sum 18, which
+  lands at the LOW-NORMAL boundary and ensures response-set bias
+  cannot push a patient into either extreme band.  Total = sum
+  of 6 POST-FLIP items, 6-30.  HIGHER = MORE RESILIENT (opposite
+  of PHQ-9 / GAD-7 / AUDIT / PGSI; uniform with WHO-5 / MAAS /
+  CD-RISC-10 higher-is-better convention).  **Three-band
+  resilience** per Smith 2008 §3.3 conceptual-mean framework,
+  mapped to integer sum: 6-17 ``low``, 18-25 ``normal``, 26-30
+  ``high`` (original mean-based bands: 1.00-2.99 / 3.00-4.30 /
+  4.31-5.00 — the integer-sum envelope preserves the clinical
+  band assignment exactly).  Wire envelope matches
+  PHQ-9 / GAD-7 / AUDIT / PSS-10 / ISI / PGSI banded-severity
+  shape — severity carries the band label; ``cutoff_used`` /
+  ``positive_screen`` / ``subscales`` NOT set.  Smith 2008 §3.2
+  EFA: single factor by construction (eigenvalue 2.68, second
+  0.64) — surfacing positive-item / negative-item sums as
+  "subscales" would contradict the factor derivation and
+  double-count response-set bias.  No T3 — no item probes
+  suicidality, self-harm, or acute-risk behavior; BRS measures
+  resilience outcomes only.  Acute-risk screening stays on
+  C-SSRS / PHQ-9 item 9.  The ``items`` field stores the RAW
+  PRE-FLIP patient responses (audit-trail invariance, shared
+  with TAS-20 / PSWQ / LOT-R).  Use-case: BRS is the platform's
+  primary within-subject **recovery-trajectory** anchor (test-
+  retest r = 0.69 at 3 months, Smith 2008 §3.2) — paired with
+  Jacobson & Truax 1991 RCI for clinically-significant-change
+  computation at the 3-month follow-up.  See ``scoring/brs.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -931,6 +977,10 @@ from .scoring.cdrisc10 import (
 from .scoring.bis11 import (
     InvalidResponseError as Bis11Invalid,
     score_bis11,
+)
+from .scoring.brs import (
+    InvalidResponseError as BrsInvalid,
+    score_brs,
 )
 from .scoring.audit_c import (
     InvalidResponseError as AuditCInvalid,
@@ -1115,6 +1165,7 @@ Instrument = Literal[
     "shaps",
     "aces",
     "pgsi",
+    "brs",
 ]
 
 
@@ -1164,6 +1215,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "shaps": 14,
     "aces": 10,
     "pgsi": 9,
+    "brs": 6,
 }
 
 
@@ -2967,6 +3019,88 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=pg.instrument_version,
         )
+    if payload.instrument == "brs":
+        # Smith 2008 Brief Resilience Scale — 6-item 1-5 Likert.
+        # Measures ECOLOGICAL / OUTCOME resilience (the capacity to
+        # bounce back from adversity) — shipped deliberately
+        # ALONGSIDE the previously-shipped CD-RISC-10 which measures
+        # AGENTIC resilience (the personal resources that produce
+        # recovery: optimism, self-efficacy, emotion regulation,
+        # spiritual beliefs, adaptability).  Smith 2008 §3 framed
+        # the distinction: CD-RISC ≈ "I have the resources"; BRS ≈
+        # "I do, in fact, bounce back".  Windle 2011 systematic
+        # review recommended PAIRING both for complete-coverage
+        # resilience assessment — BRS rated highest on content /
+        # construct validity among brief instruments; CD-RISC
+        # highest among comprehensive instruments.
+        # Clinical value of shipping both = the DISCREPANCY
+        # profile: high CD-RISC + low BRS = resources present on
+        # paper but not deployed.  Typical mechanism: Beck 1967
+        # cognitive-triad interference with resource deployment in
+        # depression comorbidity.  Intervention framing shifts to
+        # behavioral activation (Martell 2010) or values-based
+        # committed action (ACT per Hayes 2012) rather than
+        # resource-building.  The inverse (low CD-RISC + high BRS)
+        # is rare — when present, it indicates externally-scaffolded
+        # recovery (social support, environmental stability) that
+        # should be reinforced rather than supplemented with
+        # resource-building work.
+        # Reverse-keying: items 2, 4, 6 are negatively worded ("It
+        # is hard for me to snap back..." / "It is hard for me to
+        # bounce back..." / "I tend to take a long time...").  The
+        # scorer applies ``6 - raw`` internally (shared idiom with
+        # TAS-20 / PSWQ / LOT-R).  The PATIENT sees the items in
+        # the original phrasing; the scorer flips them before
+        # summing.  The BrsResult.items field preserves the RAW
+        # PRE-FLIP responses — audit-trail invariance per the
+        # TAS-20 / PSWQ / LOT-R contract.
+        # Acquiescence-bias control: the three-positive /
+        # three-negative symmetry is Smith 2008's EFA-derived
+        # response-set control.  By construction both uniform-
+        # response extremes (all-1s and all-5s) produce post-flip
+        # sum 18, landing at the LOW-NORMAL boundary.  This is a
+        # feature, not a bug — response-set bias cannot push a
+        # patient into either extreme band.
+        # **Novel wire shape on this platform**: first HIGHER-IS-
+        # BETTER banded-severity instrument.  WHO-5 / MAAS /
+        # CD-RISC-10 / LOT-R are higher-is-better but use either
+        # index conversion (WHO-5) or continuous-band semantics.
+        # BRS uses discrete banded severity (low/normal/high)
+        # with higher-is-better direction — the trajectory RCI
+        # direction logic must register BRS in the higher-is-
+        # better partition (with WHO-5 / MAAS / CD-RISC-10 /
+        # LOT-R / DTCQ-8), NOT with PHQ-9 / GAD-7 / AUDIT / PGSI.
+        # Wire envelope matches PHQ-9 / GAD-7 / AUDIT / PSS-10 /
+        # ISI / PGSI banded-severity shape — severity carries one
+        # of "low" / "normal" / "high" (Smith 2008 §3.3 conceptual-
+        # mean framework mapped to integer-sum 6-17 / 18-25 /
+        # 26-30).  cutoff_used / positive_screen NOT set — banded,
+        # not screen.  subscales NOT set — Smith 2008 §3.2 EFA
+        # single-factor solution (eigenvalue 2.68, second 0.64);
+        # surfacing positive-item / negative-item sums would
+        # contradict the factor derivation and double-count the
+        # response-set bias the reverse-keying design exists to
+        # control.
+        # No T3 — no BRS item probes suicidality, self-harm, or
+        # acute-risk behavior; the instrument measures resilience
+        # outcomes only.  Acute-risk screening stays on C-SSRS /
+        # PHQ-9 item 9.
+        # Recovery-trajectory use: BRS is the platform's primary
+        # within-subject recovery-trajectory anchor (test-retest
+        # r = 0.69 at 3 months, Smith 2008 §3.2) — paired with
+        # Jacobson & Truax 1991 RCI for clinically-significant-
+        # change detection at the 3-month follow-up.  CD-RISC-10
+        # is more state-sensitive and less suited to repeat
+        # administration; BRS is the anchor.  See ``scoring/brs.py``.
+        br = score_brs(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="brs",
+            total=br.total,
+            severity=br.severity,
+            requires_t3=False,
+            instrument_version=br.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3127,6 +3261,7 @@ async def submit_assessment(
         ShapsInvalid,
         AcesInvalid,
         PgsiInvalid,
+        BrsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

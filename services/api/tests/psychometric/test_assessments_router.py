@@ -13456,6 +13456,363 @@ class TestPgsiRouting:
 
 
 # =============================================================================
+# BRS (Brief Resilience Scale) routing — Smith et al. 2008
+# =============================================================================
+
+
+class TestBrsRouting:
+    """End-to-end routing tests for the BRS dispatcher branch.
+
+    Smith 2008 Brief Resilience Scale — 6 items, 1-5 Likert, total
+    6-30 (POST-FLIP), three bands (low / normal / high).  **HIGHER
+    = MORE RESILIENT** — opposite of PHQ-9 / GAD-7 / AUDIT / PGSI;
+    matches WHO-5 / MAAS / CD-RISC-10 higher-is-better convention.
+
+    Reverse-keying: items 2, 4, 6 are negatively worded and flipped
+    via ``6 - raw`` before summation (shared idiom with TAS-20 /
+    PSWQ / LOT-R).  The wire ``items`` echo the patient's RAW
+    pre-flip responses.
+
+    Band thresholds mapped from Smith 2008 §3.3 conceptual mean:
+    low 6-17, normal 18-25, high 26-30.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    def test_min_resilience_low_band(self, client: TestClient) -> None:
+        """Minimally resilient response — disagrees with every
+        positive item (1) and agrees with every negative item (5).
+        Post-flip = 6, low band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [1, 5, 1, 5, 1, 5]},
+            headers=self._headers("brs-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "brs"
+        assert body["total"] == 6
+        assert body["severity"] == "low"
+
+    def test_max_resilience_high_band(self, client: TestClient) -> None:
+        """Maximally resilient response — agrees with every positive
+        item (5) and disagrees with every negative item (1).  Post-
+        flip = 30, high band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [5, 1, 5, 1, 5, 1]},
+            headers=self._headers("brs-max"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 30
+        assert body["severity"] == "high"
+
+    def test_all_ones_acquiescence_yields_normal(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias control: raw all-1s yields post-flip
+        sum 18 (normal band) — NOT low, despite the "least
+        agreeable" response pattern.  This is the Smith 2008
+        three-positive / three-negative symmetry at work."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [1, 1, 1, 1, 1, 1]},
+            headers=self._headers("brs-all-1s"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 18
+        assert body["severity"] == "normal"
+
+    def test_all_fives_acquiescence_yields_normal(
+        self, client: TestClient
+    ) -> None:
+        """Dual to the all-1s case: raw all-5s also yields post-flip
+        sum 18 (normal band).  Design-enforced: response-set bias
+        cannot push a patient into either extreme band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [5, 5, 5, 5, 5, 5]},
+            headers=self._headers("brs-all-5s"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 18
+        assert body["severity"] == "normal"
+
+    def test_all_threes_is_normal(self, client: TestClient) -> None:
+        """Neutral on every item -> post-flip sum 18, normal band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-all-3s"),
+        )
+        body = response.json()
+        assert body["total"] == 18
+        assert body["severity"] == "normal"
+
+    def test_band_boundary_total_17_low(self, client: TestClient) -> None:
+        """Last integer in the low band.  Post-flip [3,3,3,3,3,2]
+        = 17 via raw [3,3,3,3,3,4] (position 6 reverse 6-4 = 2)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 4]},
+            headers=self._headers("brs-band-17"),
+        )
+        body = response.json()
+        assert body["total"] == 17
+        assert body["severity"] == "low"
+
+    def test_band_boundary_total_18_normal(self, client: TestClient) -> None:
+        """First integer in the normal band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-band-18"),
+        )
+        body = response.json()
+        assert body["total"] == 18
+        assert body["severity"] == "normal"
+
+    def test_band_boundary_total_25_normal(self, client: TestClient) -> None:
+        """Last integer in the normal band.  Post-flip [4,4,4,4,4,5]
+        = 25 via raw [4,2,4,2,4,1]."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [4, 2, 4, 2, 4, 1]},
+            headers=self._headers("brs-band-25"),
+        )
+        body = response.json()
+        assert body["total"] == 25
+        assert body["severity"] == "normal"
+
+    def test_band_boundary_total_26_high(self, client: TestClient) -> None:
+        """First integer in the high band.  Post-flip [5,5,5,5,5,1]
+        = 26 via raw [5,1,5,1,5,5]."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [5, 1, 5, 1, 5, 5]},
+            headers=self._headers("brs-band-26"),
+        )
+        body = response.json()
+        assert body["total"] == 26
+        assert body["severity"] == "high"
+
+    def test_wire_total_is_post_flip_not_raw_sum(
+        self, client: TestClient
+    ) -> None:
+        """The wire total is the POST-FLIP sum, not the raw sum.
+        Raw [5,5,5,5,5,5] has raw-sum 30 but post-flip sum 18 —
+        the wire must emit 18 to confirm the scorer applied
+        reverse-keying.  (The scorer preserves raw in its internal
+        ``items`` field for audit, but the wire AssessmentResult
+        envelope does not surface it — uniform across every
+        reverse-keyed instrument TAS-20 / PSWQ / LOT-R / BRS.)"""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [5, 5, 5, 5, 5, 5]},
+            headers=self._headers("brs-post-flip-total"),
+        )
+        body = response.json()
+        # Raw sum would be 30 (ceiling) — post-flip is 18.
+        assert body["total"] == 18
+        assert body["total"] != 30
+
+    def test_response_envelope_has_no_subscales(
+        self, client: TestClient
+    ) -> None:
+        """Smith 2008 §3.2 EFA single-factor — no subscales field."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-no-subscales"),
+        )
+        body = response.json()
+        # Envelope uses None / absent for instruments that don't
+        # surface subscales (uniform with PHQ-9 / GAD-7 / AUDIT /
+        # PSS-10 / ISI / PGSI banded-severity shape).
+        assert body.get("subscales") in (None, {}, [])
+
+    def test_response_envelope_has_no_cutoff_used(
+        self, client: TestClient
+    ) -> None:
+        """BRS is banded, not a binary screen — cutoff_used absent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_response_envelope_has_no_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """BRS is banded, not a binary screen — positive_screen absent."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-no-posscreen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_response_envelope_has_instrument_version(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "brs-1.0.0"
+
+    def test_never_requires_t3(self, client: TestClient) -> None:
+        """BRS has no safety item — requires_t3 is always False,
+        even at the minimum-resilience ceiling."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [1, 5, 1, 5, 1, 5]},
+            headers=self._headers("brs-no-t3-low"),
+        )
+        body = response.json()
+        assert body["total"] == 6
+        assert body["severity"] == "low"
+        assert body["requires_t3"] is False
+
+    def test_item_count_validation_five_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Wrong item count rejected at 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3]},
+            headers=self._headers("brs-five-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_seven_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-seven-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_ten_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone confuses BRS (6) with CD-RISC-10 (10)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3] * 10},
+            headers=self._headers("brs-ten-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_range_zero_rejected(self, client: TestClient) -> None:
+        """BRS Likert is 1-5, not 0-5."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [0, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-zero-item"),
+        )
+        assert response.status_code == 422
+
+    def test_item_range_six_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [6, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-six-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_range_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [-1, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-negative-item"),
+        )
+        assert response.status_code == 422
+
+    def test_reverse_scoring_position_1_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 1 is a positive-worded item (non-reverse).
+        Raising it from 3 to 5 raises total by 2 (post-flip
+        unchanged for non-reverse items)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-rev-base1"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [5, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-rev-raise1"),
+        ).json()["total"]
+        assert raised == base + 2
+
+    def test_reverse_scoring_position_2_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 2 is a negative-worded item (reverse-keyed).
+        Raising it from 3 to 5 LOWERS total by 2 (post-flip 3 ->
+        post-flip 1)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 3, 3, 3, 3, 3]},
+            headers=self._headers("brs-rev-base2"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [3, 5, 3, 3, 3, 3]},
+            headers=self._headers("brs-rev-raise2"),
+        ).json()["total"]
+        assert raised == base - 2
+
+    def test_direction_higher_is_more_resilient(
+        self, client: TestClient
+    ) -> None:
+        """Global direction pin — every single-position shift toward
+        the resilient extreme must raise the total."""
+        resilient = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [5, 1, 5, 1, 5, 1]},
+            headers=self._headers("brs-dir-res"),
+        ).json()["total"]
+        unresilient = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [1, 5, 1, 5, 1, 5]},
+            headers=self._headers("brs-dir-unres"),
+        ).json()["total"]
+        assert resilient > unresilient
+
+    def test_clinical_vignette_depression_profile_low(
+        self, client: TestClient
+    ) -> None:
+        """Depression-consistent low bounce-back — mild disagreement
+        with positives, mild agreement with negatives.  Raw
+        [2,4,2,4,2,4] -> post-flip [2,2,2,2,2,2] = 12, low band."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "brs", "items": [2, 4, 2, 4, 2, 4]},
+            headers=self._headers("brs-dep-profile"),
+        )
+        body = response.json()
+        assert body["total"] == 12
+        assert body["severity"] == "low"
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
