@@ -892,6 +892,292 @@ class TestDast10Routing:
 
 
 # =============================================================================
+# MDQ (Hirschfeld 2000, 13-item bipolar screen, three-gate conjunction)
+# =============================================================================
+
+
+class TestMdqRouting:
+    """MDQ over the wire.
+
+    Router-level contract verification for the three-gate positive
+    screen.  The scorer's own unit tests exhaustively pin the gate
+    logic; these tests pin (1) the dispatch branch picks ``score_mdq``,
+    (2) the wire envelope correctly surfaces ``positive_screen`` and
+    uses the positive-item count as ``total``, and (3) the new
+    request fields ``concurrent_symptoms`` and ``functional_impairment``
+    are required when instrument=mdq but ignored for other instruments.
+    """
+
+    @staticmethod
+    def _body(
+        *,
+        positive_count: int,
+        concurrent: bool | None = True,
+        impairment: str | None = "serious",
+    ) -> dict[str, Any]:
+        """Build an MDQ request body with the first N items positive.
+
+        Keeping the helper local to this test class — the module-level
+        ``_post`` stays instrument-agnostic, and the MDQ-specific field
+        names (``concurrent_symptoms`` / ``functional_impairment``) live
+        here so other instruments' test bodies don't accidentally
+        inherit them.
+        """
+        items = [1] * positive_count + [0] * (13 - positive_count)
+        body: dict[str, Any] = {"instrument": "mdq", "items": items}
+        if concurrent is not None:
+            body["concurrent_symptoms"] = concurrent
+        if impairment is not None:
+            body["functional_impairment"] = impairment
+        return body
+
+    def _post_mdq(
+        self,
+        client: TestClient,
+        *,
+        positive_count: int,
+        concurrent: bool | None = True,
+        impairment: str | None = "serious",
+    ) -> Any:
+        body = self._body(
+            positive_count=positive_count,
+            concurrent=concurrent,
+            impairment=impairment,
+        )
+        return client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+
+    def test_all_three_gates_pass_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """Seven positives + concurrent + serious → positive_screen.
+        The wire envelope mirrors AUDIT-C's positive/negative screen
+        shape; a chart-view client rendering the two instruments
+        can use the same projection."""
+        resp = self._post_mdq(client, positive_count=7)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "mdq"
+        # ``total`` is the positive-item count, not a weighted sum —
+        # this is the value that flows into valueInteger on the FHIR
+        # Observation export.
+        assert body["total"] == 7
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "mdq-1.0.0"
+
+    def test_six_positives_below_threshold_negative(
+        self, client: TestClient
+    ) -> None:
+        """Item-count gate below threshold → negative_screen regardless
+        of Part 2 and Part 3.  Router pass-through for the boundary
+        the scorer's unit tests also pin."""
+        resp = self._post_mdq(client, positive_count=6)
+        body = resp.json()
+        assert body["total"] == 6
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_concurrent_false_blocks_screen(self, client: TestClient) -> None:
+        """Seven items positive + concurrent=False → negative.  The
+        load-bearing 'high items but not concurrent' case."""
+        resp = self._post_mdq(client, positive_count=7, concurrent=False)
+        body = resp.json()
+        assert body["total"] == 7
+        assert body["positive_screen"] is False
+        assert body["severity"] == "negative_screen"
+
+    def test_minor_impairment_blocks_screen(self, client: TestClient) -> None:
+        """Seven items + concurrent + minor impairment → negative.
+        Minor is the near-miss impairment label that must NOT cross
+        the gate."""
+        resp = self._post_mdq(
+            client, positive_count=13, impairment="minor"
+        )
+        body = resp.json()
+        assert body["total"] == 13
+        assert body["positive_screen"] is False
+        assert body["severity"] == "negative_screen"
+
+    def test_moderate_impairment_passes_screen(
+        self, client: TestClient
+    ) -> None:
+        """Moderate impairment is the minimum Part 3 value that
+        satisfies the gate — pairs with the minor case above."""
+        resp = self._post_mdq(client, positive_count=7, impairment="moderate")
+        body = resp.json()
+        assert body["positive_screen"] is True
+
+    def test_missing_concurrent_symptoms_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Instrument=mdq with no concurrent_symptoms supplied → 422
+        with an MDQ-specific message.  Without this the dispatch would
+        silently produce negative_screen, which is the exact footgun
+        the module docstring warns about."""
+        resp = self._post_mdq(client, positive_count=10, concurrent=None)
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert detail["code"] == "validation.invalid_payload"
+        assert "concurrent_symptoms" in detail["message"]
+
+    def test_missing_functional_impairment_rejected(
+        self, client: TestClient
+    ) -> None:
+        resp = self._post_mdq(client, positive_count=10, impairment=None)
+        assert resp.status_code == 422
+        detail = resp.json()["detail"]
+        assert detail["code"] == "validation.invalid_payload"
+        assert "functional_impairment" in detail["message"]
+
+    def test_invalid_impairment_label_rejected(self, client: TestClient) -> None:
+        """Wire-format bug: caller sends 'severe' instead of 'serious'.
+        Because ``functional_impairment`` is typed as a Literal, Pydantic
+        rejects at parse time (before the router's dispatch runs), so
+        the 422 body is Pydantic's list-format rather than our
+        structured dict.  Both are acceptable 422 surfaces; the test
+        just pins that the request is rejected (not silently coerced
+        to a default impairment)."""
+        resp = self._post_mdq(
+            client, positive_count=10, impairment="severe"
+        )
+        assert resp.status_code == 422
+        # Pydantic emits a list of ValidationError records with ``loc``
+        # pointing at the offending field.  We assert on the field
+        # name rather than a specific message string so a Pydantic
+        # version bump that rephrases the message doesn't break us.
+        raw = resp.json()["detail"]
+        assert isinstance(raw, list)
+        locations = [tuple(entry.get("loc", ())) for entry in raw]
+        assert any("functional_impairment" in loc for loc in locations)
+
+    def test_wrong_item_count_rejected(self, client: TestClient) -> None:
+        """MDQ needs exactly 13 items; 12 is short.  Router-level
+        message names the instrument and the expected count so a
+        multi-instrument harness can route on it."""
+        body = {
+            "instrument": "mdq",
+            "items": [0] * 12,
+            "concurrent_symptoms": True,
+            "functional_impairment": "serious",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+        assert "mdq requires exactly 13" in resp.json()["detail"]["message"]
+
+    def test_item_range_out_of_bounds_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Part 1 items are 0/1.  A 2 is out of range and the scorer's
+        InvalidResponseError surfaces as 422."""
+        body = {
+            "instrument": "mdq",
+            "items": [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            "concurrent_symptoms": True,
+            "functional_impairment": "serious",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 422
+
+    def test_mdq_never_fires_t3(self, client: TestClient) -> None:
+        """MDQ has no safety item.  Even a fully-positive screen
+        (13/13 + concurrent + serious) must NOT set requires_t3=True.
+        A regression here would route patients into the crisis UI for
+        a bipolar-spectrum signal that is explicitly NOT a crisis
+        signal per Hirschfeld 2000 + Whitepaper 04 §T3."""
+        resp = self._post_mdq(client, positive_count=13)
+        body = resp.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+
+    def test_mdq_does_not_populate_who5_or_audit_c_fields(
+        self, client: TestClient
+    ) -> None:
+        """``index`` is WHO-5 only; ``cutoff_used`` is AUDIT-C only.
+        MDQ must not accidentally populate either.  ``positive_screen``
+        IS populated (shared semantic with AUDIT-C) and is covered in
+        the happy-path test above."""
+        resp = self._post_mdq(client, positive_count=7)
+        body = resp.json()
+        assert body["index"] is None
+        assert body["cutoff_used"] is None
+        # triggering_items is C-SSRS-only; MDQ must not set it.
+        assert body.get("triggering_items") is None
+
+    def test_mdq_fields_ignored_for_other_instruments(
+        self, client: TestClient
+    ) -> None:
+        """A caller that mistakenly forwards concurrent_symptoms on a
+        PHQ-9 submission must not get a 422 — the fields are
+        MDQ-specific but tolerated elsewhere (``None`` is the default).
+        Pinning the tolerance keeps cross-instrument harnesses from
+        needing per-instrument scrubbing."""
+        body = {
+            "instrument": "phq9",
+            "items": [1, 1, 1, 1, 1, 1, 1, 1, 0],
+            "concurrent_symptoms": True,  # MDQ-only; must be ignored
+            "functional_impairment": "serious",  # MDQ-only; must be ignored
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+        phq9_body = resp.json()
+        assert phq9_body["instrument"] == "phq9"
+        assert phq9_body["total"] == 8
+
+    def test_mdq_persists_fields_to_repository(
+        self, client: TestClient
+    ) -> None:
+        """The submission must round-trip Part 2 + Part 3 into the
+        AssessmentRecord so a later FHIR Observation re-render can
+        preserve the full event.  Verified by submitting with user_id,
+        then reading back via the history endpoint and inspecting the
+        stored record via the repository."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        body = {
+            "instrument": "mdq",
+            "items": [1] * 7 + [0] * 6,
+            "concurrent_symptoms": True,
+            "functional_impairment": "moderate",
+            "user_id": "user-mdq-1",
+        }
+        resp = client.post(
+            "/v1/assessments",
+            json=body,
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert resp.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-mdq-1", limit=10)
+        assert len(records) == 1
+        stored = records[0]
+        assert stored.instrument == "mdq"
+        assert stored.total == 7
+        assert stored.positive_screen is True
+        assert stored.concurrent_symptoms is True
+        assert stored.functional_impairment == "moderate"
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 

@@ -1,5 +1,5 @@
-"""Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT-C, C-SSRS,
-PSS-10, DAST-10.
+"""Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
+C-SSRS, PSS-10, DAST-10, MDQ.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -13,7 +13,10 @@ Response shape additions over the original phq9/gad7-only design:
   are on the index scale.
 - ``cutoff_used`` + ``positive_screen``: AUDIT-C-only fields surfacing
   the sex-aware cutoff that was applied.  Clients render the cutoff
-  in the result UI ("positive at ≥ N").
+  in the result UI ("positive at ≥ N").  ``positive_screen`` is also
+  reused by MDQ (the three-gate Hirschfeld 2000 screen), but MDQ does
+  not surface a ``cutoff_used`` — its gate is categorical (≥ 7 items +
+  concurrent + moderate/serious impairment), not an ordinal cutoff.
 - ``triggering_items``: C-SSRS-only — the 1-indexed item numbers that
   drove the risk band.  Clinician-facing UI renders these as the
   "these answers escalated this screen" audit trail.
@@ -31,10 +34,13 @@ Safety routing:
   T3 check per Kroenke 2001).
 - C-SSRS runs through its own triage rules: items 4/5 positive OR
   item 6 positive with ``behavior_within_3mo=True`` → T3.
-- GAD-7, WHO-5, AUDIT-C, PSS-10, DAST-10 have no safety items —
-  ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen`` band is *not* a T3
-  trigger; T3 is reserved for active suicidality per
-  Docs/Whitepapers/04_Safety_Framework.md §T3.
+- GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ have no safety
+  items — ``requires_t3`` is always False for these instruments.
+  WHO-5 ``depression_screen`` band is *not* a T3 trigger; T3 is
+  reserved for active suicidality per
+  Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ screen
+  is a referral signal for a bipolar-spectrum structured interview,
+  not a crisis signal — see ``scoring/mdq.py`` module docstring.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -75,6 +81,11 @@ from .scoring.cssrs import (
 )
 from .scoring.dast10 import InvalidResponseError as Dast10Invalid, score_dast10
 from .scoring.gad7 import InvalidResponseError as Gad7Invalid, score_gad7
+from .scoring.mdq import (
+    ImpairmentLevel,
+    InvalidResponseError as MdqInvalid,
+    score_mdq,
+)
 from .scoring.phq9 import InvalidResponseError as Phq9Invalid, score_phq9
 from .scoring.pss10 import InvalidResponseError as Pss10Invalid, score_pss10
 from .scoring.who5 import InvalidResponseError as Who5Invalid, score_who5
@@ -90,7 +101,15 @@ _safety = get_stream_logger(LogStream.SAFETY)
 
 
 Instrument = Literal[
-    "phq9", "gad7", "who5", "audit", "audit_c", "cssrs", "pss10", "dast10"
+    "phq9",
+    "gad7",
+    "who5",
+    "audit",
+    "audit_c",
+    "cssrs",
+    "pss10",
+    "dast10",
+    "mdq",
 ]
 
 
@@ -106,6 +125,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "cssrs": 6,
     "pss10": 10,
     "dast10": 10,
+    "mdq": 13,
 }
 
 
@@ -115,8 +135,8 @@ class AssessmentRequest(BaseModel):
     Per-instrument item-count is validated at the route layer (after
     Pydantic) so the error message can be specific to the instrument
     ("PHQ-9 requires exactly 9 items, got N").  The Pydantic
-    ``min_length=3, max_length=10`` bound is the broadest envelope
-    covering every supported instrument (AUDIT-C=3 through PSS-10=10);
+    ``min_length=3, max_length=13`` bound is the broadest envelope
+    covering every supported instrument (AUDIT-C=3 through MDQ=13);
     a tighter check needs to know the instrument value, which
     Pydantic field validators can't see in a clean way.
 
@@ -129,10 +149,18 @@ class AssessmentRequest(BaseModel):
     positive item 6 (past suicidal behavior) escalates to acute T3.
     Default ``None`` means 'not supplied' — the scorer treats that
     as False (historic), producing a moderate band rather than acute.
+
+    ``concurrent_symptoms`` and ``functional_impairment`` are MDQ-only
+    — Parts 2 and 3 of the Hirschfeld 2000 instrument.  Both are
+    *required* to score MDQ; the dispatch layer raises 422 if either
+    is missing when ``instrument == "mdq"``.  A partial MDQ submission
+    would silently produce ``negative_screen`` regardless of Part 1,
+    so surfacing the gap explicitly at the wire boundary is the right
+    clinical posture.
     """
 
     instrument: Instrument
-    items: list[int] = Field(min_length=3, max_length=10)
+    items: list[int] = Field(min_length=3, max_length=13)
     sex: Sex | None = Field(
         default=None,
         description="AUDIT-C only; ignored by other instruments.",
@@ -142,6 +170,21 @@ class AssessmentRequest(BaseModel):
         description=(
             "C-SSRS only; whether item 6 (past behavior) was within the "
             "past 3 months.  Drives T3 escalation for item 6 positives."
+        ),
+    )
+    concurrent_symptoms: bool | None = Field(
+        default=None,
+        description=(
+            "MDQ only; Part 2 — whether several Part 1 items co-occurred "
+            "in the same period.  Required when instrument == 'mdq'."
+        ),
+    )
+    functional_impairment: ImpairmentLevel | None = Field(
+        default=None,
+        description=(
+            "MDQ only; Part 3 — one of 'none'/'minor'/'moderate'/'serious'. "
+            "Required when instrument == 'mdq'.  Only 'moderate' or "
+            "'serious' satisfies the Hirschfeld 2000 positive-screen gate."
         ),
     )
     user_id: str | None = Field(
@@ -304,15 +347,51 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=p.instrument_version,
         )
-    # dast10
-    d = score_dast10(payload.items)
+    if payload.instrument == "dast10":
+        d = score_dast10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="dast10",
+            total=d.total,
+            severity=d.band,
+            requires_t3=False,
+            instrument_version=d.instrument_version,
+        )
+    # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
+    # (concurrent_symptoms) and Part 3 (functional_impairment) are
+    # required.  Raise MdqInvalid here (translated to 422 at the HTTP
+    # layer) rather than forwarding partial input to the scorer — the
+    # scorer's own strict-bool / strict-str checks would reject with a
+    # less diagnostic message, and silently defaulting to False / "none"
+    # would produce a misleading negative_screen.
+    if payload.concurrent_symptoms is None:
+        raise MdqInvalid(
+            "MDQ requires concurrent_symptoms (Part 2 yes/no) — "
+            "omit instrument=mdq or supply the field"
+        )
+    if payload.functional_impairment is None:
+        raise MdqInvalid(
+            "MDQ requires functional_impairment (Part 3: one of "
+            "'none'/'minor'/'moderate'/'serious')"
+        )
+    m = score_mdq(
+        payload.items,
+        concurrent_symptoms=payload.concurrent_symptoms,
+        functional_impairment=payload.functional_impairment,
+    )
+    # ``total`` carries the positive-item count (0-13) — the closest
+    # single-number analogue, and the value the FHIR Observation
+    # emits as ``valueInteger``.  ``severity`` is the three-gate
+    # outcome so the response shape is uniform with AUDIT-C's
+    # positive/negative screen semantic.
     return AssessmentResult(
         assessment_id=str(uuid4()),
-        instrument="dast10",
-        total=d.total,
-        severity=d.band,
+        instrument="mdq",
+        total=m.positive_count,
+        severity="positive_screen" if m.positive_screen else "negative_screen",
         requires_t3=False,
-        instrument_version=d.instrument_version,
+        positive_screen=m.positive_screen,
+        instrument_version=m.instrument_version,
     )
 
 
@@ -404,6 +483,7 @@ async def submit_assessment(
         CssrsInvalid,
         Pss10Invalid,
         Dast10Invalid,
+        MdqInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
@@ -467,6 +547,8 @@ def _persist_record(
         instrument_version=result.instrument_version,
         sex=payload.sex,
         behavior_within_3mo=payload.behavior_within_3mo,
+        concurrent_symptoms=payload.concurrent_symptoms,
+        functional_impairment=payload.functional_impairment,
     )
     repo.save(record)
 

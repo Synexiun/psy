@@ -39,6 +39,13 @@ LOINC_CODES: dict[str, str] = {
     "dast10": "82667-7",
     "who5": "89708-7",
     "pss10": "93038-1",
+    # MDQ carries a published panel code (71354-5) for the Mood Disorder
+    # Questionnaire; the emitted ``valueInteger`` is the ``positive_count``
+    # (0-13), not a "total score" in the PHQ-9 sense.  LOINC's MDQ panel
+    # entry is the correct landing point — receiving systems reading the
+    # integer plus the MDQ LOINC code know to interpret it as an endorsed-
+    # item count, not a severity sum.
+    "mdq": "71354-5",
 }
 
 LOINC_DISPLAY: dict[str, str] = {
@@ -49,6 +56,7 @@ LOINC_DISPLAY: dict[str, str] = {
     "dast10": "Drug Abuse Screening Test 10 item (DAST-10) total score",
     "who5": "WHO-5 Well-Being Index total score",
     "pss10": "Perceived Stress Scale 10 item (PSS-10) total score",
+    "mdq": "Mood Disorder Questionnaire (MDQ) positive item count",
 }
 
 # HL7 v3 terminology URIs — pinned as constants so callers (and tests) can

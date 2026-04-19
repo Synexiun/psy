@@ -60,7 +60,8 @@ class AssessmentRecord:
     without consulting a second source of truth.
 
     ``raw_items`` and the per-instrument context fields (``sex``,
-    ``behavior_within_3mo``) are retained so the Sprint 24
+    ``behavior_within_3mo``, ``concurrent_symptoms``,
+    ``functional_impairment``) are retained so the Sprint 24
     single-Observation GET can reconstruct the full event; the
     ``/history`` endpoint does NOT expose ``raw_items`` — that's a
     PHI-boundary response-shape choice, not a storage choice.
@@ -86,6 +87,15 @@ class AssessmentRecord:
     instrument_version: str | None = None
     sex: str | None = None
     behavior_within_3mo: bool | None = None
+    # MDQ Part 2 — yes/no concurrent-symptoms gate.  Stored verbatim so a
+    # clinician reviewing the record can re-derive the positive_screen
+    # decision without trusting the aggregate.
+    concurrent_symptoms: bool | None = None
+    # MDQ Part 3 — one of "none"/"minor"/"moderate"/"serious".  Stored as
+    # the canonical categorical label (not a bool collapsed on the
+    # moderate-or-serious gate) so a future FHIR re-render can preserve
+    # the full ordinal distinction.
+    functional_impairment: str | None = None
 
 
 class InMemoryAssessmentRepository:
