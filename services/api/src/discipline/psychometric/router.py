@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS, SCOFF.
+ACEs, PGSI, BRS, SCOFF, PANAS-10.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -976,6 +976,53 @@ Safety routing:
   is locale-agnostic (only sees the yes/no response); the
   administration-UI must present the culturally-appropriate
   translation.  See ``scoring/scoff.py``.
+- PANAS-10 (Thompson 2007 I-PANAS-SF): 10 items, 1-5 Likert.
+  The International Positive and Negative Affect Schedule Short
+  Form — cross-cultural derivation of the 20-item PANAS
+  (Watson, Clark & Tellegen 1988).  Thompson 2007 JCCP 38(2):
+  227-242 established configural + metric + scalar measurement
+  invariance across 8 cultural groups (n = 1,789), making the
+  I-PANAS-SF the PANAS variant of record for the Discipline OS
+  four-locale launch.  Fills the **positive/negative affect
+  dimension gap** — every prior instrument targets a specific
+  syndrome or construct; none measure the orthogonal PA / NA
+  affect dimensions that Watson & Clark's tripartite model
+  (Clark & Watson 1991 JAP) identifies as the core discriminator
+  between anxiety and depression.  PA deficit is depression-
+  specific (anhedonia); NA elevation is the shared general-
+  distress dimension.  Clinically load-bearing for: (1)
+  intervention matching (low PA + high NA → behavioral
+  activation per Martell 2010 / Dimidjian 2006; normal PA +
+  high NA → unified protocol per Barlow 2011 or ACT per Hayes
+  2012; low PA + normal NA → positive-affect treatment per
+  Craske 2019); (2) differential diagnosis (PHQ-9+ without
+  PANAS PA deficit suggests somatic-driven positivity rather
+  than core anhedonic depression); (3) trajectory monitoring
+  (Watson 1988 §3: PA is more state-sensitive than NA — PA
+  responds to intervention faster, forming the earlier treatment-
+  response marker).  **Novel wire envelope** — PANAS-10 is the
+  platform's FIRST bidirectional-subscales instrument with no
+  canonical aggregate total.  Watson 1988 and Tellegen 1999
+  established PA and NA as ORTHOGONAL affect-circumplex
+  dimensions; summing them is a category error.  The platform
+  resolves this via: ``total`` = PA subscale sum (5-25, not a
+  composite) chosen as the primary because PA is the more
+  clinically discriminating dimension per tripartite-model
+  priority (Clark & Watson 1991; Craske 2019); ``subscales``
+  dict carries both ``"positive_affect"`` and ``"negative_affect"``
+  sums (5-25 each).  CLINICIANS MUST READ BOTH SUBSCALES — the
+  total alone is insufficient to distinguish depression-,
+  anxiety-, anhedonia-, or flourishing-dominant profiles.
+  ``severity`` = literal sentinel ``"continuous"`` — Thompson
+  2007 did not publish banded severity cutpoints; Crawford &
+  Henry 2004 UK norms (PA 32.1 ±6.8, NA 14.8 ±5.3 on 10-50
+  scale; 16.05 ±3.4 and 7.40 ±2.65 on 5-25 scale equivalents)
+  are descriptive distributions, not clinical bands.  Hand-
+  rolling bands violates CLAUDE.md.  No reverse-keying (items
+  within each subscale are valence-aligned per Watson 1988 §2).
+  No T3 — item 1 "upset" is general NA, NOT suicidal ideation.
+  Acute-risk screening stays on C-SSRS / PHQ-9 item 9.  See
+  ``scoring/panas10.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1100,6 +1147,11 @@ from .scoring.pacs import (
     InvalidResponseError as PacsInvalid,
     score_pacs,
 )
+from .scoring.panas10 import (
+    InvalidResponseError as Panas10Invalid,
+    PANAS10_SUBSCALES,
+    score_panas10,
+)
 from .scoring.pcl5 import (
     InvalidResponseError as Pcl5Invalid,
     score_pcl5,
@@ -1221,6 +1273,7 @@ Instrument = Literal[
     "pgsi",
     "brs",
     "scoff",
+    "panas10",
 ]
 
 
@@ -1272,6 +1325,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "pgsi": 9,
     "brs": 6,
     "scoff": 5,
+    "panas10": 10,
 }
 
 
@@ -3247,6 +3301,90 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             cutoff_used=SCOFF_POSITIVE_CUTOFF,
             instrument_version=sc.instrument_version,
         )
+    if payload.instrument == "panas10":
+        # Thompson 2007 I-PANAS-SF — 10-item cross-cultural PANAS
+        # short form.  Fills the platform's **positive / negative
+        # affect dimension gap** — every prior instrument targets
+        # a specific syndrome or construct; none measure the
+        # orthogonal PA / NA affect dimensions that the tripartite
+        # model (Clark & Watson 1991 JAP; Watson, Clark & Carey
+        # 1988 JAP) identifies as the core discriminator between
+        # anxiety and depression.  PA deficit is depression-
+        # specific (anhedonia, diminished engagement); NA
+        # elevation is the shared general-distress dimension.
+        # Clinical load-bearing use of the PA/NA split:
+        #   - Intervention matching:
+        #       low PA + high NA (classic depression) →
+        #         behavioral activation (Martell 2010; Dimidjian
+        #         2006) targeting the PA deficit via scheduled
+        #         positive-reinforcement contact;
+        #       normal PA + high NA (anxiety-dominant) →
+        #         unified protocol (Barlow 2011) / ACT (Hayes
+        #         2012) targeting NA regulation without PA
+        #         manipulation;
+        #       low PA + normal NA (anhedonia-dominant without
+        #         anxious distress) →
+        #         positive-affect treatment (Craske 2019 reward-
+        #         sensitivity training).
+        #   - Differential diagnosis: PHQ-9 positive WITHOUT PANAS
+        #     PA deficit suggests PHQ-9 positivity is being
+        #     driven by somatic items (sleep / appetite / fatigue)
+        #     rather than core anhedonic depression — worth
+        #     investigating medical contributors (Pressman &
+        #     Cohen 2005).
+        #   - Trajectory monitoring: Watson 1988 §3 reported PA
+        #     is more state-sensitive than NA — PA responds to
+        #     intervention faster; PA change-signal is the
+        #     earlier detector of treatment response.
+        # **Novel wire envelope** — PANAS-10 is the platform's
+        # FIRST bidirectional-subscales instrument with no
+        # canonical aggregate total.  Watson 1988 and Tellegen
+        # 1999 established PA and NA as ORTHOGONAL affect-
+        # circumplex dimensions; summing them would collapse
+        # two independent clinical signals into one (a category
+        # error that contradicts the factor structure the
+        # instrument was engineered to provide).  The platform
+        # resolves this via:
+        #   - total = pa_sum (5-25).  Not a composite.  PA is
+        #     chosen as the primary per tripartite-model
+        #     intervention-matching priority — PA deficit is
+        #     depression-specific; NA elevation is non-specific
+        #     distress (Clark & Watson 1991; Craske 2019).
+        #   - subscales = {"positive_affect": pa_sum,
+        #                  "negative_affect": na_sum} preserves
+        #     both orthogonal dimensions.  Clinicians MUST read
+        #     both subscales via the subscales dict — the total
+        #     alone is insufficient to distinguish depression-,
+        #     anxiety-, anhedonia-, or flourishing-dominant
+        #     profiles (see scoring/panas10.py module docstring
+        #     for worked examples).
+        #   - severity = "continuous" sentinel — Thompson 2007
+        #     did not publish banded severity cutpoints;
+        #     Crawford & Henry 2004 UK norms (PA 32.1 ±6.8, NA
+        #     14.8 ±5.3 on 10-50 scale; 16.05 ±3.4 and 7.40
+        #     ±2.65 on 5-25 scale) are descriptive distributions,
+        #     not clinical bands.  Hand-rolling bands violates
+        #     CLAUDE.md.  Clinicians compare against the
+        #     normative distribution via RCI / percentile
+        #     machinery downstream.
+        # No T3 — PANAS-10 probes affect dimensions, not
+        # suicidality.  Item 1 "upset" is general negative
+        # affect per Watson 1988 item derivation, NOT suicidal
+        # ideation.  Acute-risk screening stays on C-SSRS /
+        # PHQ-9 item 9.  See ``scoring/panas10.py``.
+        p = score_panas10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="panas10",
+            total=p.pa_sum,
+            severity="continuous",
+            requires_t3=False,
+            subscales={
+                PANAS10_SUBSCALES[0]: p.pa_sum,
+                PANAS10_SUBSCALES[1]: p.na_sum,
+            },
+            instrument_version=p.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3409,6 +3547,7 @@ async def submit_assessment(
         PgsiInvalid,
         BrsInvalid,
         ScoffInvalid,
+        Panas10Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

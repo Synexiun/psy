@@ -14092,6 +14092,524 @@ class TestScoffRouting:
 
 
 # =============================================================================
+# PANAS-10 (I-PANAS-SF) routing — Thompson 2007
+# =============================================================================
+
+
+class TestPanas10Routing:
+    """End-to-end routing tests for the PANAS-10 dispatcher branch.
+
+    Thompson 2007 I-PANAS-SF — 10-item cross-cultural derivation
+    of the 20-item PANAS (Watson, Clark & Tellegen 1988).  Validated
+    configural + metric + scalar measurement invariance across 8
+    cultural groups (n = 1,789).
+
+    **First bidirectional-subscales instrument on the platform.**
+    The wire envelope pins:
+    - ``total`` = PA subscale sum (5-25) — the primary per
+      tripartite-model intervention-matching priority (PA deficit
+      is depression-specific; NA elevation is non-specific
+      distress).
+    - ``subscales`` = {"positive_affect": pa_sum,
+                       "negative_affect": na_sum} — clinicians
+      must read both dimensions; the total alone is
+      insufficient.
+    - ``severity`` = "continuous" — Thompson 2007 did not
+      publish banded cutpoints; Crawford & Henry 2004 norms are
+      descriptive distributions, not clinical bands.
+    - No ``positive_screen`` / ``cutoff_used`` — PANAS-10 is not
+      a screen.
+    - ``requires_t3`` always False — item 1 "upset" is general
+      NA (Watson 1988 derivation), NOT suicidal ideation.  Acute-
+      risk stays on C-SSRS / PHQ-9 item 9.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # ---- Dispatch contract ----
+
+    def test_all_ones_pa_and_na_both_five(
+        self, client: TestClient
+    ) -> None:
+        """Minimum endorsement on all items — PA = 5, NA = 5.
+        Total (= PA) = 5."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [1] * 10},
+            headers=self._headers("panas10-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "panas10"
+        assert body["total"] == 5
+        assert body["subscales"] == {
+            "positive_affect": 5,
+            "negative_affect": 5,
+        }
+        assert body["severity"] == "continuous"
+
+    def test_all_fives_pa_and_na_both_twentyfive(
+        self, client: TestClient
+    ) -> None:
+        """Maximum endorsement — PA = 25, NA = 25.  Total = 25.
+        Tellegen 1999 orthogonality permits this configuration
+        (high-arousal / high-engagement — NOT inconsistent)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [5] * 10},
+            headers=self._headers("panas10-max"),
+        )
+        body = response.json()
+        assert body["total"] == 25
+        assert body["subscales"] == {
+            "positive_affect": 25,
+            "negative_affect": 25,
+        }
+        assert body["severity"] == "continuous"
+
+    def test_flourishing_profile_high_pa_low_na(
+        self, client: TestClient
+    ) -> None:
+        """Pressman & Cohen 2005 health-protective signature —
+        high PA + low NA.  PA items (3, 5, 7, 8, 10) -> 5; NA
+        items (1, 2, 4, 6, 9) -> 1.  pa_sum 25, na_sum 5."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [1, 1, 5, 1, 5, 1, 5, 5, 1, 5],
+            },
+            headers=self._headers("panas10-flourishing"),
+        )
+        body = response.json()
+        assert body["total"] == 25
+        assert body["subscales"]["positive_affect"] == 25
+        assert body["subscales"]["negative_affect"] == 5
+
+    def test_classic_depression_profile_low_pa_high_na(
+        self, client: TestClient
+    ) -> None:
+        """Clark & Watson 1991 canonical depression signature —
+        low PA + high NA.  pa_sum 5, na_sum 25.  Routes
+        downstream to behavioral activation (Martell 2010)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [5, 5, 1, 5, 1, 5, 1, 1, 5, 1],
+            },
+            headers=self._headers("panas10-depression"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["subscales"]["positive_affect"] == 5
+        assert body["subscales"]["negative_affect"] == 25
+
+    def test_pure_anxiety_profile_normal_pa_high_na(
+        self, client: TestClient
+    ) -> None:
+        """Pure-anxiety signature — normal PA + high NA.  Clark
+        & Watson 1991 emphasis: NA elevation is NON-specific
+        (shared with depression); normal PA DISCRIMINATES from
+        depression.  pa_sum 15, na_sum 25."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [5, 5, 3, 5, 3, 5, 3, 3, 5, 3],
+            },
+            headers=self._headers("panas10-anxiety"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["subscales"]["positive_affect"] == 15
+        assert body["subscales"]["negative_affect"] == 25
+
+    def test_anhedonia_dominant_profile_low_pa_normal_na(
+        self, client: TestClient
+    ) -> None:
+        """Pure anhedonia without anxious distress — Craske 2019
+        positive-affect-treatment target profile.  pa_sum 5,
+        na_sum 15.  Important: invisible on a PHQ-9 if somatic
+        items are low — PANAS detects it via PA deficit."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [3, 3, 1, 3, 1, 3, 1, 1, 3, 1],
+            },
+            headers=self._headers("panas10-anhedonia"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        assert body["subscales"]["positive_affect"] == 5
+        assert body["subscales"]["negative_affect"] == 15
+
+    def test_euthymic_baseline_profile(
+        self, client: TestClient
+    ) -> None:
+        """Middle-of-scale — Crawford & Henry 2004 normative-
+        range analog.  pa_sum 15, na_sum 15."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-baseline"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["subscales"] == {
+            "positive_affect": 15,
+            "negative_affect": 15,
+        }
+
+    # ---- Envelope shape ----
+
+    def test_total_equals_pa_sum_not_composite(
+        self, client: TestClient
+    ) -> None:
+        """Critical invariant: the wire total is PA subscale sum,
+        NOT a PA-NA composite (would contradict Watson 1988 /
+        Tellegen 1999 orthogonality) and NOT a PA+NA sum (would
+        collapse the two dimensions clinicians need separated).
+
+        Depression profile pa_sum=5, na_sum=25:
+          total must be 5, NOT 30 (would be sum), NOT -20 (would
+          be difference)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [5, 5, 1, 5, 1, 5, 1, 1, 5, 1],
+            },
+            headers=self._headers("panas10-total-is-pa"),
+        )
+        body = response.json()
+        assert body["total"] == 5
+        # Guard against accidental composite formulas.
+        assert body["total"] != 30  # not pa_sum + na_sum
+        assert body["total"] != 20  # not na_sum - pa_sum
+        assert body["total"] == body["subscales"]["positive_affect"]
+
+    def test_subscales_dict_carries_both_keys(
+        self, client: TestClient
+    ) -> None:
+        """Wire contract: subscales dict must contain BOTH
+        positive_affect and negative_affect.  Clinicians rely on
+        both keys being present — a missing key would silently
+        hide half the clinical signal."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-subscales-both"),
+        )
+        body = response.json()
+        subscales = body["subscales"]
+        assert "positive_affect" in subscales
+        assert "negative_affect" in subscales
+        assert len(subscales) == 2
+
+    def test_severity_is_continuous_sentinel(
+        self, client: TestClient
+    ) -> None:
+        """Thompson 2007 did not publish banded severity.  The
+        wire severity is the literal "continuous" sentinel —
+        uniform with PACS / VAS / Ruler / DTCQ-8 / DERS-16 /
+        CD-RISC-10 / PSWQ / LOT-R."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-continuous"),
+        )
+        body = response.json()
+        assert body["severity"] == "continuous"
+
+    def test_no_positive_screen_field(
+        self, client: TestClient
+    ) -> None:
+        """PANAS-10 is not a screen — no positive_screen field
+        on the response."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-no-screen"),
+        )
+        body = response.json()
+        assert body.get("positive_screen") is None
+
+    def test_no_cutoff_used_field(self, client: TestClient) -> None:
+        """No operating point — no cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-no-cutoff"),
+        )
+        body = response.json()
+        assert body.get("cutoff_used") is None
+
+    def test_no_triggering_items_field(
+        self, client: TestClient
+    ) -> None:
+        """Triggering_items is C-SSRS / ASRS-6 specific."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-no-trigitems"),
+        )
+        body = response.json()
+        assert body.get("triggering_items") in (None, [])
+
+    def test_instrument_version_field(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-version"),
+        )
+        body = response.json()
+        assert body["instrument_version"] == "panas10-1.0.0"
+
+    # ---- Orthogonality at the wire level ----
+
+    def test_raising_na_position_does_not_change_total(
+        self, client: TestClient
+    ) -> None:
+        """Watson 1988 / Tellegen 1999 orthogonality at the wire
+        layer: raising an NA-position response must NOT change
+        the total (= PA sum).  If it did, it would mean the
+        envelope was accidentally emitting a composite."""
+        # Baseline: all 3s.  pa_sum 15, na_sum 15, total 15.
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-ortho-base"),
+        ).json()
+        assert base["total"] == 15
+
+        # Raise position 1 (NA) to 5.  pa_sum unchanged; na_sum
+        # rises from 15 to 17.
+        perturbed = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [5, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("panas10-ortho-na"),
+        ).json()
+        assert perturbed["total"] == 15  # PA unchanged
+        assert (
+            perturbed["subscales"]["negative_affect"]
+            == base["subscales"]["negative_affect"] + 2
+        )
+
+    def test_raising_pa_position_changes_total_not_na(
+        self, client: TestClient
+    ) -> None:
+        """Reverse of the orthogonality test: raising a PA
+        position changes the total (= PA sum), but NOT the NA
+        subscale."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 10},
+            headers=self._headers("panas10-ortho-pa-base"),
+        ).json()
+        perturbed = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [3, 3, 5, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("panas10-ortho-pa"),
+        ).json()
+        # Position 3 is PA.  pa_sum 15 -> 17; na_sum unchanged at 15.
+        assert perturbed["total"] == base["total"] + 2
+        assert (
+            perturbed["subscales"]["negative_affect"]
+            == base["subscales"]["negative_affect"]
+        )
+
+    # ---- Position -> subscale wire pinning ----
+
+    @pytest.mark.parametrize(
+        "position_1, expected_subscale_key",
+        [
+            (1, "negative_affect"),   # Upset
+            (2, "negative_affect"),   # Hostile
+            (3, "positive_affect"),   # Alert
+            (4, "negative_affect"),   # Ashamed
+            (5, "positive_affect"),   # Inspired
+            (6, "negative_affect"),   # Nervous
+            (7, "positive_affect"),   # Determined
+            (8, "positive_affect"),   # Attentive
+            (9, "negative_affect"),   # Afraid
+            (10, "positive_affect"),  # Active
+        ],
+    )
+    def test_position_routes_to_expected_subscale_at_wire(
+        self,
+        client: TestClient,
+        position_1: int,
+        expected_subscale_key: str,
+    ) -> None:
+        """Pin each Thompson 2007 position's subscale membership
+        AT THE WIRE LEVEL.  A routing-layer bug that mis-assembled
+        the subscales dict would be caught here even if the scorer
+        itself were correct."""
+        items = [1] * 10
+        items[position_1 - 1] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": items},
+            headers=self._headers(f"panas10-pos-{position_1}"),
+        )
+        body = response.json()
+        expected_sum = 9  # baseline 5 (= 5 * 1) + (5 - 1) = 9
+        other_sum = 5  # unchanged
+        other_key = (
+            "negative_affect"
+            if expected_subscale_key == "positive_affect"
+            else "positive_affect"
+        )
+        assert body["subscales"][expected_subscale_key] == expected_sum, (
+            f"position {position_1} should raise {expected_subscale_key}"
+        )
+        assert body["subscales"][other_key] == other_sum, (
+            f"position {position_1} leaked into {other_key}"
+        )
+
+    # ---- Safety routing ----
+
+    def test_never_requires_t3_even_at_max_na(
+        self, client: TestClient
+    ) -> None:
+        """PANAS-10 probes affect dimensions, not suicidality.
+        Even the classic-depression profile (max NA, min PA)
+        does NOT emit T3.  Clinicians follow up with C-SSRS /
+        PHQ-9 item 9 — the PANAS does not carry that signal."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [5, 5, 1, 5, 1, 5, 1, 1, 5, 1],
+            },
+            headers=self._headers("panas10-no-t3-dep"),
+        )
+        body = response.json()
+        assert body["subscales"]["negative_affect"] == 25
+        assert body["requires_t3"] is False
+
+    def test_item_1_upset_no_safety_routing(
+        self, client: TestClient
+    ) -> None:
+        """Item 1 "upset" is general NA per Watson 1988 item
+        derivation, NOT suicidal ideation.  Maximum endorsement
+        of item 1 alone — no T3."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [5, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+            },
+            headers=self._headers("panas10-no-t3-upset"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_max_all_items_never_requires_t3(
+        self, client: TestClient
+    ) -> None:
+        """Hyperarousal profile — max on both subscales.  Still
+        no T3.  Orthogonality permits this configuration."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [5] * 10},
+            headers=self._headers("panas10-no-t3-max"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    # ---- Item-count validation ----
+
+    def test_item_count_nine_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone confuses PANAS-10 (10) with PHQ-9 (9)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 9},
+            headers=self._headers("panas10-9-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_eleven_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 11},
+            headers=self._headers("panas10-11-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_twenty_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone submits the 20-item parent PANAS (Watson
+        1988) to the short-form endpoint.  Must fail loud."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "panas10", "items": [3] * 20},
+            headers=self._headers("panas10-20-items"),
+        )
+        assert response.status_code == 422
+
+    # ---- Item-value validation (strict 1-5 Likert) ----
+
+    def test_item_value_zero_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone uses a 0-4 scale (PHQ-9-style) on a 1-5
+        instrument."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [0, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("panas10-zero-val"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_six_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [6, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("panas10-six-val"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "panas10",
+                "items": [-1, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("panas10-neg-val"),
+        )
+        assert response.status_code == 422
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 
