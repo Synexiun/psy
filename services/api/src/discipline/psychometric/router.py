@@ -2,7 +2,8 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS.
+CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
+ACEs.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -758,6 +759,89 @@ Safety routing:
   LOT-R / DTCQ-8 / BRS / SCS-SF total).  No T3 — the 15 items
   probe attentional default patterns; none probe suicidality.
   See ``scoring/maas.py``.
+- SHAPS (Snaith 1995): 14 items, 1-4 Likert (Strongly Disagree
+  to Strongly Agree).  Measures **anhedonia** — the capacity
+  to experience pleasure from normally-rewarding activities.
+  Unidimensional per Franken 2007 PCA / Leventhal 2006 CFA /
+  Nakonezny 2010 IRT.  The platform's primary hedonic-reactivity
+  signal — anhedonia is a prospective SUD-relapse predictor
+  independent of depressed mood (Garfield 2014 systematic
+  review; Koob 2008 opponent-process / stress-surfeit theory)
+  and the indication for behavioral-activation-augmented
+  intervention (Daughters 2008 LETS ACT; Magidson 2011) rather
+  than MBRP / CBT alone.  **Novel wire shape on this platform**:
+  first scorer whose stored ``total`` is NOT a linear function
+  of the raw per-item input.  Snaith 1995 dichotomizes raw 1-4
+  BEFORE summation — raw 1/2 → 0 (hedonic response), raw 3/4 →
+  1 (anhedonic response); ``total`` is a count of anhedonic
+  items, 0-14.  The raw 1-4 input is preserved verbatim in the
+  scorer's ``items`` tuple so FHIR export and Franken 2007
+  continuous-alternative consumers can recover the original
+  response without re-acquiring data.  **Cutoff envelope** —
+  ``total >= 3`` per Snaith 1995 §Results (sensitivity 0.77 /
+  specificity 0.82 against MINI depression per Franken 2007).
+  Wire shape matches OCI-R / MDQ / PC-PTSD-5 / AUDIT-C:
+  severity carries the positive/negative_screen string,
+  positive_screen field carries the bool, cutoff_used field
+  carries the integer 3.  Higher-is-worse direction (same as
+  PHQ-9 / GAD-7 / PSS-10 / K6).  No T3 — the 14 items probe
+  hedonic capacity; phenomenological closeness to severe-
+  depression suicidality (Fawcett 1990) is handled at the
+  PROFILE level (SHAPS + PHQ-9 + C-SSRS), not via per-item
+  SHAPS content triggering T3.  See ``scoring/shaps.py``.
+- ACEs (Felitti 1998): 10 items, BINARY (0 = No / 1 = Yes).
+  The **etiological-stratification** instrument.  Measures
+  **cumulative adversity exposure before age 18** across 10
+  categories (emotional / physical / sexual abuse, emotional /
+  physical neglect, witnessing maternal violence, household
+  substance abuse, household mental illness, parental
+  separation, incarcerated household member).  Total is a
+  straight sum, 0-10.  Felitti 1998 §Results established the
+  dose-response relationship between ACE count and essentially
+  every major adult health outcome — ACE >= 4 = 4.7× alcoholism
+  risk, 10.3× injection drug use risk, 2.5× adult suicide-
+  attempt risk vs ACE = 0.  Hughes 2017 international meta-
+  analysis (n = 253,719, 37 studies) replicated: ACE >= 4 =
+  7.4× problem drinking / 10.2× problem drug use.  The platform
+  uses ACE score at enrollment to stratify treatment sequencing:
+  ACE >= 4 routes to **trauma-informed-care (TIC) sequencing**
+  BEFORE standard CBT-based relapse-prevention (van der Kolk
+  2014; Briere 2012; Herman 1992 three-stage model).  **Novel
+  wire shape on this platform — TWO firsts**: (1) first BINARY-
+  item instrument (every prior scorer accepts a Likert range:
+  0-3 PHQ-9, 0-4 OCI-R, 1-4 SHAPS, 1-6 MAAS, 1-7 ERQ); the
+  validator rejects integers that are "in range" (2-10) but not
+  strictly 0/1.  (2) first RETROSPECTIVE instrument (every
+  prior scorer measures current state); ACEs measures lifetime
+  exposure before age 18 — a one-time-enrollment measurement
+  rather than a trajectory-tracking repeated measure (Felitti
+  1998 1.5-year test-retest r = 0.66 — re-administration is not
+  clinically meaningful).  Upstream trajectory logic handles the
+  one-time-only semantics; the scorer itself is stateless.
+  **Cutoff envelope** — ``total >= 4`` per Felitti 1998.  Wire
+  shape matches SHAPS / OCI-R / MDQ / PC-PTSD-5 / AUDIT-C:
+  severity carries the positive/negative_screen string,
+  positive_screen field carries the bool, cutoff_used field
+  carries ``ACES_POSITIVE_CUTOFF = 4``.  **No subscales** —
+  Dong 2004 factor-analyzed the 10 items and confirmed single-
+  factor structure at the total-score level, rejecting three-
+  subscale (abuse / neglect / household-dysfunction) models as
+  producing unstable per-domain cutoffs.  Surfacing a subscales
+  map on the wire would create the false impression of
+  validated per-domain cutoffs where only the total-score
+  cutoff is validated.  Higher-is-worse direction (same as
+  PHQ-9 / GAD-7 / SHAPS / PSS-10 / K6 — the trajectory RCI
+  direction logic must register ACEs alongside these, NOT
+  with WHO-5 / MAAS / CD-RISC-10).  No T3 — ACEs probes
+  retrospective childhood exposure, not current ideation.  A
+  patient with ACE = 10 carries elevated dispositional risk
+  across the lifespan but that is not time-limited current-
+  state crisis; acute-ideation screening stays on C-SSRS /
+  PHQ-9 item 9.  **Content-sensitivity**: items 1-3 (abuse)
+  and item 6 (maternal violence) require administration-UI
+  content warning, opt-out, and post-administration resources
+  — a UI-layer concern, NOT a scorer-layer concern.  See
+  ``scoring/aces.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -786,6 +870,11 @@ from .safety_items import evaluate_phq9
 from .scoring.aaq2 import (
     InvalidResponseError as Aaq2Invalid,
     score_aaq2,
+)
+from .scoring.aces import (
+    ACES_POSITIVE_CUTOFF,
+    InvalidResponseError as AcesInvalid,
+    score_aces,
 )
 from .scoring.asrs6 import (
     ASRS6_POSITIVE_CUTOFF,
@@ -981,6 +1070,7 @@ Instrument = Literal[
     "rrs10",
     "maas",
     "shaps",
+    "aces",
 ]
 
 
@@ -1028,6 +1118,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "rrs10": 10,
     "maas": 15,
     "shaps": 14,
+    "aces": 10,
 }
 
 
@@ -2683,6 +2774,81 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             cutoff_used=3,
             instrument_version=sh.instrument_version,
         )
+    if payload.instrument == "aces":
+        # Felitti 1998 Adverse Childhood Experiences Questionnaire —
+        # 10-item binary lifetime-exposure count.  THE etiological-
+        # stratification instrument: every other instrument the
+        # platform ships measures a current state (past 2 weeks for
+        # PHQ-9, past week for SHAPS, dispositional-current for MAAS);
+        # ACEs measures lifetime exposure before age 18.  ACE >= 4 =
+        # 4.7x alcoholism risk / 10.3x IDU risk (Felitti 1998) and
+        # 7.4x problem drinking / 10.2x problem drug use in the
+        # Hughes 2017 meta-analysis (n = 253,719).  Used at enrollment
+        # to stratify treatment sequencing — ACE >= 4 routes to
+        # trauma-informed-care (TIC) sequencing BEFORE standard CBT-
+        # based relapse-prevention intervention (van der Kolk 2014;
+        # Briere 2012; Herman 1992 three-stage model).  Profile
+        # pairings with instruments already shipped:
+        #   - high ACE + positive SHAPS = developmental-anhedonia
+        #     profile (Anda 2006 reward-circuit hypofunction) → BA
+        #     + TIC, NOT mindfulness-only;
+        #   - high ACE + low MAAS = dissociative-attention profile
+        #     → grounding / sensory tools BEFORE open-awareness
+        #     meditation;
+        #   - high ACE + high DERS nonacceptance = chronic-
+        #     dysregulation profile → DBT skills-first (Linehan);
+        #   - high ACE + positive PCL-5 = chronic PTSD profile →
+        #     stabilization-phase before trauma-processing;
+        #   - high ACE + positive AUDIT-C/DUDIT = self-medication
+        #     profile (Khantzian 1997) → integrated trauma/SUD
+        #     treatment (Najavits 2002 Seeking Safety).
+        # **Novel wire shape on this platform**: first BINARY-item
+        # instrument — each item is 0 (No) or 1 (Yes); values in a
+        # plausible range (2-10) but not strictly binary are rejected
+        # at the scorer.  First RETROSPECTIVE instrument — lifetime
+        # exposure rather than current state; trajectory-layer treats
+        # ACEs specially as a one-time-enrollment measurement rather
+        # than a repeated trajectory measure (Felitti 1998 test-
+        # retest r = 0.66 at 1.5 years — re-administration is not
+        # clinically meaningful).  That upstream handling is not a
+        # scorer concern — the scorer is stateless.
+        # **Cutoff envelope** — ``total >= 4`` is the Felitti 1998
+        # §Results operating point.  Envelope matches SHAPS / OCI-R /
+        # MDQ / PC-PTSD-5 / AUDIT-C: severity carries the positive_
+        # screen / negative_screen string, positive_screen field
+        # carries the bool, cutoff_used field carries the integer 4
+        # so the clinician UI renders the same threshold the
+        # trajectory RCI layer uses.  No subscale surfacing — Dong
+        # 2004 rejected the three-subscale (abuse / neglect /
+        # dysfunction) model as producing unstable per-domain
+        # cutoffs; only total-score cutoff is validated.
+        # Higher-is-worse direction (same as PHQ-9 / GAD-7 / SHAPS /
+        # PSS-10 / K6) — rising total = more cumulative adversity;
+        # the trajectory RCI direction logic must register ACEs in
+        # the higher-is-worse partition, NOT with WHO-5 / MAAS / CD-
+        # RISC-10 (higher-is-better).
+        # No T3 — ACEs probes retrospective childhood exposure, not
+        # current ideation.  A patient with ACE = 10 carries elevated
+        # dispositional risk across the lifespan but that is not
+        # time-limited current-state crisis.  Acute ideation
+        # screening stays on C-SSRS / PHQ-9 item 9.  Content-
+        # sensitivity of items 1-3 (abuse) and item 6 (maternal
+        # violence) is handled by the administration UI (content
+        # warning, opt-out, post-administration resources), not the
+        # scorer.  See ``scoring/aces.py``.
+        ac = score_aces(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="aces",
+            total=ac.total,
+            severity=(
+                "positive_screen" if ac.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=ac.positive_screen,
+            cutoff_used=ACES_POSITIVE_CUTOFF,
+            instrument_version=ac.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2841,6 +3007,7 @@ async def submit_assessment(
         Rrs10Invalid,
         MaasInvalid,
         ShapsInvalid,
+        AcesInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

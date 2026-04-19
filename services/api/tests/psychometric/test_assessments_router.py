@@ -12635,6 +12635,447 @@ class TestShapsRouting:
         assert response.json()["instrument"] == "shaps"
 
 
+class TestAcesRouting:
+    """End-to-end routing tests for the ACEs dispatcher branch.
+
+    Felitti 1998 Adverse Childhood Experiences Questionnaire — 10
+    BINARY items, total 0-10, positive-screen cutoff >= 4.  Two novel
+    wire contributions on this platform:
+
+    1. First BINARY-item instrument.  Values must be strictly 0 or 1;
+       integers "in range" for a plausible range-check (2-10) are
+       rejected by the scorer.
+    2. First RETROSPECTIVE instrument — measures lifetime exposure
+       before age 18, not current state.  No acute-safety routing;
+       content-sensitive items (1-3, 6) handled by UI layer.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    def test_min_all_zeros_returns_total_0(
+        self, client: TestClient
+    ) -> None:
+        """ACE = 0: no adversity exposure, negative screen.  ~36% of
+        Felitti 1998 n = 17,337 Kaiser sample."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [0] * 10},
+            headers=self._headers("aces-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "aces"
+        assert body["total"] == 0
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_max_all_ones_returns_total_10(
+        self, client: TestClient
+    ) -> None:
+        """ACE = 10: every category endorsed.  Maximum adversity
+        exposure — positive screen with strongest dose-response
+        signal (Felitti 1998 table 4)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 10},
+            headers=self._headers("aces-max"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_cutoff_boundary_total_3_negative(
+        self, client: TestClient
+    ) -> None:
+        """Below-cutoff boundary on the wire.  3 endorsements — just
+        below Felitti 1998 ≥4 operating point.  A regression that
+        drifted the >= to > would miss this."""
+        items = [1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-boundary-3"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_cutoff_boundary_total_4_positive(
+        self, client: TestClient
+    ) -> None:
+        """At-cutoff boundary on the wire.  4 endorsements — exactly
+        Felitti 1998's operating point at which multiple adult-health
+        outcomes show >=4x relative risk vs ACE = 0."""
+        items = [1, 1, 1, 1, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-boundary-4"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 4
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_cutoff_used_is_4(self, client: TestClient) -> None:
+        """cutoff_used carries the Felitti 1998 >=4 integer on the
+        wire so the clinician UI renders the same threshold the
+        trajectory RCI layer uses."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 4 + [0] * 6},
+            headers=self._headers("aces-cutoff-used"),
+        )
+        assert response.status_code == 201
+        assert response.json()["cutoff_used"] == 4
+
+    def test_positive_screen_is_bool_not_int(
+        self, client: TestClient
+    ) -> None:
+        """positive_screen on the wire is a pure bool, not a truthy
+        int.  Downstream JSON consumers (Mobile RN / Next.js) rely on
+        strict bool for conditional rendering."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 10},
+            headers=self._headers("aces-pos-bool"),
+        )
+        body = response.json()
+        assert body["positive_screen"] is True
+        assert isinstance(body["positive_screen"], bool)
+
+    def test_no_subscales_on_wire(self, client: TestClient) -> None:
+        """Dong 2004 rejected three-subscale (abuse / neglect /
+        dysfunction) model.  Surfacing subscales on the wire would
+        create the false impression of validated per-domain cutoffs."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 10},
+            headers=self._headers("aces-no-subscales"),
+        )
+        body = response.json()
+        assert "subscales" not in body or body.get("subscales") is None
+
+    def test_severity_screen_shape(self, client: TestClient) -> None:
+        """severity carries the positive_screen / negative_screen
+        string — uniform with SHAPS / OCI-R / MDQ / PC-PTSD-5 /
+        AUDIT-C."""
+        neg = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [0] * 10},
+            headers=self._headers("aces-sev-neg"),
+        ).json()
+        pos = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 10},
+            headers=self._headers("aces-sev-pos"),
+        ).json()
+        assert neg["severity"] == "negative_screen"
+        assert pos["severity"] == "positive_screen"
+
+    def test_no_t3_at_max_adversity(self, client: TestClient) -> None:
+        """Even at ACE = 10, requires_t3 is False.  Retrospective
+        exposure is dispositional lifetime risk, not acute current-
+        state crisis.  Acute-ideation screening stays on C-SSRS /
+        PHQ-9 item 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 10},
+            headers=self._headers("aces-no-t3-max"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_no_t3_on_abuse_items(self, client: TestClient) -> None:
+        """Items 1-3 (abuse) are content-sensitive but retrospective.
+        No T3 routing even when all three abuse items are endorsed."""
+        items = [1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-abuse-no-t3"),
+        )
+        body = response.json()
+        assert body["requires_t3"] is False
+
+    def test_no_triggering_items_on_wire(
+        self, client: TestClient
+    ) -> None:
+        """No item on ACEs is a safety-triggering item; triggering_items
+        field is absent or None in the response."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [1] * 10},
+            headers=self._headers("aces-no-trig"),
+        )
+        body = response.json()
+        assert (
+            "triggering_items" not in body
+            or body.get("triggering_items") is None
+        )
+
+    def test_instrument_version_pinned(self, client: TestClient) -> None:
+        """instrument_version carries the scorer's pinned version
+        string for downstream FHIR Observation export."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [0] * 10},
+            headers=self._headers("aces-version"),
+        )
+        assert response.json()["instrument_version"] == "aces-1.0.0"
+
+    def test_item_count_validation_9_items_rejected(
+        self, client: TestClient
+    ) -> None:
+        """9 items — one short of Felitti 1998 structure.  Must 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [0] * 9},
+            headers=self._headers("aces-count-9"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_11_items_rejected(
+        self, client: TestClient
+    ) -> None:
+        """11 items — one over Felitti 1998 structure.  Must 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [0] * 11},
+            headers=self._headers("aces-count-11"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_validation_13_items_rejected(
+        self, client: TestClient
+    ) -> None:
+        """13 items — ACE-IQ expanded version has ~13 items; MDQ has
+        13 items.  Both must fail the strict ACEs 10-item count."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": [0] * 13},
+            headers=self._headers("aces-count-13"),
+        )
+        assert response.status_code == 422
+
+    def test_binary_range_value_2_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Novel wire pin: value 2 is "in range" for a loose 0-10
+        range-check but NOT binary.  Must 422.  A regression that
+        loosened to 0 <= v <= 10 would silently accept this."""
+        items = [0, 2, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-range-2"),
+        )
+        assert response.status_code == 422
+
+    def test_binary_range_value_3_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Value 3 is also rejected — not strictly binary."""
+        items = [3, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-range-3"),
+        )
+        assert response.status_code == 422
+
+    def test_binary_range_value_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Negative values rejected — not strictly binary."""
+        items = [-1, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-range-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_binary_range_value_10_rejected(
+        self, client: TestClient
+    ) -> None:
+        """Critical trap: value 10 would silently corrupt to a
+        ceiling total under a loose range-check.  Must 422."""
+        items = [10, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-range-10"),
+        )
+        assert response.status_code == 422
+
+    def test_item_position_each_contributes_1(
+        self, client: TestClient
+    ) -> None:
+        """Direction semantics on the wire — each item position adds
+        exactly 1 when endorsed.  Binary instrument, no weighting."""
+        for position in range(10):
+            items = [0] * 10
+            items[position] = 1
+            response = client.post(
+                "/v1/assessments",
+                json={"instrument": "aces", "items": items},
+                headers=self._headers(f"aces-pos-{position}"),
+            )
+            assert response.status_code == 201
+            body = response.json()
+            assert body["total"] == 1, (
+                f"position {position} did not contribute 1 (got "
+                f"{body['total']})"
+            )
+
+    def test_history_projection_includes_aces(
+        self, client: TestClient
+    ) -> None:
+        """ACEs submissions appear in /history with scored output
+        shape uniform with other cutoff-based instruments."""
+        user_id = "user-aces-history"
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aces",
+                "items": [1] * 10,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "aces-hist-1",
+                "X-User-Id": user_id,
+            },
+        )
+        response = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user_id},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] >= 1
+        aces_items = [
+            item for item in body["items"] if item["instrument"] == "aces"
+        ]
+        assert len(aces_items) >= 1
+        aces_entry = aces_items[0]
+        assert aces_entry["total"] == 10
+        assert aces_entry["positive_screen"] is True
+        assert aces_entry["cutoff_used"] == 4
+
+    def test_pydantic_coerces_json_bool_to_int(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON true/false to int 1/0 at the wire
+        layer — the scorer-level bool rejection (see test_aces_scoring)
+        pins Python-layer bool rejection, but the wire-layer Pydantic
+        coercion means a JSON ``true`` in items is accepted as
+        equivalent to ``1``.  This test documents that reality so a
+        future wire-layer stricter-validation refactor surfaces this
+        behavior change explicitly."""
+        items: list = [True, False, 0, 0, 0, 0, 0, 0, 0, 0]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "aces", "items": items},
+            headers=self._headers("aces-json-bool"),
+        )
+        assert response.status_code == 201
+        assert response.json()["total"] == 1
+
+    def test_coexists_with_shaps_and_maas(
+        self, client: TestClient
+    ) -> None:
+        """ACEs + SHAPS + MAAS — the emotional-architecture triad.
+        All three instruments route to distinct dispatcher branches
+        without interference.  Critical regression pin since ACEs
+        was inserted directly after SHAPS in the dispatch order."""
+        user_id = "user-triad"
+
+        ac = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aces",
+                "items": [1] * 4 + [0] * 6,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "triad-aces",
+                "X-User-Id": user_id,
+            },
+        )
+        sh = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "shaps",
+                "items": [3] * 14,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "triad-shaps",
+                "X-User-Id": user_id,
+            },
+        )
+        ma = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "maas",
+                "items": [1] * 15,
+                "user_id": user_id,
+            },
+            headers={
+                "Idempotency-Key": "triad-maas",
+                "X-User-Id": user_id,
+            },
+        )
+        assert ac.status_code == 201
+        assert sh.status_code == 201
+        assert ma.status_code == 201
+        assert ac.json()["instrument"] == "aces"
+        assert sh.json()["instrument"] == "shaps"
+        assert ma.json()["instrument"] == "maas"
+        assert ac.json()["positive_screen"] is True
+        assert sh.json()["positive_screen"] is True
+
+    def test_phq9_banded_unaffected(self, client: TestClient) -> None:
+        """After the ACEs branch was added to the dispatcher, PHQ-9
+        banded-severity routing must still work identically — pin
+        that the router insertion did not break any existing dispatch."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [3] * 9},
+            headers=self._headers("aces-phq9-check"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "phq9"
+        assert body["total"] == 27
+        assert body["severity"] == "severe"
+
+    def test_ignores_mdq_fields(self, client: TestClient) -> None:
+        """ACEs dispatch ignores MDQ-specific fields that might leak
+        through on a polymorphic client payload.  Pins that ACEs is
+        dispatched BEFORE the MDQ fallthrough."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "aces",
+                "items": [1] * 10,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+            },
+            headers=self._headers("aces-ignore-extra"),
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument"] == "aces"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
