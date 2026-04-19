@@ -4304,6 +4304,359 @@ class TestGad2Routing:
             assert r.positive_screen is True
 
 
+class TestOasisRouting:
+    """OASIS (Norman 2006 / Campbell-Sills 2009) router dispatch.
+
+    Wire contract invariants:
+    - Cutoff envelope (``severity = positive_screen / negative_screen``)
+      uniform with PHQ-2 / GAD-2 / PC-PTSD-5 / MDQ / AUDIT-C.
+    - Cutoff is ``>= 8`` (Campbell-Sills 2009).  Boundary 7/8 pinned.
+    - ``requires_t3`` is always False — OASIS has no safety item.
+    - ``subscales=None`` — Norman 2006 validates only the total (no
+      symptom / avoidance / impairment split).
+    """
+
+    def test_total_eight_at_cutoff_is_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """Total = 8 (items [2,2,2,1,1]) → positive.  This is the
+        exact Campbell-Sills 2009 operating point; a ``> 8``
+        comparator bug would flip this negative and under-identify
+        a large fraction of true cases."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 1, 1],
+                "user_id": "user-oasis-cutoff",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "oasis"
+        assert body["total"] == 8
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+        assert body["requires_t3"] is False
+
+    def test_total_seven_below_cutoff_is_negative_screen(
+        self, client: TestClient
+    ) -> None:
+        """Total = 7 (just below) → negative.  Campbell-Sills 2009
+        considered cutpoints 6 and 7 but selected 8 — the scorer and
+        router must encode the chosen operating point."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 1, 1, 1],
+                "user_id": "user-oasis-below",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 7
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+        assert body["requires_t3"] is False
+
+    def test_zero_total_is_negative_screen(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [0, 0, 0, 0, 0],
+                "user_id": "user-oasis-zero",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_max_total_is_positive_screen(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [4, 4, 4, 4, 4],
+                "user_id": "user-oasis-max",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 20
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_impairment_dominant_profile_crosses_cutoff(
+        self, client: TestClient
+    ) -> None:
+        """Low symptom intensity (items 1-2 = 1 each), strong
+        impairment (items 4-5 = 4 each), some avoidance (item 3 = 0)
+        → total = 10 → positive.  The "functional anxiety" profile —
+        this is OASIS's headline clinical contribution over GAD-7."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [1, 1, 0, 4, 4],
+                "user_id": "user-oasis-impairment",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 10
+        assert body["positive_screen"] is True
+
+    def test_positive_screen_does_not_fire_t3(
+        self, client: TestClient
+    ) -> None:
+        """Even at maximum severity, OASIS never fires T3.  The T3
+        pathway is reserved for active suicidality (PHQ-9 item 9 /
+        C-SSRS) per Docs/Whitepapers/04_Safety_Framework.md §T3.
+        Pins the safety-posture invariant."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [4, 4, 4, 4, 4],
+                "user_id": "user-oasis-no-t3",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["requires_t3"] is False
+        assert body.get("t3_reason") is None
+        assert body.get("triggering_items") is None
+
+    def test_emits_subscales_none(self, client: TestClient) -> None:
+        """OASIS emits ``subscales=None`` — Norman 2006's factor
+        analysis supports a single-factor structure.  Attempting to
+        split symptom (1-2) / avoidance (3) / impairment (4-5) into
+        subscales is unvalidated and not supported by the wire."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 2, 2],
+                "user_id": "user-oasis-subscales",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body.get("subscales") is None
+
+    def test_rejects_four_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 2],
+                "user_id": "user-oasis-bad-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_six_items(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 2, 2, 2],
+                "user_id": "user-oasis-bad-count",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_two_items_gad2_misroute(
+        self, client: TestClient
+    ) -> None:
+        """A 2-item submission with instrument=oasis is a mis-route
+        (likely from a GAD-2 / PHQ-2 client).  The 422 makes the
+        mis-routing obvious rather than silently returning a
+        sub-cutoff total."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [3, 3],
+                "user_id": "user-oasis-misroute",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_seven_items_gad7_misroute(
+        self, client: TestClient
+    ) -> None:
+        """A 7-item submission with instrument=oasis is a mis-routed
+        GAD-7.  Same diagnostic rationale as the GAD-2 mis-route
+        test."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [1, 1, 1, 1, 1, 1, 1],
+                "user_id": "user-oasis-misroute",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_out_of_range_item(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 2, 5],
+                "user_id": "user-oasis-bad-range",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_rejects_negative_item(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 2, -1],
+                "user_id": "user-oasis-bad-range",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 422
+
+    def test_persists_positive_screen_in_history(
+        self, client: TestClient
+    ) -> None:
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [3, 3, 2, 2, 2],
+                "user_id": "user-oasis-history",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+
+        repo = get_assessment_repository()
+        records = repo.history_for("user-oasis-history", limit=5)
+        assert len(records) == 1
+        r = records[0]
+        assert r.instrument == "oasis"
+        assert r.total == 12
+        assert r.positive_screen is True
+        assert r.requires_t3 is False
+
+    def test_history_projection_surfaces_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        """History endpoint returns the persisted positive_screen
+        boolean without re-scoring — pins the projection contract."""
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 1, 1],
+                "user_id": "user-oasis-projection",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": "user-oasis-projection"},
+        )
+        assert history.status_code == 200
+        items = history.json()["items"]
+        assert len(items) == 1
+        assert items[0]["instrument"] == "oasis"
+        assert items[0]["total"] == 8
+        assert items[0]["positive_screen"] is True
+
+    def test_ignores_mdq_only_fields(self, client: TestClient) -> None:
+        """OASIS submissions tolerate extra MDQ-only fields in the
+        payload (defensive — a client reusing a builder across
+        instruments shouldn't 422 on OASIS just because a
+        ``concurrent_symptoms`` key is still attached)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [2, 2, 2, 1, 1],
+                "user_id": "user-oasis-defensive",
+                "concurrent_symptoms": True,
+                "functional_impairment": "moderate",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 8
+        assert body["positive_screen"] is True
+
+    def test_oasis_and_gad7_coexist_on_same_user_timeline(
+        self, client: TestClient
+    ) -> None:
+        """OASIS + GAD-7 form the clinical-companion pair for
+        anxiety: GAD-7 indexes symptom severity (banded), OASIS
+        indexes impairment (cutoff).  A weekly anxiety check-in
+        submits both to the same user_id within seconds.  The
+        history must land both independently — a future
+        deduplication refactor cannot collapse them."""
+        from discipline.psychometric.repository import (
+            get_assessment_repository,
+        )
+
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "gad7",
+                "items": [3, 2, 2, 2, 2, 2, 2],
+                "user_id": "user-anxiety-weekly",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "oasis",
+                "items": [3, 3, 2, 2, 2],
+                "user_id": "user-anxiety-weekly",
+            },
+            headers={"Idempotency-Key": f"test-{uuid.uuid4()}"},
+        )
+        repo = get_assessment_repository()
+        records = repo.history_for("user-anxiety-weekly", limit=10)
+        assert len(records) == 2
+        instruments = {r.instrument for r in records}
+        assert instruments == {"gad7", "oasis"}
+        # OASIS ≥ 8 fires positive_screen; GAD-7 uses banded severity
+        # ("severe" at total=15, Spitzer 2006) so its positive_screen
+        # is None on the wire — pins the two-envelope-pattern
+        # coexistence.
+        by_instrument = {r.instrument: r for r in records}
+        assert by_instrument["oasis"].positive_screen is True
+        assert by_instrument["oasis"].total == 12
+        assert by_instrument["gad7"].total == 15
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================

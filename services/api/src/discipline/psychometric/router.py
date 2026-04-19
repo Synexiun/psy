@@ -1,7 +1,7 @@
 """Psychometric HTTP surface — PHQ-9, GAD-7, WHO-5, AUDIT, AUDIT-C,
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
-GAD-2.
+GAD-2, OASIS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -38,8 +38,8 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2 have no safety items — ``requires_t3``
-  is always False for these instruments.  WHO-5 ``depression_screen``
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS have no safety items —
+  ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
   screen is a referral signal for a bipolar-spectrum structured
@@ -149,6 +149,27 @@ Safety routing:
   neither does the full GAD-7 — so anxiety screens never fire T3.
   Acute ideation stays gated by PHQ-9 item 9 / C-SSRS per the
   uniform safety-posture convention.  See ``scoring/gad2.py``.
+  OASIS (Norman 2006 / Campbell-Sills 2009) is the 5-item Overall
+  Anxiety Severity And Impairment Scale — the first anxiety measure
+  in the package that explicitly indexes functional impairment
+  (avoidance + work/school + social) alongside symptom severity
+  (frequency + intensity).  Complementary to GAD-7 (which indexes
+  symptom severity only): a patient may screen GAD-7-negative but
+  OASIS-positive if their anxiety is "functional" (low-intensity,
+  high-cost), and vice versa — the two instruments deliberately
+  catch different presentations.  **No validated severity bands** —
+  Norman 2006 validates only the total score, and downstream
+  literature is uniform in reporting only the ``>= 8`` cutoff
+  (Campbell-Sills 2009).  **No subscale exposure** — Norman 2006's
+  factor analysis supports a single-factor structure; attempting to
+  split items 1-2 / 3 / 4-5 into symptom / avoidance / impairment
+  subscales yields unvalidated scores and is not supported.  The
+  router maps onto the cutoff-only wire envelope
+  (severity = "positive_screen" / "negative_screen") uniform with
+  PHQ-2 / GAD-2 / PC-PTSD-5 / MDQ / AUDIT-C, with ``subscales=None``.
+  No safety routing: OASIS has no item probing suicidality (none of
+  the 5 items probes acute-harm intent); anxiety-impairment screens
+  never fire T3.  See ``scoring/oasis.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -210,6 +231,10 @@ from .scoring.mdq import (
     ImpairmentLevel,
     InvalidResponseError as MdqInvalid,
     score_mdq,
+)
+from .scoring.oasis import (
+    InvalidResponseError as OasisInvalid,
+    score_oasis,
 )
 from .scoring.ocir import (
     InvalidResponseError as OcirInvalid,
@@ -280,6 +305,7 @@ Instrument = Literal[
     "urica",
     "phq2",
     "gad2",
+    "oasis",
 ]
 
 
@@ -309,6 +335,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "urica": 16,
     "phq2": 2,
     "gad2": 2,
+    "oasis": 5,
 }
 
 
@@ -416,10 +443,10 @@ class AssessmentResult(BaseModel):
       (``SUBSCALE_LABELS`` / ``PCL5_CLUSTERS`` / ``OCIR_SUBSCALES`` /
       ``BIS11_SUBSCALES``) so clinician-UI renderers key off one
       source of truth across the whole package.  Instruments without
-      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / WHO-5 / AUDIT /
-      AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 / ISI /
-      PHQ-15 / PACS / Craving VAS / Readiness Ruler / DTCQ-8) emit
-      ``subscales=None``.
+      subscales (PHQ-9 / PHQ-2 / GAD-7 / GAD-2 / OASIS / WHO-5 /
+      AUDIT / AUDIT-C / C-SSRS / PSS-10 / DAST-10 / MDQ / PC-PTSD-5 /
+      ISI / PHQ-15 / PACS / Craving VAS / Readiness Ruler / DTCQ-8)
+      emit ``subscales=None``.
 
     For C-SSRS, ``total`` is ``positive_count`` (the number of yes
     answers, 0-6) and ``severity`` is the risk band string.  There is
@@ -992,6 +1019,40 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             positive_screen=g2.positive_screen,
             instrument_version=g2.instrument_version,
         )
+    if payload.instrument == "oasis":
+        # Norman 2006 / Campbell-Sills 2009 — 5-item 0-4 Likert anxiety
+        # severity AND impairment measure.  Items are: frequency (1),
+        # intensity (2), avoidance (3), work/school/home impairment (4),
+        # social impairment (5).  Total 0-20, positive at >= 8.
+        # **Anxiety-impairment complement** to GAD-7 (symptom severity
+        # only) — the two instruments deliberately catch different
+        # presentations: GAD-7-positive / OASIS-negative = intense
+        # symptoms, not yet functionally costly; GAD-7-negative /
+        # OASIS-positive = low-intensity "functional" anxiety whose
+        # cost is in avoidance + impairment.  Wire envelope uses the
+        # cutoff-only semantic (severity = positive_screen /
+        # negative_screen) uniform with PHQ-2 / GAD-2 / PC-PTSD-5 /
+        # MDQ / AUDIT-C.  No severity bands (Norman 2006 validates
+        # only the total; hand-rolling bands would violate CLAUDE.md's
+        # "Don't hand-roll severity thresholds" rule).  No subscales
+        # wire-exposed (Norman 2006's factor analysis supports a
+        # single-factor structure; splitting symptom / avoidance /
+        # impairment subscales is unvalidated).  No safety routing:
+        # OASIS has no suicidality item — none of the 5 items probes
+        # acute-harm intent — so anxiety-impairment screens never
+        # fire T3.  See ``scoring/oasis.py``.
+        oa = score_oasis(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="oasis",
+            total=oa.total,
+            severity=(
+                "positive_screen" if oa.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=oa.positive_screen,
+            instrument_version=oa.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -1132,6 +1193,7 @@ async def submit_assessment(
         UricaInvalid,
         Phq2Invalid,
         Gad2Invalid,
+        OasisInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
