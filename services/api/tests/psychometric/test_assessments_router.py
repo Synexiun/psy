@@ -15092,6 +15092,670 @@ class TestRsesRouting:
 
 
 # =============================================================================
+# FFMQ-15 (five-facet mindfulness) routing — Baer 2006 / Gu 2016
+# =============================================================================
+
+
+class TestFfmq15Routing:
+    """End-to-end routing tests for the FFMQ-15 dispatcher branch.
+
+    Baer, Smith, Hopkins, Krietemeyer & Toney 2006 Five-Facet
+    Mindfulness Questionnaire — 15-item 1-5 Likert short form (Gu
+    2016 IRT), total 15-75 (POST-FLIP), five facets at 3 items
+    each.  **HIGHER = MORE mindfulness** — same direction as
+    WHO-5 / BRS / MAAS / CD-RISC-10 / RSES.
+
+    Reverse-keying at 7 positions: 6 (describing), 7-9 (acting-
+    with-awareness entirely), 10-12 (non-judging entirely).
+    Observing (1-3) and non-reactivity (13-15) are entirely
+    positively worded.  Post-flip = 6 - raw.
+
+    **First platform instrument with penta-subscales.**  PANAS-10
+    introduced bidirectional-subscales (PA + NA); FFMQ-15 extends
+    to five: observing, describing, acting_with_awareness,
+    non_judging, non_reactivity.  Intervention-matching engine
+    routes on the facet profile, not the grand total.
+
+    Acquiescence-bias asymmetric: all-raw-1 -> 43; all-raw-5 ->
+    47 (separation of 4, due to the 8/7 positive/reverse split —
+    cannot achieve the RSES symmetric-midpoint property since
+    item counts differ by one).  Pinned as routing tests so the
+    8/7 split is wire-level observable.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Envelope shape ----------------------------------------------------
+
+    def test_max_mindfulness_flourishing_profile(
+        self, client: TestClient
+    ) -> None:
+        """Baer 2006 meditator-subsample ceiling: every positive
+        item at max, every reverse item at min.  Post-flip all
+        5s, total 75, every facet 15."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [5, 5, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 5, 5, 5],
+            },
+            headers=self._headers("ffmq15-max"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "ffmq15"
+        assert body["total"] == 75
+        assert body["severity"] == "continuous"
+
+    def test_min_mindfulness_floor_profile(
+        self, client: TestClient
+    ) -> None:
+        """Every positive item at min, every reverse item at max.
+        Post-flip all 1s, total 15, every facet 3."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [1, 1, 1, 1, 1, 5, 5, 5, 5, 5, 5, 5, 1, 1, 1],
+            },
+            headers=self._headers("ffmq15-min"),
+        )
+        body = response.json()
+        assert body["total"] == 15
+        assert body["severity"] == "continuous"
+
+    def test_midpoint_all_threes(self, client: TestClient) -> None:
+        """All raw-3s: 3 is the fixed-point under flip (6-3=3).
+        Total 45, every facet 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-midpoint"),
+        )
+        body = response.json()
+        assert body["total"] == 45
+
+    def test_acquiescence_all_ones_yields_43(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias signature 1: all raw-1s -> 43
+        (8 positive × 1 + 7 reverse × 5).  Note: NOT 15 and NOT
+        45 — the asymmetric 8/7 split prevents the RSES-style
+        symmetric midpoint property."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [1] * 15},
+            headers=self._headers("ffmq15-acq-ones"),
+        )
+        body = response.json()
+        assert body["total"] == 43
+
+    def test_acquiescence_all_fives_yields_47(
+        self, client: TestClient
+    ) -> None:
+        """Acquiescence-bias signature 2: all raw-5s -> 47
+        (8 positive × 5 + 7 reverse × 1).  Mirror of the all-1s
+        signature; the two extremes differ by 4 (the 8/7 split
+        asymmetry)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [5] * 15},
+            headers=self._headers("ffmq15-acq-fives"),
+        )
+        body = response.json()
+        assert body["total"] == 47
+
+    def test_acquiescence_extremes_differ_by_exactly_4(
+        self, client: TestClient
+    ) -> None:
+        """Wire-level pin of the 8/7 asymmetry.  If this drifts
+        off 4, the reverse-item count has changed from 7."""
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [1] * 15},
+            headers=self._headers("ffmq15-acq-low-wire"),
+        ).json()["total"]
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [5] * 15},
+            headers=self._headers("ffmq15-acq-high-wire"),
+        ).json()["total"]
+        assert high - low == 4
+
+    def test_wire_total_is_post_flip_not_raw_sum(
+        self, client: TestClient
+    ) -> None:
+        """All raw-5s: raw-sum 75, post-flip sum 47.  Wire must
+        emit 47 to confirm reverse-keying."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [5] * 15},
+            headers=self._headers("ffmq15-post-flip"),
+        )
+        body = response.json()
+        assert body["total"] == 47
+        assert body["total"] != 75
+
+    # -- Subscale envelope (the novel penta-subscale pattern) -----------
+
+    def test_envelope_has_all_five_subscales(
+        self, client: TestClient
+    ) -> None:
+        """FFMQ-15 is the first penta-subscale instrument.  The
+        envelope must surface all five facet sums; clinician-UI
+        renders them as the facet profile."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-subscales-exist"),
+        )
+        body = response.json()
+        subscales = body["subscales"]
+        assert set(subscales.keys()) == {
+            "observing",
+            "describing",
+            "acting_with_awareness",
+            "non_judging",
+            "non_reactivity",
+        }
+
+    def test_subscales_at_max_mindfulness(
+        self, client: TestClient
+    ) -> None:
+        """Every facet at ceiling 15."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [5, 5, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 5, 5, 5],
+            },
+            headers=self._headers("ffmq15-subscales-max"),
+        )
+        subs = response.json()["subscales"]
+        assert subs["observing"] == 15
+        assert subs["describing"] == 15
+        assert subs["acting_with_awareness"] == 15
+        assert subs["non_judging"] == 15
+        assert subs["non_reactivity"] == 15
+
+    def test_subscales_at_min_mindfulness(
+        self, client: TestClient
+    ) -> None:
+        """Every facet at floor 3."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [1, 1, 1, 1, 1, 5, 5, 5, 5, 5, 5, 5, 1, 1, 1],
+            },
+            headers=self._headers("ffmq15-subscales-min"),
+        )
+        subs = response.json()["subscales"]
+        assert subs["observing"] == 3
+        assert subs["describing"] == 3
+        assert subs["acting_with_awareness"] == 3
+        assert subs["non_judging"] == 3
+        assert subs["non_reactivity"] == 3
+
+    def test_subscales_at_acquiescence_all_ones(
+        self, client: TestClient
+    ) -> None:
+        """All raw-1s facet profile: Obs=3, Des=7, Act=15, NJ=15,
+        NR=3.  Acting and non-judging are at CEILING because they
+        are entirely reverse-keyed; observing and non-reactivity
+        at floor."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [1] * 15},
+            headers=self._headers("ffmq15-acq-ones-subs"),
+        )
+        subs = response.json()["subscales"]
+        assert subs["observing"] == 3
+        assert subs["describing"] == 7
+        assert subs["acting_with_awareness"] == 15
+        assert subs["non_judging"] == 15
+        assert subs["non_reactivity"] == 3
+
+    def test_grand_total_equals_sum_of_subscales(
+        self, client: TestClient
+    ) -> None:
+        """The wire grand total must equal the sum of the five
+        subscale sums on the envelope — invariant that the
+        intervention-matching UI depends on for facet-weight
+        rendering."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5],
+            },
+            headers=self._headers("ffmq15-total-invariant"),
+        )
+        body = response.json()
+        subs = body["subscales"]
+        assert body["total"] == (
+            subs["observing"]
+            + subs["describing"]
+            + subs["acting_with_awareness"]
+            + subs["non_judging"]
+            + subs["non_reactivity"]
+        )
+
+    # -- Standard envelope assertions ------------------------------------
+
+    def test_response_envelope_has_no_cutoff_used(
+        self, client: TestClient
+    ) -> None:
+        """FFMQ-15 is continuous, not a screen."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-no-cutoff"),
+        )
+        assert response.json().get("cutoff_used") is None
+
+    def test_response_envelope_has_no_positive_screen(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-no-posscreen"),
+        )
+        assert response.json().get("positive_screen") is None
+
+    def test_response_envelope_has_instrument_version(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-version"),
+        )
+        assert response.json()["instrument_version"] == "ffmq15-1.0.0"
+
+    def test_severity_always_continuous(self, client: TestClient) -> None:
+        """No bands — severity is the "continuous" sentinel
+        regardless of total."""
+        for items, key in (
+            ([5, 5, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 5, 5, 5], "ffmq15-sev-75"),
+            ([1, 1, 1, 1, 1, 5, 5, 5, 5, 5, 5, 5, 1, 1, 1], "ffmq15-sev-15"),
+            ([3] * 15, "ffmq15-sev-mid"),
+            ([1] * 15, "ffmq15-sev-acq-low"),
+            ([5] * 15, "ffmq15-sev-acq-high"),
+        ):
+            response = client.post(
+                "/v1/assessments",
+                json={"instrument": "ffmq15", "items": items},
+                headers=self._headers(key),
+            )
+            assert response.json()["severity"] == "continuous"
+
+    # -- T3 posture ------------------------------------------------------
+
+    def test_never_requires_t3_at_floor(self, client: TestClient) -> None:
+        """FFMQ-15 has no safety item.  Even at the mindfulness
+        floor (total 15, every facet at 3) requires_t3 is False —
+        non-judging items mention "my emotions are bad" but are
+        self-evaluative shame content, NOT ideation."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [1, 1, 1, 1, 1, 5, 5, 5, 5, 5, 5, 5, 1, 1, 1],
+            },
+            headers=self._headers("ffmq15-no-t3-floor"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    def test_never_requires_t3_at_ceiling(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [5, 5, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 5, 5, 5],
+            },
+            headers=self._headers("ffmq15-no-t3-ceiling"),
+        )
+        assert response.json()["requires_t3"] is False
+
+    # -- Reverse-keying wire-level pins ----------------------------------
+
+    def test_reverse_scoring_position_1_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 1 is observing (positive).  Raising 3 -> 5
+        adds 2 to total."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-rev-base1"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-rev-raise1"),
+        ).json()["total"]
+        assert raised == base + 2
+
+    def test_reverse_scoring_position_6_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 6 is describing's lone reverse item.
+        Raising 3 -> 5 LOWERS total by 2."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-rev-base6"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [3, 3, 3, 3, 3, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-rev-raise6"),
+        ).json()["total"]
+        assert raised == base - 2
+
+    def test_reverse_scoring_position_7_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 7 is acting-with-awareness (all reverse)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-rev-base7"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [3, 3, 3, 3, 3, 3, 5, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-rev-raise7"),
+        ).json()["total"]
+        assert raised == base - 2
+
+    def test_reverse_scoring_position_10_is_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 10 is non-judging (all reverse).  AVE
+        precursor: higher raw = more self-criticism = LOWER
+        mindfulness post-flip."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-rev-base10"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-rev-raise10"),
+        ).json()["total"]
+        assert raised == base - 2
+
+    def test_reverse_scoring_position_13_is_non_reverse(
+        self, client: TestClient
+    ) -> None:
+        """Position 13 is non-reactivity (positive)."""
+        base = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-rev-base13"),
+        ).json()["total"]
+        raised = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 3, 3],
+            },
+            headers=self._headers("ffmq15-rev-raise13"),
+        ).json()["total"]
+        assert raised == base + 2
+
+    # -- Facet-independence wire-level pin -------------------------------
+
+    def test_facet_perturbation_isolation(
+        self, client: TestClient
+    ) -> None:
+        """Perturbing only the observing items must not affect
+        the other four facet sums on the envelope."""
+        base_subs = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 15},
+            headers=self._headers("ffmq15-iso-base"),
+        ).json()["subscales"]
+        perturbed_subs = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [5, 5, 5, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-iso-obs-5"),
+        ).json()["subscales"]
+        assert perturbed_subs["observing"] == 15
+        assert perturbed_subs["describing"] == base_subs["describing"]
+        assert perturbed_subs["acting_with_awareness"] == base_subs[
+            "acting_with_awareness"
+        ]
+        assert perturbed_subs["non_judging"] == base_subs["non_judging"]
+        assert perturbed_subs["non_reactivity"] == base_subs["non_reactivity"]
+
+    # -- Item-count validation -------------------------------------------
+
+    def test_item_count_14_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 14},
+            headers=self._headers("ffmq15-14-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_16_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 16},
+            headers=self._headers("ffmq15-16-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_10_rejected_maas_trap(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone confuses FFMQ-15 (15) with PANAS-10 (10)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 10},
+            headers=self._headers("ffmq15-10-items"),
+        )
+        assert response.status_code == 422
+
+    def test_item_count_39_rejected_full_ffmq_trap(
+        self, client: TestClient
+    ) -> None:
+        """Trap: someone sends the full 39-item FFMQ."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": [3] * 39},
+            headers=self._headers("ffmq15-39-items"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-value validation -------------------------------------------
+
+    def test_item_value_0_rejected(self, client: TestClient) -> None:
+        """FFMQ-15 Likert is 1-5, not 0-4 — trap for
+        depression-scale off-by-one (PHQ-9 / GAD-7 are 0-3)."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [0, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-zero-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_6_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [6, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-six-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_negative_rejected(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [-1, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-negative-value"),
+        )
+        assert response.status_code == 422
+
+    def test_item_value_99_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [99, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-99-value"),
+        )
+        assert response.status_code == 422
+
+    def test_pydantic_coerces_json_bool_to_int(
+        self, client: TestClient
+    ) -> None:
+        """Platform wire-layer reality: JSON ``true`` coerces to
+        int 1.  Documented here (matching ACEs / RSES wire-layer
+        pins) so any future stricter-validation refactor surfaces
+        the behavior change explicitly.  Note: ``false`` coerces
+        to 0, which is BELOW the FFMQ-15 Likert minimum (1-5);
+        sending JSON ``false`` IS correctly rejected at the item-
+        range check (which runs after Pydantic coercion).  So
+        this test uses only ``true`` values that coerce to a
+        valid 1."""
+        items: list = [True, True, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": items},
+            headers=self._headers("ffmq15-json-bool"),
+        )
+        assert response.status_code == 201
+        assert response.json()["severity"] == "continuous"
+
+    def test_pydantic_coerces_false_to_zero_rejected_by_range(
+        self, client: TestClient
+    ) -> None:
+        """Mirror of the bool-coercion pin: JSON ``false`` coerces
+        to int 0, which is below the FFMQ-15 Likert minimum (1-5)
+        and therefore CORRECTLY rejected at the item-range check.
+        This demonstrates that FFMQ-15's 1-5 range gives a tighter
+        validation perimeter than ACEs (0-1) / RSES (0-3) — the
+        bool-via-zero pathway that bypasses CLAUDE.md bool
+        rejection on 0-N scales is naturally blocked on 1-5
+        scales."""
+        items: list = [False, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "ffmq15", "items": items},
+            headers=self._headers("ffmq15-json-false"),
+        )
+        assert response.status_code == 422
+
+    # -- Clinical vignettes ----------------------------------------------
+
+    def test_clinical_vignette_ave_non_judging_deficit(
+        self, client: TestClient
+    ) -> None:
+        """Marlatt 1985 abstinence-violation-effect precursor:
+        non-judging at floor (all NJ items at raw 5 -> post-flip
+        1), other facets at midpoint.  Patient evaluates every
+        inner event as bad/wrong — the AVE substrate.  Grand
+        total 9+9+9+3+9 = 39."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [3, 3, 3, 3, 3, 3, 3, 3, 3, 5, 5, 5, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-vignette-ave"),
+        )
+        body = response.json()
+        assert body["total"] == 39
+        assert body["subscales"]["non_judging"] == 3
+        assert body["subscales"]["observing"] == 9
+
+    def test_clinical_vignette_automatic_pilot_relapse(
+        self, client: TestClient
+    ) -> None:
+        """Bowen 2014 MBRP cue-reactivity signature: acting-with-
+        awareness at floor, other facets normal.  Primary
+        intervention target for MBRP §3.2.  Grand total 9+9+3+9+9
+        = 39 with acting_with_awareness at 3."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [3, 3, 3, 3, 3, 3, 5, 5, 5, 3, 3, 3, 3, 3, 3],
+            },
+            headers=self._headers("ffmq15-vignette-autopilot"),
+        )
+        body = response.json()
+        assert body["total"] == 39
+        assert body["subscales"]["acting_with_awareness"] == 3
+        assert body["subscales"]["non_judging"] == 9
+
+    def test_clinical_vignette_flourishing(
+        self, client: TestClient
+    ) -> None:
+        """Every facet at ceiling.  All five subscales at 15,
+        grand total 75.  Pinned at the wire level so the
+        clinician UI's "all-green-profile" rendering never
+        regresses."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "ffmq15",
+                "items": [5, 5, 5, 5, 5, 1, 1, 1, 1, 1, 1, 1, 5, 5, 5],
+            },
+            headers=self._headers("ffmq15-vignette-flourish"),
+        )
+        body = response.json()
+        assert body["total"] == 75
+        subs = body["subscales"]
+        assert all(
+            subs[f] == 15
+            for f in (
+                "observing",
+                "describing",
+                "acting_with_awareness",
+                "non_judging",
+                "non_reactivity",
+            )
+        )
+
+
+# =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
 

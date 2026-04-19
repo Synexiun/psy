@@ -3,7 +3,7 @@ C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
 CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
-ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES.
+ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -40,7 +40,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1074,6 +1074,61 @@ Safety routing:
   screening stays on C-SSRS / PHQ-9 item 9.  ``items`` field
   preserves RAW pre-flip for audit invariance.  See
   ``scoring/rses.py``.
+- FFMQ-15 (Baer 2006 / Gu 2016): 15 items, 1-5 Likert, 7
+  reverse-keyed (positions 6, 7, 8, 9, 10, 11, 12).  Five-Facet
+  Mindfulness Questionnaire short form — the Baer, Smith,
+  Hopkins, Krietemeyer & Toney 2006 Assessment 13(1):27-45
+  five-factor integration of prior mindfulness scales (MAAS,
+  KIMS, FMI, CAMS-R, SMQ), with the 15-item short form derived
+  by Gu, Strauss, Crane, Barnhofer, Karl, Cavanagh & Kuyken
+  2016 Psychological Assessment 28(7):791-802 (n = 2,876 IRT
+  analysis across 5 samples).  Five facets at 3 items each:
+  **observing** (1-3), **describing** (4-6), **acting with
+  awareness** (7-9), **non-judging of inner experience**
+  (10-12), **non-reactivity to inner experience** (13-15).
+  Extends platform's MAAS single-factor mindfulness measure
+  with facet-level decomposition — the FIRST PENTA-SUBSCALE
+  instrument on the platform.  Clinical load-bearing for
+  intervention matching: each facet maps to a distinct
+  intervention modality.  Low observing -> body-scan / sensory-
+  grounding (Kabat-Zinn 1990).  Low describing -> emotion-
+  labeling / affect-literacy (Kircanski 2012).  Low acting-
+  with-awareness -> Mindfulness-Based Relapse Prevention urge-
+  surfing (Bowen 2014) — the facet MOST DIRECTLY implicated in
+  cue-reactivity and automatic-pilot relapse, making FFMQ-15
+  Acting-with-Awareness a primary signal for the Discipline OS
+  intervention engine.  Low non-judging -> self-compassion
+  (Neff 2011; Gilbert 2010 CFT) — same lever as low RSES, the
+  non-judging deficit is the Marlatt 1985 AVE-cascade
+  precursor.  Low non-reactivity -> acceptance / defusion
+  (Hayes 2012 ACT; Segal 2013 MBCT).  Reverse-keyed items
+  reflect the Baer 2006 factor structure: describing has ONE
+  reverse item at position 6 ("It's hard for me to find the
+  words to describe what I'm thinking"); acting-with-awareness
+  is ENTIRELY reverse-keyed (items phrased as automatic-pilot
+  failures — "I rush through activities without being really
+  attentive to them"); non-judging is ENTIRELY reverse-keyed
+  (items phrased as judgmental thoughts — "I criticize myself
+  for having irrational or inappropriate emotions"); observing
+  and non-reactivity are entirely positively worded.  Post-flip
+  = (1 + 5) - raw = 6 - raw.  Total = sum of all 15 post-flip
+  items (15-75); subscales dict holds per-facet post-flip sums
+  (each 3-15).  HIGHER = more mindfulness (higher-is-better
+  direction, uniform with WHO-5 / BRS / PANAS-10 PA / LOT-R /
+  MAAS / CD-RISC-10 / RSES).  NO bands — Baer 2006 and Gu 2016
+  did not publish clinical cutpoints at either total or facet
+  level; severity = "continuous" sentinel; trajectory layer
+  applies Jacobson-Truax RCI per facet.  Hand-rolling facet
+  bands violates CLAUDE.md.  Acquiescence-bias asymmetric:
+  unlike RSES (symmetric 5+5 so all-0s = all-3s = 15), FFMQ-15
+  has 8 positive + 7 reverse items so all-raw-1 yields total
+  43 and all-raw-5 yields total 47 (separation of 4, bounding
+  acquiescence bias < 6% of the 15-75 range).  NO T3 — no
+  item probes suicidality; non-judging items mention "my
+  emotions are bad" but are self-evaluative NOT ideation
+  (content flows to RSES-linked AVE-substrate handling, not
+  acute-risk).  ``items`` field preserves RAW pre-flip for
+  audit invariance.  See ``scoring/ffmq15.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -1150,6 +1205,11 @@ from .scoring.ders16 import (
 from .scoring.erq import (
     InvalidResponseError as ErqInvalid,
     score_erq,
+)
+from .scoring.ffmq15 import (
+    FFMQ15_SUBSCALES,
+    InvalidResponseError as Ffmq15Invalid,
+    score_ffmq15,
 )
 from .scoring.dtcq8 import (
     InvalidResponseError as Dtcq8Invalid,
@@ -1330,6 +1390,7 @@ Instrument = Literal[
     "scoff",
     "panas10",
     "rses",
+    "ffmq15",
 ]
 
 
@@ -1383,6 +1444,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "scoff": 5,
     "panas10": 10,
     "rses": 10,
+    "ffmq15": 15,
 }
 
 
@@ -3508,6 +3570,78 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=r.instrument_version,
         )
+    if payload.instrument == "ffmq15":
+        # Five-Facet Mindfulness Questionnaire short form —
+        # 15-item 1-5 Likert instrument derived by Gu, Strauss,
+        # Crane, Barnhofer, Karl, Cavanagh & Kuyken (2016
+        # Psychological Assessment 28(7):791-802) via IRT
+        # analysis (n = 2,876) from the 39-item FFMQ (Baer,
+        # Smith, Hopkins, Krietemeyer & Toney 2006 Assessment
+        # 13(1):27-45).  The canonical five-factor mindfulness
+        # measure — observing, describing, acting with
+        # awareness, non-judging of inner experience, non-
+        # reactivity to inner experience (3 items each).
+        # Extends platform's MAAS (Brown & Ryan 2003) single-
+        # factor mindfulness measure with facet-level
+        # decomposition — MAAS gives ONE mindfulness total
+        # (present-moment awareness), FFMQ-15 gives five
+        # independently-interpretable sub-dimensions.
+        # Clinical load-bearing for the Discipline OS
+        # intervention-matching engine — each facet maps to
+        # a distinct intervention modality:
+        #   - low observing -> body-scan / sensory grounding
+        #     (Kabat-Zinn 1990 §2 MBSR);
+        #   - low describing -> emotion-labeling / affect
+        #     literacy (Kircanski 2012 linguistically-
+        #     scaffolded exposure); describing deficit
+        #     correlates with TAS-20 alexithymia (r = -0.59
+        #     per Baer 2006);
+        #   - low acting-with-awareness -> Mindfulness-Based
+        #     Relapse Prevention urge-surfing (Bowen 2014
+        #     §3.2) — the facet MOST DIRECTLY implicated in
+        #     cue-reactivity and automatic-pilot relapse;
+        #   - low non-judging -> self-compassion (Neff 2011;
+        #     Gilbert 2010 CFT) — same lever as low RSES,
+        #     non-judging deficit is Marlatt 1985 AVE-cascade
+        #     precursor;
+        #   - low non-reactivity -> acceptance / defusion
+        #     (Hayes 2012 ACT; Segal 2013 MBCT).
+        # This means FFMQ-15 is the FIRST PLATFORM
+        # INSTRUMENT whose subscales directly map to five
+        # independent intervention tools.  PANAS-10 (Sprint
+        # 65) introduced the bidirectional-subscales envelope
+        # (PA + NA).  FFMQ-15 extends to **penta-subscales**
+        # — the first five-subscale instrument on the
+        # platform.
+        # Reverse-keying: 7 positions (6 describing-reverse,
+        # 7-9 acting all-reverse, 10-12 non-judging all-
+        # reverse).  Observing (1-3) and non-reactivity
+        # (13-15) entirely positive.  Post-flip = 6 - raw.
+        # Total = sum of post-flip, 15-75.  Higher-is-better
+        # direction.  No bands — Baer 2006 / Gu 2016 did not
+        # publish cutpoints; severity = "continuous";
+        # trajectory layer applies Jacobson-Truax RCI per
+        # facet.
+        # No T3 — no item probes suicidality.  Non-judging
+        # items mention "my emotions are bad" but are self-
+        # evaluative NOT ideation (AVE-substrate content, not
+        # acute risk).  See ``scoring/ffmq15.py``.
+        f = score_ffmq15(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="ffmq15",
+            total=f.total,
+            severity=f.severity,
+            requires_t3=False,
+            subscales={
+                FFMQ15_SUBSCALES[0]: f.observing_sum,
+                FFMQ15_SUBSCALES[1]: f.describing_sum,
+                FFMQ15_SUBSCALES[2]: f.acting_sum,
+                FFMQ15_SUBSCALES[3]: f.nonjudging_sum,
+                FFMQ15_SUBSCALES[4]: f.nonreactivity_sum,
+            },
+            instrument_version=f.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -3672,6 +3806,7 @@ async def submit_assessment(
         ScoffInvalid,
         Panas10Invalid,
         RsesInvalid,
+        Ffmq15Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
