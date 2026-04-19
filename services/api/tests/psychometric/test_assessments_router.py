@@ -27413,3 +27413,871 @@ class TestIgds9SfRouting:
         assert low["total"] == 9
         assert high["positive_screen"] is True
         assert low["positive_screen"] is False
+
+
+class TestPcsRouting:
+    """End-to-end routing tests for the PCS dispatcher branch.
+
+    Pain Catastrophizing Scale (Sullivan, Bishop & Pivik 1995
+    *The Pain Catastrophizing Scale: Development and validation*,
+    Psychological Assessment 7(4):524-532).  13-item 0-4 Likert
+    self-report; total **0-52**; HIGHER = MORE catastrophizing.
+    Three-factor structure per Sullivan 1995 EFA (Cronbach α = 0.87
+    for total) reconfirmed by Osman 2000 J Behav Med 23:351-365 CFA
+    (CFI = 0.96, n = 520):
+
+    - ``helplessness`` (items 1, 2, 3, 4, 5, 12; range 0-24) —
+      perceived inability to cope.  Most clinically-salient
+      subfactor per Sullivan 1995 §Discussion; rendered first.
+    - ``rumination`` (items 8, 9, 10, 11; range 0-16) — intrusive,
+      repetitive focus on pain.
+    - ``magnification`` (items 6, 7, 13; range 0-12) — exaggeration
+      of pain threat value.
+
+    Envelope shape:
+
+    - ``total``: 0-52 sum of all 13 items.
+    - ``severity``: always ``"continuous"``.  Sullivan 1995
+      published no total-based severity bands.  Osman 2000 /
+      Quartana 2009 cite total ≥ 30 as the 75th percentile of
+      Sullivan's chronic-pain sample — RESEARCH CONVENTION only,
+      not a formally-validated threshold.  Per CLAUDE.md "Don't
+      hand-roll severity thresholds", the scorer never classifies
+      Osman ≥ 30 as "clinical" / "high" / etc.  Same conservative
+      posture as RSES / WEMWBS / Brief COPE.
+    - ``subscales``: dict with keys ``helplessness`` (0-24),
+      ``rumination`` (0-16), ``magnification`` (0-12) — inserted in
+      that order (helplessness-first per Sullivan 1995 clinical-
+      salience priority).
+    - ``requires_t3``: always False.  No item probes ideation.
+    - **NO** ``positive_screen`` (Sullivan 1995 published no
+      diagnostic cutoff; contrast IGDS9-SF which DOES because
+      Pontes 2015 published a formal 5-item criterion).
+    - **NO** ``cutoff_used``, ``index``, ``triggering_items``,
+      ``endorsed_item_count``, ``t3_reason``.
+
+    Construct placement — fills the platform's pain-cognition /
+    chronic-pain-adjacent dimension gap.  Chronic pain is a
+    documented addiction-vulnerability pathway (Edwards 2011
+    Arthritis Rheum 55:325-332; Brennan 2005 Addiction
+    100:777-786).  The helplessness subscale is the chronic-pain
+    analogue of acute craving cognition — both are "I-must-act-
+    now / I-cannot-tolerate-this" patterns the platform
+    intervenes on in the 60-180 s window.
+
+    Direction: Higher = MORE catastrophizing.  No reverse-keying.
+    Same direction as PHQ-9 / GAD-7 / AUDIT / DUDIT / FTND /
+    PSS-10 / DASS-21 / IGDS9-SF; opposite of WHO-5 / BRS / LOT-R /
+    RSES / MAAS / CD-RISC-10 / WEMWBS.
+
+    No safety items.
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    # -- Happy path ------------------------------------------------
+
+    def test_floor_all_zeros_total_zero(
+        self, client: TestClient
+    ) -> None:
+        """Minimum endorsement — all 13 items at 0 ('Not at all').
+        Total = 0; all three subscales = 0.  Clinically: no pain
+        catastrophizing signal."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [0] * 13},
+            headers=self._headers("pcs-floor"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["instrument"] == "pcs"
+        assert body["total"] == 0
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert body["subscales"] == {
+            "helplessness": 0,
+            "rumination": 0,
+            "magnification": 0,
+        }
+        assert body["instrument_version"] == "pcs-1.0.0"
+
+    def test_ceiling_all_fours_total_fifty_two(
+        self, client: TestClient
+    ) -> None:
+        """Maximum endorsement — all 13 items at 4 ('All the time').
+        Total = 52 = 13 × 4.  Helplessness=24, rumination=16,
+        magnification=12 (all ceilings).  Severity stays
+        ``continuous`` even at the absolute maximum — Sullivan 1995
+        published no cutoff."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [4] * 13},
+            headers=self._headers("pcs-ceiling"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 52
+        assert body["severity"] == "continuous"
+        assert body["subscales"]["helplessness"] == 24
+        assert body["subscales"]["rumination"] == 16
+        assert body["subscales"]["magnification"] == 12
+        assert (
+            body["subscales"]["helplessness"]
+            + body["subscales"]["rumination"]
+            + body["subscales"]["magnification"]
+            == body["total"]
+        )
+
+    def test_midpoint_all_twos_total_twenty_six(
+        self, client: TestClient
+    ) -> None:
+        """Mid-scale — all 13 items at 2 ('Moderate degree').
+        Total = 26 = 13 × 2.  Helplessness=12, rumination=8,
+        magnification=6."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [2] * 13},
+            headers=self._headers("pcs-midpoint"),
+        ).json()
+        assert body["total"] == 26
+        assert body["subscales"] == {
+            "helplessness": 12,
+            "rumination": 8,
+            "magnification": 6,
+        }
+
+    def test_explicit_known_total(self, client: TestClient) -> None:
+        """Fixed vector — verify arithmetic end-to-end through the
+        router.  items[i] = i % 5 for i in 0..12:
+        [0,1,2,3,4,0,1,2,3,4,0,1,2] → total = 23."""
+        items = [i % 5 for i in range(13)]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-explicit"),
+        ).json()
+        assert body["total"] == sum(items)
+        assert body["total"] == 23
+
+    # -- Severity always continuous -------------------------------
+
+    @pytest.mark.parametrize(
+        "items,expected_total",
+        [
+            ([0] * 13, 0),
+            ([1] * 13, 13),
+            ([2] * 13, 26),
+            ([3] * 13, 39),
+            ([4] * 13, 52),
+        ],
+    )
+    def test_severity_always_continuous_across_levels(
+        self,
+        client: TestClient,
+        items: list[int],
+        expected_total: int,
+    ) -> None:
+        """Sullivan 1995 did NOT publish total-based severity bands.
+        Regardless of where the total falls (floor, mid, ceiling,
+        or anywhere in between), severity is always
+        ``continuous``.  Same pattern as RSES / WEMWBS / Brief
+        COPE."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers(f"pcs-sev-{expected_total}"),
+        ).json()
+        assert body["total"] == expected_total
+        assert body["severity"] == "continuous"
+
+    def test_osman_2000_threshold_thirty_not_applied(
+        self, client: TestClient
+    ) -> None:
+        """Osman 2000 / Quartana 2009 cite ≥ 30 as the 75th
+        percentile of Sullivan's chronic-pain sample.  The scorer
+        must NOT promote severity above ``continuous`` at that
+        total — doing so would bake a research convention into
+        clinical classification.  items summing to exactly 30
+        still yield ``continuous``."""
+        # [3]*10 + [0,0,0] → total 30 (3+3+3+3+3+3+3+3+3+3+0+0+0).
+        items = [3] * 10 + [0, 0, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-osman-30"),
+        ).json()
+        assert body["total"] == 30
+        assert body["severity"] == "continuous"
+
+    def test_severity_continuous_at_osman_seventy_fifth_percentile_plus(
+        self, client: TestClient
+    ) -> None:
+        """Total 34 (above Osman 2000's ≥ 30 research convention) —
+        severity stays ``continuous``.  CLAUDE.md: no hand-rolled
+        thresholds."""
+        # [3,3,3,3,3, 2,2, 3,3,3,3, 3, 2] → h=18, r=12, m=6, total=36.
+        # Adjust to hit 34: [3,3,3,3,3, 2,2, 3,3,3,3, 1, 2] →
+        # h=3+3+3+3+3+1=16, r=3+3+3+3=12, m=2+2+2=6, total=34.
+        items = [3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 1, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-above-osman"),
+        ).json()
+        assert body["total"] == 34
+        assert body["severity"] == "continuous"
+
+    def test_no_positive_screen_field_emitted(
+        self, client: TestClient
+    ) -> None:
+        """PCS does not emit ``positive_screen`` — contrast
+        IGDS9-SF (Pontes 2015 5-item DSM-5 criterion) and AUDIT-C
+        (Bush 1998 Gate 1), which DO publish diagnostic
+        thresholds.  Sullivan 1995 did not."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [4] * 13},
+            headers=self._headers("pcs-no-pos-screen"),
+        ).json()
+        assert body.get("positive_screen") is None
+        assert body.get("cutoff_used") is None
+
+    # -- Subscale partition & isolation ---------------------------
+
+    def test_subscale_partition_sums_to_total(
+        self, client: TestClient
+    ) -> None:
+        """Invariant: helplessness + rumination + magnification =
+        total.  Sullivan 1995 three-factor structure partitions the
+        13 items; no item belongs to more than one factor, no item
+        is excluded."""
+        # Varied vector covering every level.
+        items = [4, 0, 3, 1, 2, 2, 4, 0, 3, 1, 4, 0, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-partition"),
+        ).json()
+        s = body["subscales"]
+        assert (
+            s["helplessness"] + s["rumination"] + s["magnification"]
+            == body["total"]
+        )
+
+    def test_subscale_helplessness_isolation(
+        self, client: TestClient
+    ) -> None:
+        """Only helplessness items (positions 1, 2, 3, 4, 5, 12)
+        endorsed at ceiling; others at 0.  helplessness = 24,
+        rumination = 0, magnification = 0."""
+        # positions (1-indexed): 1-5 = 4, 6,7 = 0, 8-11 = 0, 12 = 4, 13 = 0.
+        items = [4, 4, 4, 4, 4, 0, 0, 0, 0, 0, 0, 4, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-h-iso"),
+        ).json()
+        assert body["subscales"] == {
+            "helplessness": 24,
+            "rumination": 0,
+            "magnification": 0,
+        }
+        assert body["total"] == 24
+
+    def test_subscale_rumination_isolation(
+        self, client: TestClient
+    ) -> None:
+        """Only rumination items (positions 8, 9, 10, 11) endorsed
+        at ceiling.  rumination = 16, others 0."""
+        # positions 1-5=0, 6,7=0, 8-11=4, 12=0, 13=0.
+        items = [0, 0, 0, 0, 0, 0, 0, 4, 4, 4, 4, 0, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-r-iso"),
+        ).json()
+        assert body["subscales"] == {
+            "helplessness": 0,
+            "rumination": 16,
+            "magnification": 0,
+        }
+        assert body["total"] == 16
+
+    def test_subscale_magnification_isolation(
+        self, client: TestClient
+    ) -> None:
+        """Only magnification items (positions 6, 7, 13) endorsed
+        at ceiling.  magnification = 12, others 0."""
+        # positions 1-5=0, 6,7=4, 8-11=0, 12=0, 13=4.
+        items = [0, 0, 0, 0, 0, 4, 4, 0, 0, 0, 0, 0, 4]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-m-iso"),
+        ).json()
+        assert body["subscales"] == {
+            "helplessness": 0,
+            "rumination": 0,
+            "magnification": 12,
+        }
+        assert body["total"] == 12
+
+    def test_subscale_keys_rendered_helplessness_first(
+        self, client: TestClient
+    ) -> None:
+        """Sullivan 1995 §Discussion flags helplessness as the most
+        clinically-salient subfactor.  Python dict preserves
+        insertion order (3.7+); FastAPI JSON serialization
+        preserves it.  Clinician-UI reads the first key first —
+        this order is load-bearing."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [2] * 13},
+            headers=self._headers("pcs-key-order"),
+        ).json()
+        assert list(body["subscales"].keys()) == [
+            "helplessness",
+            "rumination",
+            "magnification",
+        ]
+
+    def test_subscale_composition_helplessness_position_twelve(
+        self, client: TestClient
+    ) -> None:
+        """Position 12 is a helplessness item (not magnification
+        despite its proximity to 13).  Endorse only position 12 at
+        4; helplessness = 4, all others 0."""
+        items = [0] * 13
+        items[11] = 4  # position 12 (0-indexed 11)
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-pos12"),
+        ).json()
+        assert body["subscales"]["helplessness"] == 4
+        assert body["subscales"]["rumination"] == 0
+        assert body["subscales"]["magnification"] == 0
+
+    def test_subscale_composition_magnification_position_thirteen(
+        self, client: TestClient
+    ) -> None:
+        """Position 13 is a magnification item (alongside 6, 7).
+        Endorse only position 13; magnification = 4, others 0."""
+        items = [0] * 13
+        items[12] = 4  # position 13
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-pos13"),
+        ).json()
+        assert body["subscales"]["magnification"] == 4
+        assert body["subscales"]["helplessness"] == 0
+        assert body["subscales"]["rumination"] == 0
+
+    # -- Item-count validation ------------------------------------
+
+    def test_rejects_twelve_items(self, client: TestClient) -> None:
+        """PCS requires exactly 13 items — one short → 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [2] * 12},
+            headers=self._headers("pcs-too-few"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_fourteen_items(self, client: TestClient) -> None:
+        """PCS requires exactly 13 items — one extra → 422."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [2] * 14},
+            headers=self._headers("pcs-too-many"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_empty_items(self, client: TestClient) -> None:
+        """Empty list → 422 (not 500)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": []},
+            headers=self._headers("pcs-empty"),
+        )
+        assert response.status_code == 422
+
+    # -- Item-range validation ------------------------------------
+
+    def test_rejects_item_below_zero(
+        self, client: TestClient
+    ) -> None:
+        """PCS item range is 0-4 — negative value → 422."""
+        items = [2] * 13
+        items[0] = -1
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-neg"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_above_four(
+        self, client: TestClient
+    ) -> None:
+        """PCS item range is 0-4 — 5 is above ceiling → 422.
+        Contrast IGDS9-SF (1-5) where 5 is valid."""
+        items = [2] * 13
+        items[0] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-five"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_at_end_of_vector_out_of_range(
+        self, client: TestClient
+    ) -> None:
+        """Range violation at position 13 (last item) — same 422.
+        Catches off-by-one bugs that stop validating before the
+        last item."""
+        items = [2] * 13
+        items[12] = 9
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-last-oor"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_item_in_middle_out_of_range(
+        self, client: TestClient
+    ) -> None:
+        """Range violation at position 7 — 422.  Verifies the
+        validator doesn't stop at the first item."""
+        items = [2] * 13
+        items[6] = -5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-mid-oor"),
+        )
+        assert response.status_code == 422
+
+    # -- Pydantic wire-layer coercion -----------------------------
+
+    def test_accepts_json_true_coerced_to_one(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic ``list[int]`` lax-mode coerces JSON ``true``
+        to int 1.  For PCS (range 0-4), 1 is a valid Likert value.
+        Scorer sees the coerced int, not the bool — the scorer's
+        own bool rejection runs but never fires for wire-origin
+        data because Pydantic has already coerced."""
+        items: list[int | bool] = [2] * 13
+        items[0] = True  # JSON true → int 1 after Pydantic
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-json-true"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # True → 1; 1 + (12 * 2) = 25.
+        assert body["total"] == 25
+
+    def test_accepts_json_false_coerced_to_zero(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic coerces JSON ``false`` to int 0.  For PCS
+        (range 0-4), 0 is valid ('Not at all') — contrast IGDS9-SF
+        (range 1-5) where 0 is rejected as below floor.  So
+        ``false`` is accepted end-to-end for PCS."""
+        items: list[int | bool] = [2] * 13
+        items[0] = False  # JSON false → int 0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-json-false"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        # False → 0; 0 + (12 * 2) = 24.
+        assert body["total"] == 24
+
+    def test_accepts_numeric_string_coerced_to_int(
+        self, client: TestClient
+    ) -> None:
+        """Pydantic lax-mode coerces the JSON string ``"3"`` to
+        int 3.  Valid within PCS range."""
+        items: list[int | str] = [2] * 13
+        items[0] = "3"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-str-num"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3 + (12 * 2)
+
+    def test_rejects_non_numeric_string(
+        self, client: TestClient
+    ) -> None:
+        """Non-numeric string does not coerce to int → 422."""
+        items: list[int | str] = [2] * 13
+        items[0] = "hello"
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-str-bad"),
+        )
+        assert response.status_code == 422
+
+    def test_rejects_null_item(self, client: TestClient) -> None:
+        """JSON null / Python None does not coerce to int → 422.
+        Prevents silent zero-substitution for missing answers."""
+        items: list[int | None] = [2] * 13
+        items[5] = None
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-null"),
+        )
+        assert response.status_code == 422
+
+    # -- Envelope shape -------------------------------------------
+
+    def test_envelope_shape_present_and_absent_fields(
+        self, client: TestClient
+    ) -> None:
+        """Full envelope audit.  PCS emits: assessment_id,
+        instrument, total, severity, requires_t3, subscales,
+        instrument_version.  PCS does NOT emit: positive_screen,
+        cutoff_used, endorsed_item_count, index, triggering_items,
+        t3_reason.  Absent fields are None (Pydantic default)."""
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [2] * 13},
+            headers=self._headers("pcs-envelope"),
+        ).json()
+        # Present:
+        assert body["instrument"] == "pcs"
+        assert isinstance(body["assessment_id"], str)
+        assert body["assessment_id"]
+        assert body["total"] == 26
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+        assert isinstance(body["subscales"], dict)
+        assert set(body["subscales"].keys()) == {
+            "helplessness",
+            "rumination",
+            "magnification",
+        }
+        assert body["instrument_version"] == "pcs-1.0.0"
+        # Absent / None (contrast IGDS9-SF / AUDIT-C):
+        assert body.get("positive_screen") is None
+        assert body.get("cutoff_used") is None
+        assert body.get("endorsed_item_count") is None
+        assert body.get("index") is None
+        assert body.get("triggering_items") is None
+        assert body.get("t3_reason") is None
+
+    def test_assessment_id_is_non_empty_and_unique(
+        self, client: TestClient
+    ) -> None:
+        """assessment_id is a fresh UUID per call; identical items
+        still yield distinct IDs."""
+        body1 = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [3] * 13},
+            headers=self._headers("pcs-id-1"),
+        ).json()
+        body2 = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [3] * 13},
+            headers=self._headers("pcs-id-2"),
+        ).json()
+        assert isinstance(body1["assessment_id"], str)
+        assert body1["assessment_id"]
+        assert body1["assessment_id"] != body2["assessment_id"]
+
+    def test_instrument_version_stable_across_calls(
+        self, client: TestClient
+    ) -> None:
+        """``instrument_version`` is a compile-time constant —
+        identical across all PCS calls regardless of input."""
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [0] * 13},
+            headers=self._headers("pcs-ver-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [4] * 13},
+            headers=self._headers("pcs-ver-b"),
+        ).json()
+        assert a["instrument_version"] == "pcs-1.0.0"
+        assert b["instrument_version"] == "pcs-1.0.0"
+
+    # -- Clinical vignettes ---------------------------------------
+
+    def test_vignette_helplessness_dominant_profile(
+        self, client: TestClient
+    ) -> None:
+        """Helplessness-dominant catastrophizer — items 1-5 and 12
+        at 'All the time' (4); items 6-11 and 13 mid-low.  Maps to
+        Seligman 1975 learned-helplessness construct and Sullivan
+        1995 §Discussion's "most clinically salient" subfactor.
+        Clinician-UI routes this profile to behavioral-activation
+        + mastery-building content in the intervention layer."""
+        # positions: 1-5 = 4, 6,7 = 1, 8-11 = 1, 12 = 4, 13 = 1.
+        items = [4, 4, 4, 4, 4, 1, 1, 1, 1, 1, 1, 4, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-helpless"),
+        ).json()
+        s = body["subscales"]
+        assert s["helplessness"] == 24
+        assert s["rumination"] == 4
+        assert s["magnification"] == 3
+        assert (
+            s["helplessness"] > s["rumination"]
+            and s["helplessness"] > s["magnification"]
+        )
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_rumination_dominant_profile(
+        self, client: TestClient
+    ) -> None:
+        """Rumination-dominant catastrophizer — items 8-11 at
+        ceiling; others low.  Ruminative response style (Nolen-
+        Hoeksema 1991).  Clinician-UI pairs with RRS-10 / MAAS /
+        FFMQ-15 in the intervention layer; routes to mindfulness-
+        based content."""
+        # positions: 1-5 = 1, 6,7 = 0, 8-11 = 4, 12 = 1, 13 = 0.
+        items = [1, 1, 1, 1, 1, 0, 0, 4, 4, 4, 4, 1, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-rumin"),
+        ).json()
+        s = body["subscales"]
+        assert s["rumination"] == 16
+        assert s["rumination"] > s["helplessness"]
+        assert s["rumination"] > s["magnification"]
+        assert body["severity"] == "continuous"
+
+    def test_vignette_magnification_dominant_profile(
+        self, client: TestClient
+    ) -> None:
+        """Magnification-dominant catastrophizer — items 6, 7, 13
+        at ceiling; others low.  Threat-magnification cognitive
+        pattern beyond pain.  Paired with GAD-7 elevation, routes
+        to cognitive-restructuring on probability-of-harm /
+        severity-of-harm estimates."""
+        # positions: 1-5 = 1, 6,7 = 4, 8-11 = 1, 12 = 1, 13 = 4.
+        items = [1, 1, 1, 1, 1, 4, 4, 1, 1, 1, 1, 1, 4]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-magnif"),
+        ).json()
+        s = body["subscales"]
+        assert s["magnification"] == 12
+        assert s["magnification"] > s["helplessness"] - s["magnification"]
+        assert body["severity"] == "continuous"
+
+    def test_vignette_osman_seventy_fifth_percentile_profile(
+        self, client: TestClient
+    ) -> None:
+        """Osman 2000 reports total ≥ 30 as the 75th percentile of
+        Sullivan's chronic-pain sample (n = 520).  This is a
+        research convention, not a diagnostic cutoff.  Scorer
+        treats total = 30 as ``continuous`` — no band change.
+        Clinician-UI contextualizes the total against Osman 2000's
+        reference distribution in metadata, not at the scorer."""
+        # Build exactly total 30 with balanced subscale contribution.
+        # [3]*10 + [0,0,0] = 30. h=15, r=9, m=6.
+        items = [3] * 10 + [0, 0, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-osman"),
+        ).json()
+        assert body["total"] == 30
+        assert body["severity"] == "continuous"
+        # Research convention lives in docs/clinician-UI, not scorer.
+        assert body.get("positive_screen") is None
+
+    def test_vignette_edwards_2011_pain_addiction_vulnerability(
+        self, client: TestClient
+    ) -> None:
+        """Edwards 2011 Arthritis Rheum 55:325-332 — pain
+        catastrophizing predicts opioid misuse in chronic pain
+        independently of pain severity.  Profile: high
+        helplessness (perceived inability to cope), moderate-to-
+        high rumination, moderate magnification.  Total 44.
+        Clinician-UI pairs with AUDIT/DUDIT/DAST-10 positive and
+        routes to pain-informed substance-use intervention."""
+        items = [3, 3, 4, 4, 4, 2, 3, 3, 4, 4, 4, 4, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-edwards"),
+        ).json()
+        s = body["subscales"]
+        assert body["total"] == 44
+        assert s["helplessness"] == 22
+        assert s["rumination"] == 15
+        assert s["magnification"] == 7
+        # High catastrophizing but scorer still says continuous.
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_brennan_2005_alcohol_for_pain_profile(
+        self, client: TestClient
+    ) -> None:
+        """Brennan 2005 Addiction 100:777-786 — pain-driven
+        alcohol self-medication.  Catastrophic cognitions amplify
+        the pain-driven drinking pathway.  Moderate elevation
+        across subscales: total 34."""
+        items = [2, 2, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-brennan"),
+        ).json()
+        assert body["total"] == 34
+        assert body["severity"] == "continuous"
+
+    def test_vignette_thorn_2004_cbt_pretreatment_profile(
+        self, client: TestClient
+    ) -> None:
+        """Thorn 2004 *Cognitive Therapy for Chronic Pain*
+        (Guilford Press) CBT protocol — pre-treatment PCS
+        elevation with cognitive-restructuring / attention-
+        shifting / mindfulness content overlap with platform
+        T1/T2 library.  Profile: clinical elevation across all
+        subscales, total 36."""
+        items = [3, 3, 3, 3, 3, 2, 2, 3, 3, 3, 3, 3, 2]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-thorn"),
+        ).json()
+        s = body["subscales"]
+        assert body["total"] == 36
+        assert s["helplessness"] == 18
+        assert s["rumination"] == 12
+        assert s["magnification"] == 6
+
+    def test_vignette_seligman_1975_learned_helplessness(
+        self, client: TestClient
+    ) -> None:
+        """Seligman 1975 *Helplessness: On Depression,
+        Development, and Death* — learned-helplessness construct.
+        PCS helplessness subscale is a cognitive analogue.
+        Profile: helplessness elevated above other subscales;
+        paired with PHQ-9 elevation, routes to behavioral-
+        activation content."""
+        items = [4, 3, 4, 3, 4, 1, 0, 0, 1, 0, 1, 4, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-seligman"),
+        ).json()
+        s = body["subscales"]
+        assert s["helplessness"] == 22
+        assert s["rumination"] == 2
+        assert s["magnification"] == 1
+        assert s["helplessness"] > (s["rumination"] + s["magnification"])
+        assert body["total"] == 25
+
+    def test_vignette_chronic_pain_floor_with_coping(
+        self, client: TestClient
+    ) -> None:
+        """Chronic-pain patient with intact coping — low
+        catastrophizing despite persistent pain.  Total 8 (mostly
+        zeros with a few mild endorsements).  Clinician-UI reads
+        this as a protective profile; does NOT escalate."""
+        items = [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1, 1]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-coping"),
+        ).json()
+        assert body["total"] == 8
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    def test_vignette_urge_to_action_analog(
+        self, client: TestClient
+    ) -> None:
+        """Clinical construct check — helplessness subscale is the
+        chronic-pain analogue of acute craving-urge cognition.
+        Profile with helplessness ceiling + elevated other
+        subscales is the pain-cognition profile most at risk for
+        the 60-180 s intervention window.  Scorer just reports —
+        T1 preemptive routing happens in the intervention layer."""
+        items = [4, 4, 4, 4, 4, 3, 3, 3, 3, 3, 3, 4, 3]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-vig-urge"),
+        ).json()
+        s = body["subscales"]
+        assert s["helplessness"] == 24
+        # Scorer stays continuous; T1 routing is not the scorer's job.
+        assert body["severity"] == "continuous"
+        assert body["requires_t3"] is False
+
+    # -- Determinism & direction ----------------------------------
+
+    def test_rci_determinism_identical_input_yields_identical_output(
+        self, client: TestClient
+    ) -> None:
+        """Jacobson-Truax 1991 RCI assumes deterministic scoring.
+        Same items → same total, severity, subscales,
+        instrument_version.  assessment_id differs by design."""
+        items = [3, 2, 4, 1, 3, 2, 4, 1, 3, 2, 4, 1, 3]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": items},
+            headers=self._headers("pcs-rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
+        assert a["subscales"] == b["subscales"]
+        assert a["instrument_version"] == b["instrument_version"]
+
+    def test_direction_higher_equals_more_catastrophizing(
+        self, client: TestClient
+    ) -> None:
+        """Direction guarantee over the HTTP surface: total 52 >
+        total 0; higher number = more catastrophizing.  Same
+        direction as PHQ-9 / GAD-7 / AUDIT / DUDIT / FTND /
+        PSS-10 / DASS-21 / IGDS9-SF; OPPOSITE of WHO-5 / BRS /
+        LOT-R / RSES / MAAS / CD-RISC-10 / WEMWBS.  Severity
+        stays ``continuous`` at both endpoints."""
+        high = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [4] * 13},
+            headers=self._headers("pcs-dir-high"),
+        ).json()
+        low = client.post(
+            "/v1/assessments",
+            json={"instrument": "pcs", "items": [0] * 13},
+            headers=self._headers("pcs-dir-low"),
+        ).json()
+        assert high["total"] > low["total"]
+        assert high["total"] == 52
+        assert low["total"] == 0
+        assert high["severity"] == "continuous"
+        assert low["severity"] == "continuous"

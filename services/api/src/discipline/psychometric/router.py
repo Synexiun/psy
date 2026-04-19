@@ -6,7 +6,7 @@ CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS,
 ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B,
 UCLA-3, CIUS, SWLS,
 MSPSS, GSE, CORE-10, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS,
-IGDS9-SF.
+IGDS9-SF, PCS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -46,7 +46,7 @@ Safety routing:
   guidance).  The triggering_items surface carries 6.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS, ACEs, PGSI, BRS, SCOFF, PANAS-10, RSES, FFMQ-15, STAI-6, FNE-B, UCLA-3, CIUS, SWLS, MSPSS, GSE, IES-R, HADS, DASS-21, FTND, Brief COPE, WEMWBS, IGDS9-SF, PCS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -1618,6 +1618,10 @@ from .scoring.igds9sf import (
     InvalidResponseError as Igds9SfInvalid,
     score_igds9sf,
 )
+from .scoring.pcs import (
+    InvalidResponseError as PcsInvalid,
+    score_pcs,
+)
 from .scoring.tas20 import (
     InvalidResponseError as Tas20Invalid,
     score_tas20,
@@ -1705,6 +1709,7 @@ Instrument = Literal[
     "brief_cope",
     "wemwbs",
     "igds9sf",
+    "pcs",
 ]
 
 
@@ -1774,6 +1779,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "brief_cope": 28,
     "wemwbs": 14,
     "igds9sf": 9,
+    "pcs": 13,
 }
 
 
@@ -5935,6 +5941,121 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             endorsed_item_count=i.endorsed_item_count,
             instrument_version=i.instrument_version,
         )
+    if payload.instrument == "pcs":
+        # PCS — Sullivan 1995 Pain Catastrophizing Scale
+        # (Psychological Assessment 7(4):524-532).  13 items, 0-4
+        # Likert per item, total **0-52**, HIGHER = MORE
+        # catastrophizing.  Three-factor structure per Sullivan
+        # 1995 EFA (Cronbach α = 0.87 for total) reconfirmed by
+        # Osman 2000 J Behav Med 23:351-365 CFA (CFI = 0.96,
+        # n = 520):
+        #
+        # - **helplessness** (items 1, 2, 3, 4, 5, 12; range
+        #   0-24) — perceived inability to cope.  The most
+        #   clinically-salient catastrophizing subfactor per
+        #   Sullivan 1995 §Discussion; surfaced first in UI.
+        # - **rumination** (items 8, 9, 10, 11; range 0-16) —
+        #   intrusive, repetitive focus on pain.
+        # - **magnification** (items 6, 7, 13; range 0-12) —
+        #   exaggeration of pain threat value.
+        #
+        # Construct placement — PCS fills the platform's
+        # PAIN-COGNITION / CHRONIC-PAIN-ADJACENT dimension gap.
+        # Chronic pain is a documented addiction-vulnerability
+        # pathway:
+        #
+        # 1. **Opioid-use disorder in chronic-pain populations**
+        #    (Edwards 2011 Arthritis Rheum 55:325-332) — pain
+        #    catastrophizing predicts opioid misuse independently
+        #    of pain severity.
+        # 2. **Alcohol self-medication for pain** (Brennan 2005
+        #    Addiction 100:777-786) — catastrophic cognitions
+        #    amplify the pain-driven drinking pathway.
+        # 3. **Urge-to-action analog** — the helplessness
+        #    subscale ("there's nothing I can do to reduce the
+        #    intensity of the pain") is cognitively identical to
+        #    the "I must use NOW" urge-to-action pattern the
+        #    platform intervenes on in the 60-180 s window.
+        #    Pain catastrophizing is the chronic-pain analogue of
+        #    acute craving.
+        # 4. **Intervention overlap** — CBT for pain
+        #    catastrophizing (Thorn 2004 *Cognitive Therapy for
+        #    Chronic Pain*, Guilford Press) uses the same
+        #    cognitive-restructuring / attention-shifting /
+        #    mindfulness techniques as the platform's existing
+        #    T1/T2 library.
+        #
+        # Envelope shape:
+        #
+        # - ``total``: sum of all 13 items, 0-52.
+        # - ``severity``: always ``"continuous"``.  Sullivan 1995
+        #   did not publish total-based severity bands.  Osman
+        #   2000 / Quartana 2009 cite total ≥ 30 as the 75th
+        #   percentile of Sullivan's chronic-pain sample and call
+        #   it "clinically significant", but this is a RESEARCH
+        #   CONVENTION, not a formally-validated threshold.
+        #   Per CLAUDE.md "Don't hand-roll severity thresholds",
+        #   the scorer does NOT bake in ≥ 30.  Clinician-UI
+        #   contextualizes the total against Sullivan 1995 /
+        #   Osman 2000 sample distributions as metadata without
+        #   the scorer classifying status.  Same conservative
+        #   posture as RSES / WEMWBS / Brief COPE.
+        # - ``subscales``: dict with keys ``helplessness`` (0-24),
+        #   ``rumination`` (0-16), ``magnification`` (0-12).
+        #   Rendered helplessness-first per Sullivan 1995
+        #   clinical-salience priority.
+        # - ``requires_t3``: always False — no item probes
+        #   ideation.  Elevated PCS is a CONTEXT signal for
+        #   pain-informed intervention selection, not a crisis
+        #   signal.
+        # - No ``positive_screen`` — Sullivan 1995 published no
+        #   formal diagnostic cutoff; contrast IGDS9-SF / AUDIT /
+        #   DUDIT which DO emit ``positive_screen`` because their
+        #   primary papers published diagnostic thresholds.
+        # - No ``cutoff_used`` — no cutoff applied.
+        # - No ``index`` / ``scaled_score`` — no transformation.
+        # - No ``triggering_items`` — no per-item acuity routing.
+        #
+        # Direction: Higher = MORE catastrophizing.  No reverse-
+        # keying.  Same direction as PHQ-9 / GAD-7 / AUDIT /
+        # DUDIT / FTND / PSS-10 / DASS-21 / IGDS9-SF; OPPOSITE of
+        # WHO-5 / BRS / LOT-R / RSES / MAAS / CD-RISC-10 /
+        # WEMWBS.
+        #
+        # Clinical pairing patterns (intervention layer — scorer
+        # just reports):
+        #
+        # - PCS total elevated + AUDIT/DUDIT positive — pain-
+        #   driven substance use; add pain-focused cognitive
+        #   restructuring (Thorn 2004) alongside substance-focused
+        #   content.
+        # - PCS helplessness subscale elevated + PHQ-9 elevated —
+        #   learned-helplessness pattern (Seligman 1975); route to
+        #   behavioral-activation + mastery-building content.
+        # - PCS rumination subscale elevated + RRS-10 elevated —
+        #   generalized ruminative style beyond pain; mindfulness-
+        #   based content (MAAS / FFMQ-15 partner).
+        # - PCS magnification subscale elevated + GAD-7 elevated —
+        #   threat-magnification cognitive pattern beyond pain;
+        #   cognitive-restructuring content on probability-of-harm
+        #   + severity-of-harm estimates.
+        # - PCS helplessness elevated + craving-VAS rising —
+        #   helplessness-cognition prediction window for upcoming
+        #   substance urges; elevates T1 preemptive-intervention
+        #   priority (Whitepaper 04 §T1).
+        #
+        # T3 posture — PCS has NO safety items.  Acute-risk
+        # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
+        p = score_pcs(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="pcs",
+            total=p.total,
+            severity=p.severity,
+            requires_t3=False,
+            subscales=p.subscales,
+            instrument_version=p.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -6115,6 +6236,7 @@ async def submit_assessment(
         BriefCopeInvalid,
         WemwbsInvalid,
         Igds9SfInvalid,
+        PcsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
