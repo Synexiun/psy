@@ -31097,3 +31097,330 @@ class TestGad7Routing:
         ).json()
         assert a["total"] == b["total"]
         assert a["severity"] == b["severity"]
+
+
+# ---------------------------------------------------------------------------
+# TestWho5Routing
+# ---------------------------------------------------------------------------
+
+
+class TestWho5Routing:
+    """HTTP-layer tests for WHO-5 (Topp et al. 2015 review / WHO 1998).
+
+    5 items, 0-5 Likert. Raw total 0-25. HIGHER = BETTER wellbeing.
+    WHO-5 Index = raw_total * 4 (0-100).
+    Bands on Index: adequate (>=50), poor (<50), depression_screen (<28).
+    requires_t3=False. No cutoff_used, no positive_screen, no subscales.
+    Wire: total=raw_total, index=raw_total*4, severity=band.
+    """
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"who5-test-{idem_key}"}
+
+    @staticmethod
+    def _floor_items() -> list[int]:
+        return [0] * 5
+
+    @staticmethod
+    def _ceil_items() -> list[int]:
+        return [5] * 5
+
+    @staticmethod
+    def _items_with_raw_total(raw_total: int) -> list[int]:
+        """Build a valid 5-item list with the given raw total (0-25)."""
+        items = [0] * 5
+        remaining = raw_total
+        for i in range(5):
+            add = min(5, remaining)
+            items[i] += add
+            remaining -= add
+            if remaining == 0:
+                break
+        return items
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_who5_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_who5_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_who5_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "who5"
+
+    def test_who5_total_is_raw_total_floor(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._floor_items()},
+            headers=self._headers("total-floor"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_who5_total_is_raw_total_ceil(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("total-ceil"),
+        ).json()
+        assert body["total"] == 25
+
+    def test_who5_index_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("idx-present"),
+        ).json()
+        assert "index" in body
+
+    def test_who5_index_equals_raw_total_times_4_floor(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._floor_items()},
+            headers=self._headers("idx-floor"),
+        ).json()
+        assert body["index"] == 0
+
+    def test_who5_index_equals_raw_total_times_4_ceil(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("idx-ceil"),
+        ).json()
+        assert body["index"] == 100
+
+    def test_who5_index_is_4x_total(self, client: TestClient) -> None:
+        items = [3, 2, 4, 1, 2]  # raw_total=12, index=48
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": items},
+            headers=self._headers("idx-4x"),
+        ).json()
+        assert body["total"] == 12
+        assert body["index"] == 48
+
+    def test_who5_severity_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("sev-present"),
+        ).json()
+        assert "severity" in body
+
+    def test_who5_requires_t3_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._floor_items()},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_who5_no_cutoff_used(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_who5_no_positive_screen(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("no-ps"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_who5_no_subscales(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    # ------------------------------------------------------------------
+    # Band boundaries (on index = raw_total * 4)
+    # ------------------------------------------------------------------
+
+    def test_who5_depression_screen_at_raw_0(self, client: TestClient) -> None:
+        # index=0 -> depression_screen
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._items_with_raw_total(0)},
+            headers=self._headers("dep-0"),
+        ).json()
+        assert body["severity"] == "depression_screen"
+
+    def test_who5_depression_screen_at_raw_6(self, client: TestClient) -> None:
+        # index=24 < 28 -> depression_screen
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._items_with_raw_total(6)},
+            headers=self._headers("dep-6"),
+        ).json()
+        assert body["severity"] == "depression_screen"
+
+    def test_who5_poor_at_raw_7(self, client: TestClient) -> None:
+        # index=28 -> NOT depression_screen (28 >= 28); index=28 < 50 -> poor
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._items_with_raw_total(7)},
+            headers=self._headers("poor-7"),
+        ).json()
+        assert body["severity"] == "poor"
+
+    def test_who5_poor_at_raw_12(self, client: TestClient) -> None:
+        # index=48 -> poor
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._items_with_raw_total(12)},
+            headers=self._headers("poor-12"),
+        ).json()
+        assert body["severity"] == "poor"
+
+    def test_who5_adequate_at_raw_13(self, client: TestClient) -> None:
+        # index=52 >= 50 -> adequate
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._items_with_raw_total(13)},
+            headers=self._headers("adequate-13"),
+        ).json()
+        assert body["severity"] == "adequate"
+
+    def test_who5_adequate_at_raw_25(self, client: TestClient) -> None:
+        # index=100 -> adequate
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("adequate-25"),
+        ).json()
+        assert body["severity"] == "adequate"
+
+    # ------------------------------------------------------------------
+    # Item-count validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_who5_4_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": [5] * 4},
+            headers=self._headers("cnt-4"),
+        )
+        assert resp.status_code == 422
+
+    def test_who5_6_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": [5] * 6},
+            headers=self._headers("cnt-6"),
+        )
+        assert resp.status_code == 422
+
+    def test_who5_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-range validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_who5_item_6_returns_422(self, client: TestClient) -> None:
+        items = [5] * 5
+        items[0] = 6
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": items},
+            headers=self._headers("range-6"),
+        )
+        assert resp.status_code == 422
+
+    def test_who5_negative_item_returns_422(self, client: TestClient) -> None:
+        items = [5] * 5
+        items[2] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_who5_flourishing_adequate(self, client: TestClient) -> None:
+        # Peak wellbeing
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._ceil_items()},
+            headers=self._headers("vig-flourish"),
+        ).json()
+        assert body["severity"] == "adequate"
+        assert body["index"] == 100
+
+    def test_who5_burnout_depression_screen(self, client: TestClient) -> None:
+        # Exhausted user — all items at 0
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": self._floor_items()},
+            headers=self._headers("vig-burnout"),
+        ).json()
+        assert body["severity"] == "depression_screen"
+        assert body["index"] == 0
+
+    def test_who5_total_matches_sum(self, client: TestClient) -> None:
+        items = [1, 2, 3, 4, 5]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": items},
+            headers=self._headers("sum-match"),
+        ).json()
+        assert body["total"] == sum(items)
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_who5_deterministic(self, client: TestClient) -> None:
+        items = [1, 2, 3, 4, 5]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "who5", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["index"] == b["index"]
+        assert a["severity"] == b["severity"]
