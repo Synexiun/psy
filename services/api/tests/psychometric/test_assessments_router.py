@@ -294,6 +294,143 @@ class TestAuditC:
 
 
 # =============================================================================
+# AUDIT (full 10-item, Saunders 1993)
+# =============================================================================
+
+
+class TestAudit:
+    """Full 10-item AUDIT dispatch via the unified POST /v1/assessments
+    endpoint.  Zone semantics come from the scorer tests; these pin the
+    router-level contract (response shape, wire-format)."""
+
+    def test_happy_path_low_risk(self, client: TestClient) -> None:
+        """All-zero items → total 0, low_risk zone."""
+        resp = _post(client, instrument="audit", items=[0] * 10)
+        assert resp.status_code == 201
+        body = resp.json()
+        assert body["instrument"] == "audit"
+        assert body["total"] == 0
+        assert body["severity"] == "low_risk"
+        assert body["requires_t3"] is False
+        assert body["instrument_version"] == "audit-1.0.0"
+
+    def test_hazardous_zone(self, client: TestClient) -> None:
+        """Total 9 (frequent drinking, high quantity, weekly heavy
+        sessions) → hazardous zone."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[3, 3, 3, 0, 0, 0, 0, 0, 0, 0],
+        )
+        body = resp.json()
+        assert body["total"] == 9
+        assert body["severity"] == "hazardous"
+
+    def test_harmful_zone(self, client: TestClient) -> None:
+        """Total 19 → harmful zone (upper edge before dependence)."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[4, 4, 4, 4, 3, 0, 0, 0, 0, 0],
+        )
+        body = resp.json()
+        assert body["total"] == 19
+        assert body["severity"] == "harmful"
+
+    def test_dependence_zone(self, client: TestClient) -> None:
+        """Total 20 → dependence zone (first cutoff above harmful)."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[4, 4, 4, 4, 4, 0, 0, 0, 0, 0],
+        )
+        body = resp.json()
+        assert body["total"] == 20
+        assert body["severity"] == "dependence"
+
+    def test_restricted_scale_value_accepted_on_item_nine(
+        self, client: TestClient
+    ) -> None:
+        """Item 9 on the restricted 0/2/4 scale — 2 is the 'yes, not
+        in the last year' response and must be accepted."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[0, 0, 0, 0, 0, 0, 0, 0, 2, 0],
+        )
+        assert resp.status_code == 201
+        assert resp.json()["total"] == 2
+
+    def test_restricted_scale_rejects_value_one_on_item_nine(
+        self, client: TestClient
+    ) -> None:
+        """Item 9 does not accept value 1 — it's not a published
+        response option per WHO 2001."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[0, 0, 0, 0, 0, 0, 0, 0, 1, 0],
+        )
+        assert resp.status_code == 422
+        # Error message must identify the offending item.
+        assert "item 9" in resp.json()["detail"]["message"]
+
+    def test_restricted_scale_rejects_value_one_on_item_ten(
+        self, client: TestClient
+    ) -> None:
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+        )
+        assert resp.status_code == 422
+        assert "item 10" in resp.json()["detail"]["message"]
+
+    def test_standard_scale_rejects_value_five(
+        self, client: TestClient
+    ) -> None:
+        """Items 1-8 accept [0, 4]; a 5 is out of range and the
+        scorer's InvalidResponseError surfaces as a 422."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[5, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+        )
+        assert resp.status_code == 422
+
+    def test_no_t3_routing_for_audit(self, client: TestClient) -> None:
+        """AUDIT has no safety item.  Even a Zone IV score does NOT
+        set ``requires_t3`` — the clinical action is referral, not
+        crisis routing.  A co-administered C-SSRS or PHQ-9 carries
+        the crisis signal separately."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[4, 4, 4, 4, 4, 4, 4, 4, 4, 4],
+        )
+        body = resp.json()
+        assert body["total"] == 40
+        assert body["severity"] == "dependence"
+        assert body["requires_t3"] is False
+
+    def test_index_not_set_for_audit(self, client: TestClient) -> None:
+        """``index`` is WHO-5-specific; AUDIT must not populate it."""
+        resp = _post(client, instrument="audit", items=[0] * 10)
+        assert resp.json()["index"] is None
+
+    def test_audit_c_fields_not_set_for_audit(
+        self, client: TestClient
+    ) -> None:
+        """``cutoff_used`` and ``positive_screen`` are AUDIT-C-specific.
+        The full AUDIT uses zone bands instead — its response shape
+        must not accidentally populate the AUDIT-C fields."""
+        resp = _post(client, instrument="audit", items=[0] * 10)
+        body = resp.json()
+        assert body["cutoff_used"] is None
+        assert body["positive_screen"] is None
+
+
+# =============================================================================
 # Per-instrument item-count validation
 # =============================================================================
 
@@ -329,6 +466,16 @@ class TestItemCountValidation:
             "audit_c requires exactly 3" in resp.json()["detail"]["message"]
         )
 
+    def test_audit_with_nine_items_rejected(self, client: TestClient) -> None:
+        """Full AUDIT needs exactly 10; nine is short and must be
+        rejected with a message naming 'audit' (not 'audit_c').  This
+        also guards against a regression where the router picks the
+        wrong item-count constant for the two similarly-named
+        instruments."""
+        resp = _post(client, instrument="audit", items=[0] * 9)
+        assert resp.status_code == 422
+        assert "audit requires exactly 10" in resp.json()["detail"]["message"]
+
     def test_too_few_items_rejected_at_pydantic(
         self, client: TestClient
     ) -> None:
@@ -360,6 +507,16 @@ class TestItemRangeValidation:
         """AUDIT-C items go 0–4; a 5 is out of range."""
         resp = _post(
             client, instrument="audit_c", items=[5, 1, 1], sex="female"
+        )
+        assert resp.status_code == 422
+
+    def test_audit_item_above_max_rejected(self, client: TestClient) -> None:
+        """Full AUDIT items 1-8 go 0-4; a 5 is out of range.  The
+        error propagates from the scorer as a 422."""
+        resp = _post(
+            client,
+            instrument="audit",
+            items=[5, 0, 0, 0, 0, 0, 0, 0, 0, 0],
         )
         assert resp.status_code == 422
 

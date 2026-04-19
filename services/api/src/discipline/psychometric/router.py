@@ -60,6 +60,10 @@ from discipline.shared.logging import LogStream, get_stream_logger
 
 from .repository import AssessmentRecord, get_assessment_repository
 from .safety_items import evaluate_phq9
+from .scoring.audit import (
+    InvalidResponseError as AuditInvalid,
+    score_audit,
+)
 from .scoring.audit_c import (
     InvalidResponseError as AuditCInvalid,
     Sex,
@@ -85,7 +89,9 @@ router = APIRouter(prefix="/assessments", tags=["psychometric"])
 _safety = get_stream_logger(LogStream.SAFETY)
 
 
-Instrument = Literal["phq9", "gad7", "who5", "audit_c", "cssrs", "pss10", "dast10"]
+Instrument = Literal[
+    "phq9", "gad7", "who5", "audit", "audit_c", "cssrs", "pss10", "dast10"
+]
 
 
 # Item-count contracts per instrument.  Pinned so a request with the
@@ -95,6 +101,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "phq9": 9,
     "gad7": 7,
     "who5": 5,
+    "audit": 10,
     "audit_c": 3,
     "cssrs": 6,
     "pss10": 10,
@@ -247,6 +254,16 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=w.instrument_version,
         )
+    if payload.instrument == "audit":
+        au = score_audit(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="audit",
+            total=au.total,
+            severity=au.band,
+            requires_t3=False,
+            instrument_version=au.instrument_version,
+        )
     if payload.instrument == "audit_c":
         a = score_audit_c(payload.items, sex=payload.sex or "unspecified")
         return AssessmentResult(
@@ -382,6 +399,7 @@ async def submit_assessment(
         Phq9Invalid,
         Gad7Invalid,
         Who5Invalid,
+        AuditInvalid,
         AuditCInvalid,
         CssrsInvalid,
         Pss10Invalid,
