@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS.
+CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10, MAAS, SHAPS have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -907,6 +907,10 @@ from .scoring.scssf import (
     InvalidResponseError as ScsSfInvalid,
     score_scssf,
 )
+from .scoring.shaps import (
+    InvalidResponseError as ShapsInvalid,
+    score_shaps,
+)
 from .scoring.sds import (
     InvalidResponseError as SdsInvalid,
     Substance as SdsSubstance,
@@ -976,6 +980,7 @@ Instrument = Literal[
     "scssf",
     "rrs10",
     "maas",
+    "shaps",
 ]
 
 
@@ -1022,6 +1027,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "scssf": 12,
     "rrs10": 10,
     "maas": 15,
+    "shaps": 14,
 }
 
 
@@ -2618,6 +2624,65 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             requires_t3=False,
             instrument_version=ma.instrument_version,
         )
+    if payload.instrument == "shaps":
+        # Snaith 1995 Snaith-Hamilton Pleasure Scale — 14-item 1-4
+        # Likert anhedonia measure.  Unidimensional (Franken 2007
+        # PCA, Leventhal 2006 CFA, Nakonezny 2010 IRT).  The platform's
+        # primary hedonic-reactivity signal — anhedonia is a
+        # prospective SUD-relapse predictor independent of depressed
+        # mood (Garfield 2014 systematic review; Koob 2008 opponent-
+        # process theory) and the indication for behavioral-
+        # activation-augmented intervention (Daughters 2008 LETS ACT,
+        # Magidson 2011) vs standard MBRP / CBT.  Paired with MAAS:
+        # low MAAS + positive SHAPS is the post-acute-withdrawal
+        # signature (attention impaired AND reward response blunted)
+        # and routes to BA + attention-training in combination, not
+        # mindfulness-only.
+        # **Novel wire shape on this platform**: the first scorer
+        # whose stored ``total`` is NOT a linear function of the raw
+        # per-item input.  Raw 1-4 Likert is DICHOTOMIZED per
+        # Snaith 1995 (raw 1/2 → 0 hedonic, raw 3/4 → 1 anhedonic)
+        # BEFORE summation — total 0-14 is a count of anhedonic
+        # items, not the raw Likert sum.  The raw 1-4 response is
+        # preserved verbatim in the scorer's ``items`` tuple so
+        # FHIR export surfaces the original response and downstream
+        # consumers can recover the Franken 2007 continuous
+        # alternative (sum of raw - 14, range 0-42) without
+        # re-acquiring the data.
+        # **Cutoff-based wire envelope** — ``total >= 3`` is the
+        # Snaith 1995 §Results operating point (sensitivity 0.77 /
+        # specificity 0.82 against MINI depression per Franken 2007).
+        # Envelope matches OCI-R / MDQ / PC-PTSD-5 / AUDIT-C: severity
+        # carries the positive/negative_screen string, positive_screen
+        # field carries the bool, cutoff_used field carries the
+        # integer 3 so the clinician UI renders the same threshold
+        # the trajectory RCI layer uses.
+        # Higher-is-worse direction (same as PHQ-9 / GAD-7 / PSS-10 /
+        # K6) — rising total = worsening anhedonia; the trajectory
+        # layer's RCI direction logic must register SHAPS in the
+        # higher-is-worse partition, NOT with WHO-5 / MAAS / CD-RISC-
+        # 10.  A silent direction flip would register treatment
+        # gains as anhedonia worsening and vice-versa.
+        # No T3 — SHAPS has no safety item.  The 14 items probe
+        # hedonic capacity only; phenomenological closeness to
+        # suicidal ideation in severe depression (Fawcett 1990) is
+        # handled at the PROFILE level (SHAPS + PHQ-9 + C-SSRS), not
+        # via per-item SHAPS content triggering T3.  Acute ideation
+        # screening stays on C-SSRS / PHQ-9 item 9.  See
+        # ``scoring/shaps.py``.
+        sh = score_shaps(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="shaps",
+            total=sh.total,
+            severity=(
+                "positive_screen" if sh.positive_screen else "negative_screen"
+            ),
+            requires_t3=False,
+            positive_screen=sh.positive_screen,
+            cutoff_used=3,
+            instrument_version=sh.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2775,6 +2840,7 @@ async def submit_assessment(
         ScsSfInvalid,
         Rrs10Invalid,
         MaasInvalid,
+        ShapsInvalid,
     ) as exc:
         raise HTTPException(
             status_code=422,

@@ -12220,6 +12220,421 @@ class TestMaasRouting:
         assert response.json()["instrument"] == "maas"
 
 
+class TestShapsRouting:
+    """End-to-end routing tests for the SHAPS dispatcher branch.
+
+    Snaith 1995 Snaith-Hamilton Pleasure Scale, 14 items, 1-4 Likert
+    raw input, dichotomized per Snaith 1995 to 0-14, positive-screen
+    at >= 3.  Novel wire shape: the first dispatcher branch whose
+    stored total is a non-identity transform of the raw input
+    (dichotomize-then-sum, not sum-of-raw).
+    """
+
+    @staticmethod
+    def _headers(key: str) -> dict[str, str]:
+        return {"Idempotency-Key": key}
+
+    def test_min_all_strongly_agree_returns_total_0(
+        self, client: TestClient
+    ) -> None:
+        """All 14 at Strongly Agree (1) → 0 anhedonic items, negative
+        screen.  Most hedonically intact possible response."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 14},
+            headers=self._headers("shaps-min"),
+        )
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["instrument"] == "shaps"
+        assert body["total"] == 0
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_max_all_strongly_disagree_returns_total_14(
+        self, client: TestClient
+    ) -> None:
+        """All 14 at Strongly Disagree (4) → 14 anhedonic items,
+        positive screen.  Severe anhedonic presentation."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-max"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 14
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_dichotomization_raw_2_maps_to_0(
+        self, client: TestClient
+    ) -> None:
+        """Snaith 1995 dichotomization pin on the wire: raw Likert 2
+        (Agree) dichotomizes to 0 (hedonic capacity present), NOT 1.
+        All-2s response MUST score 0 anhedonic items.  A regression
+        that implemented dichotomization as ``raw > 2`` would pass
+        this.  A regression that implemented it as ``raw > 1`` would
+        fail (all-2s would score 14)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [2] * 14},
+            headers=self._headers("shaps-dichot-2"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 0
+        assert body["positive_screen"] is False
+
+    def test_dichotomization_raw_3_maps_to_1(
+        self, client: TestClient
+    ) -> None:
+        """Snaith 1995 dichotomization pin on the wire: raw Likert 3
+        (Disagree) dichotomizes to 1 (anhedonic), NOT 0.  All-3s
+        response MUST score 14 anhedonic items."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [3] * 14},
+            headers=self._headers("shaps-dichot-3"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 14
+        assert body["positive_screen"] is True
+
+    def test_cutoff_boundary_total_2_negative(
+        self, client: TestClient
+    ) -> None:
+        """Below-cutoff boundary on the wire.  Two Disagree + twelve
+        Strongly Agree → total 2, MUST NOT positive_screen per
+        Snaith 1995 ≥3 cutoff."""
+        items = [1] * 14
+        items[0] = 3
+        items[7] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": items},
+            headers=self._headers("shaps-boundary-2"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 2
+        assert body["severity"] == "negative_screen"
+        assert body["positive_screen"] is False
+
+    def test_cutoff_boundary_total_3_positive(
+        self, client: TestClient
+    ) -> None:
+        """At-cutoff boundary on the wire.  Three Disagree + eleven
+        Strongly Agree → total 3, MUST positive_screen.  This is
+        Snaith 1995's exact operating point."""
+        items = [1] * 14
+        items[0] = 3
+        items[7] = 3
+        items[13] = 3
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": items},
+            headers=self._headers("shaps-boundary-3"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["total"] == 3
+        assert body["severity"] == "positive_screen"
+        assert body["positive_screen"] is True
+
+    def test_cutoff_used_is_3(self, client: TestClient) -> None:
+        """Snaith 1995 cutoff value surfaced on wire.  Clinician-UI
+        and RCI threshold layer both render ``≥ 3`` from this field."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 14},
+            headers=self._headers("shaps-cutoff"),
+        )
+        assert response.status_code == 201
+        body = response.json()
+        assert body["cutoff_used"] == 3
+
+    def test_positive_screen_field_present_on_positive(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-ps-true"),
+        )
+        assert response.status_code == 201
+        assert response.json()["positive_screen"] is True
+
+    def test_positive_screen_field_present_on_negative(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 14},
+            headers=self._headers("shaps-ps-false"),
+        )
+        assert response.status_code == 201
+        assert response.json()["positive_screen"] is False
+
+    def test_no_subscales_field_on_wire(
+        self, client: TestClient
+    ) -> None:
+        """SHAPS is unidimensional (Franken 2007 PCA, Leventhal 2006
+        CFA, Nakonezny 2010 IRT).  A regression that silently
+        surfaced a ``subscales`` key would constitute psychometric
+        fabrication."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [3] * 14},
+            headers=self._headers("shaps-no-subs"),
+        )
+        assert response.status_code == 201
+        assert not response.json().get("subscales")
+
+    def test_severity_is_screen_not_continuous_or_banded(
+        self, client: TestClient
+    ) -> None:
+        """SHAPS uses cutoff-based screen semantics.  Severity string
+        MUST be ``positive_screen`` or ``negative_screen`` — NOT
+        continuous (MAAS/DERS/BRS) and NOT banded
+        (PHQ-9/GAD-7/PHQ-15)."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-sev-shape"),
+        )
+        assert response.status_code == 201
+        severity = response.json()["severity"]
+        assert severity in ("positive_screen", "negative_screen")
+        assert severity not in (
+            "continuous",
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "mild",
+            "moderate",
+            "moderately_severe",
+            "severe",
+        )
+
+    def test_requires_t3_always_false_at_max(
+        self, client: TestClient
+    ) -> None:
+        """Even at ceiling anhedonia (all-4s), requires_t3 is False.
+        Anhedonia is a clinical signal, not a crisis signal; acute
+        ideation screening stays on C-SSRS / PHQ-9 item 9."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-no-t3-max"),
+        )
+        assert response.status_code == 201
+        assert response.json()["requires_t3"] is False
+
+    def test_triggering_items_none(self, client: TestClient) -> None:
+        """SHAPS has no safety item; no triggering_items list."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-no-trig"),
+        )
+        assert response.status_code == 201
+        assert response.json().get("triggering_items") is None
+
+    def test_instrument_version_pinned(
+        self, client: TestClient
+    ) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 14},
+            headers=self._headers("shaps-ver"),
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument_version"] == "shaps-1.0.0"
+
+    def test_thirteen_items_rejected(self, client: TestClient) -> None:
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 13},
+            headers=self._headers("shaps-count-13"),
+        )
+        assert response.status_code in (400, 422)
+
+    def test_fifteen_items_rejected(self, client: TestClient) -> None:
+        """MAAS width — catches MAAS-payload mis-routed to SHAPS."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 15},
+            headers=self._headers("shaps-count-15"),
+        )
+        assert response.status_code in (400, 422)
+
+    def test_ten_items_rejected(self, client: TestClient) -> None:
+        """RRS-10 / PSS-10 / DAST-10 / AUDIT width — catches a common
+        mis-routing path."""
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 10},
+            headers=self._headers("shaps-count-10"),
+        )
+        assert response.status_code in (400, 422)
+
+    def test_value_zero_rejected(self, client: TestClient) -> None:
+        """0 is the floor on PHQ-9 / GAD-7 / OCI-R but NOT SHAPS
+        (1-4 Likert).  A caller reflexively using 0-indexed Likert
+        would silently score every item as 'hedonic capacity
+        present' and produce a misleading negative screen."""
+        items = [1] * 14
+        items[0] = 0
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": items},
+            headers=self._headers("shaps-val-0"),
+        )
+        assert response.status_code == 422
+
+    def test_value_five_rejected(self, client: TestClient) -> None:
+        """5 is valid in SCS-SF / DERS-16 / K6 but NOT SHAPS
+        (1-4)."""
+        items = [1] * 14
+        items[0] = 5
+        response = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": items},
+            headers=self._headers("shaps-val-5"),
+        )
+        assert response.status_code == 422
+
+    def test_higher_total_means_more_anhedonic_wire(
+        self, client: TestClient
+    ) -> None:
+        """Pin the direction on the wire: the anhedonic respondent
+        MUST score higher than the hedonic respondent.  A regression
+        that silently flipped the dichotomization direction (raw 1-2
+        → 1, raw 3-4 → 0) would invert this and register treatment
+        gains as worsening."""
+        hedonic = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [1] * 14},
+            headers=self._headers("shaps-dir-low"),
+        )
+        anhedonic = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-dir-high"),
+        )
+        assert hedonic.status_code == 201 and anhedonic.status_code == 201
+        assert anhedonic.json()["total"] > hedonic.json()["total"]
+        assert anhedonic.json()["positive_screen"] is True
+        assert hedonic.json()["positive_screen"] is False
+
+    def test_history_projects_shaps(self, client: TestClient) -> None:
+        user = "user-shaps-history"
+        post_response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "shaps",
+                "items": [4] * 14,
+                "user_id": user,
+            },
+            headers=self._headers("shaps-hist"),
+        )
+        assert post_response.status_code == 201
+        history = client.get(
+            "/v1/assessments/history",
+            headers={"X-User-Id": user},
+        )
+        assert history.status_code == 200
+        entries = [
+            entry
+            for entry in history.json()["items"]
+            if entry["instrument"] == "shaps"
+        ]
+        assert len(entries) == 1
+        entry = entries[0]
+        assert entry["total"] == 14
+        assert entry["severity"] == "positive_screen"
+
+    def test_coexists_with_maas_paws_signature(
+        self, client: TestClient
+    ) -> None:
+        """Post-acute-withdrawal signature pin — low MAAS + positive
+        SHAPS is the hedonic-dysregulation profile (Koob 2008,
+        Bowen 2014 MBRP baseline).  Both instruments must persist
+        together and surface distinct wire envelopes (MAAS continuous
+        no-subscales; SHAPS positive_screen + cutoff_used)."""
+        user = "user-shaps-maas-paws"
+        ma = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "maas",
+                "items": [2] * 15,
+                "user_id": user,
+            },
+            headers=self._headers("shaps-maas-coexist-ma"),
+        )
+        sh = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "shaps",
+                "items": [4] * 14,
+                "user_id": user,
+            },
+            headers=self._headers("shaps-maas-coexist-sh"),
+        )
+        assert ma.status_code == 201 and sh.status_code == 201
+        # MAAS envelope: continuous, no subscales, no cutoff.
+        assert ma.json()["severity"] == "continuous"
+        assert not ma.json().get("subscales")
+        assert ma.json()["cutoff_used"] is None
+        # SHAPS envelope: positive_screen, no subscales, cutoff 3.
+        assert sh.json()["severity"] == "positive_screen"
+        assert not sh.json().get("subscales")
+        assert sh.json()["cutoff_used"] == 3
+        assert sh.json()["positive_screen"] is True
+
+    def test_coexists_with_phq9_banded_path_unaffected(
+        self, client: TestClient
+    ) -> None:
+        """PHQ-9 banded-severity path must remain byte-for-byte
+        unaffected by SHAPS dispatch being in the router."""
+        sh = client.post(
+            "/v1/assessments",
+            json={"instrument": "shaps", "items": [4] * 14},
+            headers=self._headers("shaps-phq9-coexist-sh"),
+        )
+        phq = client.post(
+            "/v1/assessments",
+            json={"instrument": "phq9", "items": [0] * 9},
+            headers=self._headers("shaps-phq9-coexist-phq"),
+        )
+        assert sh.status_code == 201 and phq.status_code == 201
+        assert sh.json()["severity"] == "positive_screen"
+        assert phq.json()["severity"] == "none"
+
+    def test_ignores_mdq_fields_when_supplied(
+        self, client: TestClient
+    ) -> None:
+        """SHAPS dispatch ignores MDQ-specific fields that might leak
+        through on a polymorphic client payload."""
+        response = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "shaps",
+                "items": [3] * 14,
+                "concurrent_symptoms": True,
+                "functional_impairment": "serious",
+                "sex": "male",
+            },
+            headers=self._headers("shaps-ignore-extra"),
+        )
+        assert response.status_code == 201
+        assert response.json()["instrument"] == "shaps"
+
+
 # =============================================================================
 # Cross-instrument — extended coverage for new dispatcher branches
 # =============================================================================
