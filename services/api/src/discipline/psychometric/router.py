@@ -2,7 +2,7 @@
 C-SSRS, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI, PCL-5, OCI-R, PHQ-15,
 PACS, BIS-11, Craving VAS, Readiness Ruler, DTCQ-8, URICA, PHQ-2,
 GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16,
-CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF.
+CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10.
 
 Single ``POST /v1/assessments`` endpoint dispatches by ``instrument``
 key.  Each instrument has its own validated item count and item-value
@@ -39,7 +39,7 @@ Safety routing:
   item 6 positive with ``behavior_within_3mo=True`` → T3.
 - GAD-7, WHO-5, AUDIT, AUDIT-C, PSS-10, DAST-10, MDQ, PC-PTSD-5, ISI,
   PCL-5, OCI-R, PHQ-15, PACS, BIS-11, Craving VAS, Readiness Ruler,
-  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF have no safety items —
+  DTCQ-8, URICA, PHQ-2, GAD-2, OASIS, K10, SDS, K6, DUDIT, ASRS-6, AAQ-II, WSAS, DERS-16, CD-RISC-10, PSWQ, LOT-R, TAS-20, ERQ, SCS-SF, RRS-10 have no safety items —
   ``requires_t3`` is always False for these instruments.  WHO-5 ``depression_screen``
   band is *not* a T3 trigger; T3 is reserved for active suicidality
   per Docs/Whitepapers/04_Safety_Framework.md §T3.  A positive MDQ
@@ -684,6 +684,38 @@ Safety routing:
   ``positive_screen`` NOT set.  No T3 — the 12 items probe
   dispositional self-related responding; none probe suicidality.
   See ``scoring/scssf.py``.
+- RRS-10 (Treynor 2003): 10 items, 1-4 Likert.  Measures
+  **rumination** — the attentional/cognitive loop that sustains
+  affect past its natural decay.  The psychometrically-clean
+  10-item subset of Nolen-Hoeksema's RRS-22 with the depressive-
+  symptom-confounded items removed; Treynor 2003 PCA extracted
+  two factors: **Brooding** (maladaptive — passive evaluative
+  comparison; items 1, 3, 6, 7, 8) and **Reflection** (adaptive —
+  active analytic problem-solving; items 2, 4, 5, 9, 10).  This
+  two-factor split is the clinical point of RRS-10 over RRS-22 —
+  treatment routing depends on WHICH kind of rumination dominates,
+  not total rumination.  Clinically load-bearing for the
+  60-180 s urge-intervention window the platform targets:
+  brooding is the attentional engine that keeps a craving alive
+  past its natural decay, and Caselli 2010 demonstrated it
+  prospectively predicts time-to-relapse in alcohol-use-disorder
+  samples independent of concurrent depression.  Reflection does
+  not carry the same prospective risk.  Surfaced via the
+  ``subscales`` map with keys ``brooding`` / ``reflection``;
+  each subscale sums to 5-20.  Total 10-40.  No reverse items
+  (Treynor 2003 wording is direction-aligned, same as ERQ).
+  **Continuous-sentinel severity** — Treynor 2003 published no
+  validated bands; hand-rolling thresholds would violate
+  CLAUDE.md's "Don't hand-roll severity thresholds" rule.  The
+  clinical read is the (brooding, reflection) 2-tuple, not a
+  categorical classification; router emits
+  ``severity="continuous"``.  ``cutoff_used`` /
+  ``positive_screen`` NOT set.  No T3 — the 10 items probe
+  attentional style during low mood; none probe suicidality.
+  Note that the parent RRS-22 contains suicidality-adjacent
+  content, but the Treynor 2003 10-item subset does not — this
+  is one of the reasons the 10-item version was extracted.
+  See ``scoring/rrs10.py``.
 
 C-SSRS transport note:
 - Clients send item responses as 0/1 ints (consistent with every other
@@ -821,6 +853,10 @@ from .scoring.readiness_ruler import (
     InvalidResponseError as ReadinessRulerInvalid,
     score_readiness_ruler,
 )
+from .scoring.rrs10 import (
+    InvalidResponseError as Rrs10Invalid,
+    score_rrs10,
+)
 from .scoring.scssf import (
     InvalidResponseError as ScsSfInvalid,
     score_scssf,
@@ -892,6 +928,7 @@ Instrument = Literal[
     "tas20",
     "erq",
     "scssf",
+    "rrs10",
 ]
 
 
@@ -936,6 +973,7 @@ _INSTRUMENT_ITEM_COUNTS: dict[Instrument, int] = {
     "tas20": 20,
     "erq": 10,
     "scssf": 12,
+    "rrs10": 10,
 }
 
 
@@ -2419,6 +2457,67 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             },
             instrument_version=sc.instrument_version,
         )
+    if payload.instrument == "rrs10":
+        # Treynor, Gonzalez & Nolen-Hoeksema 2003 Ruminative Responses
+        # Scale, 10-item refined subset of Nolen-Hoeksema's RRS-22.
+        # Measures rumination — the attentional/cognitive loop that
+        # sustains affect past its natural decay.  Treynor 2003 PCA
+        # extracted two factors from the 10 non-symptom-confounded
+        # items of the RRS-22: Brooding (maladaptive passive
+        # evaluative comparison — items 1, 3, 6, 7, 8) and Reflection
+        # (adaptive active analytic problem-solving — items 2, 4, 5,
+        # 9, 10).  This two-factor split is the whole clinical point
+        # of RRS-10 over RRS-22: treatment routing depends on WHICH
+        # rumination style dominates, not total rumination.
+        # Clinically load-bearing for the platform's 60-180 s urge-
+        # intervention window: brooding is the attentional engine
+        # that keeps a craving alive past natural decay.  Caselli
+        # 2010 demonstrated that brooding prospectively predicts
+        # time-to-relapse in alcohol-use-disorder samples independent
+        # of concurrent depression; reflection does not carry the
+        # same prospective risk.  Downstream intervention routing
+        # reads the (brooding, reflection) 2-tuple:
+        #   high brood / low reflect → mindfulness / attention-
+        #       deployment tools BEFORE any cognitive intervention
+        #       (cognitive work on a brood-dominant mind amplifies
+        #       the loop; Watkins 2008 abstract-thinking account).
+        #   high brood / high reflect → brief attention-deployment
+        #       bridge, then analytical reframing.
+        #   low brood / high reflect → adaptive; minimal scaffolding.
+        #   low brood / low reflect → evaluate for emotion avoidance
+        #       (cross-read with TAS-20 DIF, ERQ suppression,
+        #       AAQ-II experiential avoidance).
+        # 10 items, 1-4 Likert.  No reverse items (Treynor 2003
+        # wording is direction-aligned throughout, like ERQ).
+        # Two 5-item subscales; each sums to 5-20.  Total 10-40.
+        # **Continuous-sentinel** — Treynor 2003 published no
+        # validated bands; population norms vary across samples
+        # (Schoofs 2010 Belgian, Whitmer 2011 US) and hand-rolling a
+        # cutoff would violate CLAUDE.md's "Don't hand-roll severity
+        # thresholds" rule.  Router emits ``severity="continuous"``
+        # (uniform with DERS-16 / ERQ / BRS / PSWQ / SDS / K6 /
+        # SCS-SF).
+        # ``cutoff_used`` / ``positive_screen`` NOT set.  No T3 —
+        # the 10 items probe attentional style during low mood;
+        # none probe suicidality.  Note: the parent RRS-22 contains
+        # suicidality-adjacent content, but the Treynor 2003 subset
+        # specifically does NOT — one of the reasons the 10-item
+        # version was extracted for non-symptom-confounded process
+        # measurement.  Acute ideation screening stays on PHQ-9
+        # item 9 / C-SSRS.  See ``scoring/rrs10.py``.
+        rr = score_rrs10(payload.items)
+        return AssessmentResult(
+            assessment_id=str(uuid4()),
+            instrument="rrs10",
+            total=rr.total,
+            severity="continuous",
+            requires_t3=False,
+            subscales={
+                "brooding": rr.subscale_brooding,
+                "reflection": rr.subscale_reflection,
+            },
+            instrument_version=rr.instrument_version,
+        )
     # mdq — Hirschfeld 2000 three-gate positive screen.  Both Part 2
     # (concurrent_symptoms) and Part 3 (functional_impairment) are
     # required.  Raise MdqInvalid here (translated to 422 at the HTTP
@@ -2574,6 +2673,7 @@ async def submit_assessment(
         Tas20Invalid,
         ErqInvalid,
         ScsSfInvalid,
+        Rrs10Invalid,
     ) as exc:
         raise HTTPException(
             status_code=422,
