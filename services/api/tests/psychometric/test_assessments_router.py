@@ -31733,3 +31733,328 @@ class TestAuditCRouting:
         ).json()
         assert a["total"] == b["total"]
         assert a["positive_screen"] == b["positive_screen"]
+
+
+# ---------------------------------------------------------------------------
+# TestAuditRouting
+# ---------------------------------------------------------------------------
+
+
+class TestAuditRouting:
+    """HTTP-layer tests for AUDIT (Saunders 1993 / WHO 2001).
+
+    10 items. Items 1-8: 0-4 scale. Items 9-10: restricted 0/2/4 only.
+    Total 0-40.
+    WHO zones: low_risk (0-7), hazardous (8-15), harmful (16-19),
+    dependence (20-40).
+    requires_t3=False. No cutoff_used, no positive_screen, no subscales.
+    """
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"audit-test-{idem_key}"}
+
+    @staticmethod
+    def _floor_items() -> list[int]:
+        """Minimum valid AUDIT: all zeros (items 9-10 at 0 are valid)."""
+        return [0] * 10
+
+    @staticmethod
+    def _ceil_items() -> list[int]:
+        """Maximum valid AUDIT: items 1-8 at 4, items 9-10 at 4."""
+        return [4] * 8 + [4, 4]
+
+    @staticmethod
+    def _items_with_total(total: int, *, item9: int = 0, item10: int = 0) -> list[int]:
+        """Build a valid 10-item list with the given total.
+
+        Items 9-10 are set explicitly (must be 0/2/4); remaining total
+        is distributed across items 1-8.
+        """
+        base = item9 + item10
+        remaining = total - base
+        items = [0] * 8
+        for i in range(8):
+            add = min(4, remaining)
+            items[i] += add
+            remaining -= add
+            if remaining == 0:
+                break
+        return items + [item9, item10]
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_audit_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._floor_items()},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_audit_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._floor_items()},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_audit_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._floor_items()},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "audit"
+
+    def test_audit_total_floor(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._floor_items()},
+            headers=self._headers("total-floor"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_audit_total_ceil(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("total-ceil"),
+        ).json()
+        assert body["total"] == 40
+
+    def test_audit_severity_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._floor_items()},
+            headers=self._headers("sev-present"),
+        ).json()
+        assert "severity" in body
+
+    def test_audit_requires_t3_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_audit_no_cutoff_used(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("no-cutoff"),
+        ).json()
+        assert body.get("cutoff_used") is None
+
+    def test_audit_no_positive_screen(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("no-ps"),
+        ).json()
+        assert body.get("positive_screen") is None
+
+    def test_audit_no_subscales(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    # ------------------------------------------------------------------
+    # WHO zone boundaries (Saunders 1993)
+    # ------------------------------------------------------------------
+
+    def test_audit_low_risk_at_0(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(0)},
+            headers=self._headers("zone-lr-0"),
+        ).json()
+        assert body["severity"] == "low_risk"
+
+    def test_audit_low_risk_at_7(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(7)},
+            headers=self._headers("zone-lr-7"),
+        ).json()
+        assert body["severity"] == "low_risk"
+
+    def test_audit_hazardous_at_8(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(8)},
+            headers=self._headers("zone-haz-8"),
+        ).json()
+        assert body["severity"] == "hazardous"
+
+    def test_audit_hazardous_at_15(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(15)},
+            headers=self._headers("zone-haz-15"),
+        ).json()
+        assert body["severity"] == "hazardous"
+
+    def test_audit_harmful_at_16(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(16)},
+            headers=self._headers("zone-harm-16"),
+        ).json()
+        assert body["severity"] == "harmful"
+
+    def test_audit_harmful_at_19(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(19)},
+            headers=self._headers("zone-harm-19"),
+        ).json()
+        assert body["severity"] == "harmful"
+
+    def test_audit_dependence_at_20(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._items_with_total(20)},
+            headers=self._headers("zone-dep-20"),
+        ).json()
+        assert body["severity"] == "dependence"
+
+    def test_audit_dependence_at_40(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("zone-dep-40"),
+        ).json()
+        assert body["severity"] == "dependence"
+
+    # ------------------------------------------------------------------
+    # Items 9-10 restricted scale (0/2/4 only)
+    # ------------------------------------------------------------------
+
+    def test_audit_items_9_10_value_2_accepted(self, client: TestClient) -> None:
+        items = [0] * 8 + [2, 2]
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("item910-2"),
+        )
+        assert resp.status_code == 201
+
+    def test_audit_item_9_value_1_returns_422(self, client: TestClient) -> None:
+        items = [0] * 8 + [1, 0]
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("item9-1"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_item_10_value_3_returns_422(self, client: TestClient) -> None:
+        items = [0] * 8 + [0, 3]
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("item10-3"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-count validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_audit_9_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": [0] * 9},
+            headers=self._headers("cnt-9"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_11_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": [0] * 11},
+            headers=self._headers("cnt-11"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-range validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_audit_item_5_returns_422(self, client: TestClient) -> None:
+        items = [0] * 10
+        items[0] = 5
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("range-5"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_negative_item_returns_422(self, client: TestClient) -> None:
+        items = [0] * 10
+        items[3] = -1
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_audit_zone_iv_dependence(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": self._ceil_items()},
+            headers=self._headers("vig-dep"),
+        ).json()
+        assert body["severity"] == "dependence"
+        assert body["requires_t3"] is False
+
+    def test_audit_total_matches_sum(self, client: TestClient) -> None:
+        items = [1, 2, 1, 0, 1, 0, 1, 0, 2, 0]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("sum-match"),
+        ).json()
+        assert body["total"] == sum(items)
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_audit_deterministic(self, client: TestClient) -> None:
+        items = [2, 1, 2, 1, 0, 0, 1, 1, 2, 0]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit", "items": items},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["severity"] == b["severity"]
