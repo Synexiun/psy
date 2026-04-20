@@ -32,9 +32,9 @@ src/discipline/
 ├── psychometric/                  # Instruments, scoring, trajectories, safety — see 12
 │   ├── router.py
 │   ├── scheduler.py               #   Never during urge window; 1 instrument per session
-│   ├── scoring/                   #   Pure, version-pinned scoring fns per instrument
-│   │   ├── phq9.py, gad7.py, audit_c.py, audit.py, dast10.py, pss10.py,
-│   │   ├── who5.py, dtcq8.py, urica.py, readiness_ruler.py, cssrs.py, ...
+│   ├── scoring/                   #   68 pure, version-pinned scoring fns (see 12 §3)
+│   │   ├── phq9.py, gad7.py, audit.py, audit_c.py, who5.py, ...  # Tier A
+│   │   └── cesd.py, spin.py, cuditr.py, sassv.py, ... (64 more)  # Tier B
 │   ├── safety_items.py            #   PHQ-9 item 9 / C-SSRS → T4 routing
 │   └── trajectories.py            #   RCI computation vs baseline + previous
 ├── analytics/                     # User insights, rollups, protective framing — see 13
