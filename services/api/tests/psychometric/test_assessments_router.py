@@ -31424,3 +31424,312 @@ class TestWho5Routing:
         assert a["total"] == b["total"]
         assert a["index"] == b["index"]
         assert a["severity"] == b["severity"]
+
+
+# ---------------------------------------------------------------------------
+# TestAuditCRouting
+# ---------------------------------------------------------------------------
+
+
+class TestAuditCRouting:
+    """HTTP-layer tests for AUDIT-C (Bush et al. 1998).
+
+    3 items, 0-4 Likert. Total 0-12.
+    Sex-stratified cutoffs: male >= 4, female >= 3, unspecified >= 3.
+    Wire shape: positive_screen / negative_screen + cutoff_used.
+    requires_t3=False. No subscales.
+    """
+
+    @staticmethod
+    def _headers(idem_key: str) -> dict[str, str]:
+        return {"Idempotency-Key": f"auditc-test-{idem_key}"}
+
+    @staticmethod
+    def _floor_items() -> list[int]:
+        return [0] * 3
+
+    @staticmethod
+    def _ceil_items() -> list[int]:
+        return [4] * 3
+
+    @staticmethod
+    def _items_with_total(total: int) -> list[int]:
+        """Build a valid 3-item list with the given total (0-12)."""
+        items = [0] * 3
+        remaining = total
+        for i in range(3):
+            add = min(4, remaining)
+            items[i] += add
+            remaining -= add
+            if remaining == 0:
+                break
+        return items
+
+    # ------------------------------------------------------------------
+    # Happy path -- 201 + core shape
+    # ------------------------------------------------------------------
+
+    def test_audit_c_returns_201(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("201"),
+        )
+        assert resp.status_code == 201
+
+    def test_audit_c_envelope_assessment_id(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("env-id"),
+        ).json()
+        assert "assessment_id" in body
+        assert uuid.UUID(body["assessment_id"])
+
+    def test_audit_c_envelope_instrument_key(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("env-instr"),
+        ).json()
+        assert body["instrument"] == "audit_c"
+
+    def test_audit_c_total_floor(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._floor_items()},
+            headers=self._headers("total-floor"),
+        ).json()
+        assert body["total"] == 0
+
+    def test_audit_c_total_ceil(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("total-ceil"),
+        ).json()
+        assert body["total"] == 12
+
+    def test_audit_c_severity_present(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("sev-present"),
+        ).json()
+        assert "severity" in body
+
+    def test_audit_c_requires_t3_false(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("t3-false"),
+        ).json()
+        assert body["requires_t3"] is False
+
+    def test_audit_c_no_subscales(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("no-sub"),
+        ).json()
+        assert body.get("subscales") is None
+
+    # ------------------------------------------------------------------
+    # Sex-stratified cutoffs
+    # ------------------------------------------------------------------
+
+    def test_audit_c_male_cutoff_4_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(4), "sex": "male"},
+            headers=self._headers("male-4-pos"),
+        ).json()
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 4
+
+    def test_audit_c_male_at_3_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(3), "sex": "male"},
+            headers=self._headers("male-3-neg"),
+        ).json()
+        assert body["positive_screen"] is False
+        assert body["cutoff_used"] == 4
+
+    def test_audit_c_female_cutoff_3_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(3), "sex": "female"},
+            headers=self._headers("fem-3-pos"),
+        ).json()
+        assert body["positive_screen"] is True
+        assert body["cutoff_used"] == 3
+
+    def test_audit_c_female_at_2_negative(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(2), "sex": "female"},
+            headers=self._headers("fem-2-neg"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_audit_c_female_cutoff_used_is_3(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._floor_items(), "sex": "female"},
+            headers=self._headers("fem-cutoff-3"),
+        ).json()
+        assert body["cutoff_used"] == 3
+
+    def test_audit_c_unspecified_uses_lower_cutoff(
+        self, client: TestClient
+    ) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={
+                "instrument": "audit_c",
+                "items": self._items_with_total(3),
+                "sex": "unspecified",
+            },
+            headers=self._headers("unspec-3"),
+        ).json()
+        assert body["cutoff_used"] == 3
+        assert body["positive_screen"] is True
+
+    def test_audit_c_default_sex_unspecified(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(3)},
+            headers=self._headers("default-sex"),
+        ).json()
+        assert body["cutoff_used"] == 3
+        assert body["positive_screen"] is True
+
+    def test_audit_c_male_at_female_boundary_negative(
+        self, client: TestClient
+    ) -> None:
+        # total=3 fires for female but NOT for male
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(3), "sex": "male"},
+            headers=self._headers("male-fem-boundary"),
+        ).json()
+        assert body["positive_screen"] is False
+
+    def test_audit_c_cutoff_used_is_int(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._floor_items(), "sex": "male"},
+            headers=self._headers("cutoff-int"),
+        ).json()
+        assert isinstance(body["cutoff_used"], int)
+
+    # ------------------------------------------------------------------
+    # positive_screen severity string
+    # ------------------------------------------------------------------
+
+    def test_audit_c_positive_severity_string(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._ceil_items()},
+            headers=self._headers("sev-pos"),
+        ).json()
+        assert body["severity"] == "positive_screen"
+
+    def test_audit_c_negative_severity_string(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._floor_items()},
+            headers=self._headers("sev-neg"),
+        ).json()
+        assert body["severity"] == "negative_screen"
+
+    # ------------------------------------------------------------------
+    # Item-count validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_audit_c_2_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": [0] * 2},
+            headers=self._headers("cnt-2"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_c_4_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": [0] * 4},
+            headers=self._headers("cnt-4"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_c_empty_items_returns_422(self, client: TestClient) -> None:
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": []},
+            headers=self._headers("cnt-0"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Item-range validation -> 422
+    # ------------------------------------------------------------------
+
+    def test_audit_c_item_5_returns_422(self, client: TestClient) -> None:
+        items = [0, 0, 5]
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": items},
+            headers=self._headers("range-5"),
+        )
+        assert resp.status_code == 422
+
+    def test_audit_c_negative_item_returns_422(self, client: TestClient) -> None:
+        items = [-1, 0, 0]
+        resp = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": items},
+            headers=self._headers("range-neg"),
+        )
+        assert resp.status_code == 422
+
+    # ------------------------------------------------------------------
+    # Clinical vignettes
+    # ------------------------------------------------------------------
+
+    def test_audit_c_hazardous_male_positive(self, client: TestClient) -> None:
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": self._items_with_total(8), "sex": "male"},
+            headers=self._headers("vig-haz-m"),
+        ).json()
+        assert body["positive_screen"] is True
+
+    def test_audit_c_total_matches_sum(self, client: TestClient) -> None:
+        items = [1, 2, 3]
+        body = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": items},
+            headers=self._headers("sum-match"),
+        ).json()
+        assert body["total"] == sum(items)
+
+    # ------------------------------------------------------------------
+    # Stability
+    # ------------------------------------------------------------------
+
+    def test_audit_c_deterministic(self, client: TestClient) -> None:
+        items = [2, 1, 3]
+        a = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": items, "sex": "male"},
+            headers=self._headers("rci-a"),
+        ).json()
+        b = client.post(
+            "/v1/assessments",
+            json={"instrument": "audit_c", "items": items, "sex": "male"},
+            headers=self._headers("rci-b"),
+        ).json()
+        assert a["total"] == b["total"]
+        assert a["positive_screen"] == b["positive_screen"]
