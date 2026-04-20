@@ -43,17 +43,122 @@ This is not a "mood quiz" layer. These are licensed, validated instruments treat
 | 10 | **URICA short** | Stages of change | 16 | 4 subscale scores | Free | Quarterly |
 | 11 | **Readiness Ruler** | Motivation | 1 | 0–10 | Public domain | Weekly |
 
-### 3.2 Tier B — Added post-launch (v1.5+)
+### 3.2 Tier B — Implemented (v1.5+)
+
+All instruments listed below have scorer modules in `services/api/src/discipline/psychometric/scoring/`,
+full scorer unit tests, and HTTP routing tests under `POST /v1/assessments`.
+
+**Mood / Depression**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **PHQ-2** | Depression 2-item screen | 2 | 0–6 | Kroenke 2003 |
+| **PHQ-15** | Somatic symptom severity | 15 | 0–30 | Kroenke 2002 |
+| **CES-D** | Depressive symptomatology | 20 | 0–60 | Radloff 1977 |
+| **DASS-21** | Depression, Anxiety, Stress | 21 | 0–126 | Lovibond 1995 |
+| **SHAPS** | Anhedonia | 14 | 0–14 | Snaith 1995 |
+| **HADS** | Anxiety + depression (medical) | 14 | 0–42 | Zigmond 1983 |
+
+**Anxiety / Worry / Social**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **GAD-2** | Anxiety 2-item screen | 2 | 0–6 | Kroenke 2001 |
+| **OASIS** | Anxiety severity | 5 | 0–20 | Norman 2006 |
+| **PSWQ** | Trait worry | 16 | 16–80 | Meyer 1990 |
+| **SPIN** | Social phobia | 17 | 0–68 | Connor 2000 |
+| **STAI-6** | State anxiety | 6 | 6–24 | Marteau 1992 |
+| **FNE-B** | Fear of negative evaluation | 12 | 12–60 | Leary 1983 |
+
+**PTSD / Trauma**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **PCL-5** | PTSD symptom severity | 20 | 0–80 | Weathers 2013 |
+| **PC-PTSD-5** | PTSD screen | 5 | 0–5 | Prins 2016 |
+| **IES-R** | Trauma symptom distress | 22 | 0–88 | Weiss 1997 |
+
+**Substance use / Behavioral addiction**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **SDS** | Severity of dependence | 5 | 0–15 | Gossop 1995 |
+| **CUDIT-R** | Cannabis use disorder | 8 | 0–32 | Adamson 2010 |
+| **FTND** | Nicotine dependence | 6 | 0–10 | Heatherton 1991 |
+| **CIUS** | Compulsive internet use | 14 | 14–70 | Meerkerk 2009 |
+| **IGDS9-SF** | Internet gaming disorder | 9 | 9–45 | Pontes 2015 |
+| **SAS-SV** | Smartphone addiction | 10 | 10–60 | Kwon 2013 |
+| **PGSI** | Problem gambling | 9 | 0–27 | Ferris 2001 |
+| **PACS** | Alcohol craving | 5 | 0–30 | Flannery 1999 |
+
+**Safety / Safety-adjacent**
+
+| Instrument | Construct | Items | Notes | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **C-SSRS** | Suicide ideation + behavior | 6 | T3/T4 trigger | Posner 2011 |
+| **SCOFF** | Eating disorder screen | 5 | Binary; ≥2 → referral | Morgan 1999 |
+| **ASRS-6** | ADHD screen | 6 | Binary; triage only | Kessler 2005 |
+| **MDQ** | Bipolar-spectrum screen | 13 | 3-gate screen | Hirschfeld 2000 |
+
+**Distress / General wellbeing**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **K-10** | Psychological distress | 10 | 10–50 | Kessler 2002 |
+| **K-6** | Psychological distress (short) | 6 | 6–30 | Kessler 2003 |
+| **CORE-10** | Global clinical distress | 10 | 0–40 | Barkham 2013 |
+| **WEMWBS** | Mental wellbeing | 14 | 14–70 | Tennant 2007 |
+| **SWLS** | Life satisfaction | 5 | 5–35 | Diener 1985 |
+
+**Resilience / Coping / Self-efficacy**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **CD-RISC-10** | Trait resilience | 10 | 0–40 | Campbell-Sills 2007 |
+| **BRS** | Bounce-back resilience | 6 | 6–30 | Smith 2008 |
+| **Brief COPE** | Coping strategies | 28 | 28–112 | Carver 1997 |
+| **AAQ-II** | Psychological flexibility | 7 | 7–49 | Bond 2011 |
+| **GSE** | General self-efficacy | 10 | 10–40 | Schwarzer 1995 |
+| **RSES** | Self-esteem | 10 | 10–40 | Rosenberg 1965 |
+
+**Emotion regulation / Mindfulness**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **DERS-16** | Emotion dysregulation | 16 | 16–80 | Bjureberg 2016 |
+| **ERQ** | Regulation strategy (reappraisal vs. suppression) | 10 | 10–50 | Gross 2003 |
+| **TAS-20** | Alexithymia | 20 | 20–100 | Bagby 1994 |
+| **MAAS** | Trait mindful attention | 15 | 15–90 | Brown 2003 |
+| **FFMQ-15** | Trait mindfulness (5 facets) | 15 | 15–75 | Gu 2016 |
+| **RRS-10** | Ruminative responses | 10 | 10–40 | Treynor 2003 |
+| **SCS-SF** | Self-compassion | 12 | 12–60 | Raes 2011 |
+
+**Social / Context**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **MSPSS** | Perceived social support | 12 | 12–84 | Zimet 1988 |
+| **UCLA-3** | Loneliness | 3 | 3–9 | Hughes 2004 |
+| **ACES** | Adverse childhood experiences | 10 | 0–10 | Felitti 1998 |
+| **BIS-11** | Trait impulsivity | 30 | 30–120 | Patton 1995 |
+| **PANAS-10** | Positive and negative affect | 10 | 10–50 | Thompson 2007 |
+
+**Functional / Sleep**
+
+| Instrument | Construct | Items | Range | Key Reference |
+|-----------|-----------|-------|-------|---------------|
+| **WSAS** | Work and social adjustment | 5 | 0–40 | Mundt 2002 |
+| **ESS** | Daytime sleepiness | 8 | 0–24 | Johns 1991 |
+| **ISI** | Insomnia severity | 7 | 0–28 | Morin 1993 |
+| **PCS** | Pain catastrophizing | 13 | 0–52 | Sullivan 1995 |
+| **LOT-R** | Dispositional optimism | 10 | 0–24 | Scheier 1994 |
+
+**Planned (not yet implemented)**
 
 | Instrument | Construct | Notes |
 |-----------|-----------|-------|
-| **PHQ-2** | Depression 2-item screen | Fast daily EMA variant |
-| **GAD-2** | Anxiety 2-item screen | Fast daily EMA variant |
 | **ASSIST** | Multi-substance screen | Broader vertical support |
 | **PSQI** | Sleep quality | Integrates with wearable sleep data |
-| **SDS** (Severity of Dependence Scale) | Dependence | 5 items |
-| **OASIS** | Anxiety severity | 5 items |
-| **C-SSRS** (screening version) | Suicide ideation + behavior | Licensed; used with clinical oversight only |
 | **WHOQOL-BREF** | Quality of life | 26 items |
 
 ### 3.3 Tier C — Clinical SKU / trial use (v2+)
@@ -65,11 +170,11 @@ This is not a "mood quiz" layer. These are licensed, validated instruments treat
 | **HDRS** | Clinician-rated depression — trial contexts |
 | **SCID-5** | Structured diagnostic — trial contexts |
 
-### 3.4 Instrument we intentionally do not use
+### 3.4 Instruments we intentionally do not use
 
 - Proprietary personality tests marketed without validation (e.g., most "engagement science" scales).
 - Instruments normed on narrow demographics where we can't justify applicability.
-- Instruments that pathologize normal variation (e.g., "internet addiction" scales with poor construct validity).
+- Instruments that pathologize normal variation without published psychometric validation (validated digital-use scales — CIUS, IGDS9-SF, SAS-SV — are implemented in Tier B above with explicit citation rationale).
 
 ---
 
@@ -341,27 +446,30 @@ Add to the module map (`05_Backend_Services.md` §2):
 
 ```
 src/discipline/psychometric/
-├── router.py                   HTTP surface
-├── service.py                  Orchestration
-├── scheduler.py                Due-instrument calculator
-├── scorer.py                   Dispatcher over instrument scorers
-├── change_detector.py          RCI + band-crossing + trend
-├── safety.py                   Real-time T4 routing
-├── instruments/                One module per instrument
-│   ├── phq9.py
-│   ├── gad7.py
-│   ├── audit.py
-│   ├── audit_c.py
-│   ├── dast10.py
-│   ├── pss10.py
-│   ├── who5.py
-│   ├── dtcq8.py
-│   ├── urica.py
-│   ├── craving_vas.py
-│   └── readiness_ruler.py
-├── i18n/                       Item wording per locale, version-pinned
-├── repository.py
-└── tests/
+├── router.py                   HTTP surface (POST /v1/assessments)
+├── repository.py               In-memory assessment store
+├── scheduler.py                Due-instrument calculator (decide())
+├── safety_items.py             T3/T4 safety-item evaluation (PHQ-9 item 9, C-SSRS)
+├── scoring/                    68 deterministic scorer modules (one per instrument)
+│   ├── phq9.py, gad7.py, who5.py, audit.py, audit_c.py   # Tier A core
+│   ├── dast10.py, pss10.py, dtcq8.py, urica.py            # Tier A substance/motivation
+│   ├── craving_vas.py, readiness_ruler.py                  # Tier A EMA
+│   ├── phq2.py, gad2.py, phq15.py, cesd.py, dass21.py    # Mood/depression
+│   ├── shaps.py, hads.py, panas10.py                       # Affect
+│   ├── oasis.py, pswq.py, spin.py, stai6.py, fneb.py      # Anxiety/social
+│   ├── pcl5.py, pcptsd5.py, iesr.py                        # PTSD/trauma
+│   ├── cssrs.py, scoff.py, asrs6.py, mdq.py               # Safety/screening
+│   ├── sds.py, cuditr.py, ftnd.py, cius.py                # Substance
+│   ├── igds9sf.py, sassv.py, pgsi.py, pacs.py             # Behavioral addiction
+│   ├── k10.py, k6.py, core10.py, wemwbs.py, swls.py      # Distress/wellbeing
+│   ├── cdrisc10.py, brs.py, brief_cope.py, aaq2.py        # Resilience/coping
+│   ├── gse.py, rses.py                                     # Self-efficacy/esteem
+│   ├── ders16.py, erq.py, tas20.py, maas.py               # Regulation
+│   ├── ffmq15.py, rrs10.py, scssf.py                      # Mindfulness/rumination
+│   ├── mspss.py, ucla3.py, aces.py, bis11.py              # Social/context
+│   ├── wsas.py, ess.py, isi.py, pcs.py, lotr.py          # Functional/sleep
+│   └── ... (68 total — see scoring/ directory)
+└── tests/                      Scorer unit tests + HTTP routing tests
 ```
 
 Service interface (excerpt):
