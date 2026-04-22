@@ -25,7 +25,6 @@ from discipline.app import create_app
 from discipline.reports.enterprise import K_ANONYMITY_THRESHOLD
 from discipline.shared.http.phi_boundary import PHI_BOUNDARY_HEADER
 
-
 # ---- Fixtures --------------------------------------------------------------
 
 

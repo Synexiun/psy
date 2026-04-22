@@ -63,9 +63,9 @@ class TestConstants:
     def test_eleven_items_reverse_coded(self) -> None:
         # Patton 1995 Table 1: items 1, 7, 8, 9, 10, 12, 13, 15, 20,
         # 29, 30.  Pinned to catch a silent drop during refactor.
-        assert REVERSE_SCORED_ITEMS_1INDEXED == frozenset(
+        assert frozenset(
             {1, 7, 8, 9, 10, 12, 13, 15, 20, 29, 30}
-        )
+        ) == REVERSE_SCORED_ITEMS_1INDEXED
 
     def test_stanford_2009_severity_bands_pinned(self) -> None:
         assert BIS11_SEVERITY_THRESHOLDS == (

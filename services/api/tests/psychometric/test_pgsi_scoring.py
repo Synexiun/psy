@@ -37,12 +37,10 @@ from discipline.psychometric.scoring.pgsi import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     PGSI_SEVERITY_THRESHOLDS,
-    PgsiResult,
+    InvalidResponseError,
     score_pgsi,
 )
-
 
 # --------------------------------------------------------------------
 # Constants — pin Ferris & Wynne 2001 source-of-truth values.

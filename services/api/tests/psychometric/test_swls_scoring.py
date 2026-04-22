@@ -37,8 +37,8 @@ from discipline.psychometric.scoring.swls import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     SWLS_REVERSE_ITEMS,
+    InvalidResponseError,
     SwlsResult,
     score_swls,
 )

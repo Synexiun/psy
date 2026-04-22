@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from enum import Enum
+from enum import StrEnum
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -44,7 +44,7 @@ from .negotiation import DEFAULT_LOCALE, SUPPORTED_LOCALES, Locale
 # ---- Catalog status --------------------------------------------------------
 
 
-class CatalogStatus(str, Enum):
+class CatalogStatus(StrEnum):
     """Lifecycle state of a locale catalog.
 
     - ``SOURCE`` — the canonical English copy.  By definition releasable.
@@ -162,12 +162,17 @@ def _flatten(prefix: str, obj: dict[str, Any]) -> dict[str, str]:
 
 def _parse_meta(raw_meta: dict[str, Any], locale: Locale) -> CatalogMeta:
     raw_status = raw_meta.get("status")
+    if not isinstance(raw_status, str):
+        raise CatalogStatusError(
+            f"catalog {locale}: _meta.status={raw_status!r} is not a valid "
+            f"CatalogStatus (expected one of {list(CatalogStatus)})"
+        )
     try:
         status = CatalogStatus(raw_status)
     except ValueError as exc:
         raise CatalogStatusError(
             f"catalog {locale}: _meta.status={raw_status!r} is not a valid "
-            f"CatalogStatus (expected one of {[s.value for s in CatalogStatus]})"
+            f"CatalogStatus (expected one of {list(CatalogStatus)})"
         ) from exc
     return CatalogMeta(
         locale=locale,
@@ -258,7 +263,8 @@ def resolve_clinical_message(key: str, locale: Locale) -> str:
     a screen render.
     """
     if is_clinical_key(key) and not is_locale_releasable(locale):
-        return _lookup(key, DEFAULT_LOCALE)
+        clinical_fallback = _lookup(key, DEFAULT_LOCALE)
+        return clinical_fallback if clinical_fallback is not None else key
     primary = _lookup(key, locale)
     if primary is not None:
         return primary

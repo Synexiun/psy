@@ -161,8 +161,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "pswq-1.0.0"
 ITEM_COUNT = 16
@@ -298,11 +298,11 @@ def score_pswq(raw_items: Sequence[int]) -> PswqResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "PSWQ_REVERSE_ITEMS",
+    "InvalidResponseError",
     "PswqResult",
     "score_pswq",
 ]

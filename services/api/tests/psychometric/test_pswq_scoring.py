@@ -15,8 +15,8 @@ from discipline.psychometric.scoring.pswq import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     PSWQ_REVERSE_ITEMS,
+    InvalidResponseError,
     PswqResult,
     score_pswq,
 )

@@ -10,14 +10,13 @@ from __future__ import annotations
 import pytest
 
 from discipline.reports.enterprise import (
-    InvalidCohortSizeError,
     K_ANONYMITY_THRESHOLD,
+    InvalidCohortSizeError,
     OrgEngagement,
     OrgEngagementSnapshot,
     build_org_engagement,
     suppress_below_k,
 )
-
 
 # =============================================================================
 # The threshold itself

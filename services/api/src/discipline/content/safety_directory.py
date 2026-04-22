@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from discipline.shared.i18n import Locale
 
@@ -102,7 +102,7 @@ class MirrorDriftError(RuntimeError):
 
 def _load_raw(path: Path = _DEFAULT_API_PATH) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as fh:
-        return json.load(fh)
+        return cast("dict[str, Any]", json.load(fh))
 
 
 def _parse_meta(raw_meta: dict[str, Any]) -> DirectoryMeta:

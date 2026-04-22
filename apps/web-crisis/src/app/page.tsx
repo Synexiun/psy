@@ -1,9 +1,20 @@
-import { redirect } from 'next/navigation';
+import React from 'react';
 
 /**
- * The root path redirects to /en/ as a static safe default. Static export pre-renders
- * this redirect via an HTML meta refresh + Link header, so no server-side runtime is needed.
+ * Root path — static export fallback.
+ *
+ * In production, the CDN (CloudFront/S3) redirects / → /en/ at the edge.
+ * This page exists so the static export builds without error and provides
+ * a manual fallback link if a user lands here without the redirect.
  */
 export default function RootPage() {
-  redirect('/en');
+  return (
+    <main className="mx-auto max-w-2xl px-5 py-8">
+      <p>
+        <a href="/en/" className="underline">
+          Go to crisis support (English)
+        </a>
+      </p>
+    </main>
+  );
 }

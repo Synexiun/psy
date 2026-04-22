@@ -15,8 +15,8 @@ from discipline.psychometric.scoring.k6 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     K6_POSITIVE_CUTOFF,
+    InvalidResponseError,
     K6Result,
     score_k6,
 )

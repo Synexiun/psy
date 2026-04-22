@@ -2,7 +2,7 @@ import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 import { buildButtonClasses } from '@disciplineos/design-system/primitives/web';
 
-export default function MarketingHomePage({ params }: { params: Promise<{ locale: string }> }) {
+export default function MarketingHomePage({ params }: { params: Promise<{ locale: string }> }): React.JSX.Element {
   return <HomeContent paramsPromise={params} />;
 }
 

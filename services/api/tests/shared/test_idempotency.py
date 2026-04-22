@@ -15,7 +15,7 @@ under the ``TestIdempotency`` class.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -32,7 +32,6 @@ from discipline.shared.idempotency import (
     hash_pydantic,
     reset_default_store,
 )
-
 
 # ---- Canonical JSON + hash determinism -----------------------------------
 
@@ -159,12 +158,12 @@ class TestStore:
     def test_store_overwrites_expired_entry(self) -> None:
         """An expired entry is effectively gone — the next store under
         the same key must succeed even with a different body hash."""
-        clock = _fixed_clock(datetime(2026, 4, 18, tzinfo=timezone.utc))
+        clock = _fixed_clock(datetime(2026, 4, 18, tzinfo=UTC))
         store = IdempotencyStore(ttl_seconds=60, now_fn=clock)
         store.store("k1", "hash-a", "first")
         # Advance past expiry.
         store._now = _fixed_clock(  # type: ignore[method-assign]
-            datetime(2026, 4, 18, 0, 2, tzinfo=timezone.utc)
+            datetime(2026, 4, 18, 0, 2, tzinfo=UTC)
         )
         # Same key, different hash — must succeed (not ConflictOnStoreError).
         store.store("k1", "hash-b", "second")
@@ -208,7 +207,7 @@ class TestStore:
 
 class TestTtlExpiry:
     def test_entry_returns_hit_before_expiry(self) -> None:
-        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC)
         store = IdempotencyStore(ttl_seconds=60, now_fn=_fixed_clock(start))
         store.store("k1", "hash-a", "ok")
         # 59 s later — still within TTL.
@@ -216,7 +215,7 @@ class TestTtlExpiry:
         assert isinstance(store.lookup("k1", "hash-a"), Hit)
 
     def test_entry_returns_miss_after_expiry(self) -> None:
-        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC)
         store = IdempotencyStore(ttl_seconds=60, now_fn=_fixed_clock(start))
         store.store("k1", "hash-a", "ok")
         # 61 s later — past TTL.
@@ -226,7 +225,7 @@ class TestTtlExpiry:
     def test_expired_entry_evicted_in_band(self) -> None:
         """Lookup of an expired entry purges it.  Pins that we don't
         accumulate expired entries forever."""
-        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC)
         store = IdempotencyStore(ttl_seconds=60, now_fn=_fixed_clock(start))
         store.store("k1", "hash-a", "ok")
         assert len(store) == 1
@@ -237,7 +236,7 @@ class TestTtlExpiry:
     def test_expired_entry_then_different_hash_is_miss_not_conflict(self) -> None:
         """After expiry the key is re-usable — a different body hash
         at the same key is a fresh request, not a Conflict."""
-        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+        start = datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC)
         store = IdempotencyStore(ttl_seconds=60, now_fn=_fixed_clock(start))
         store.store("k1", "hash-a", "first")
         store._now = _fixed_clock(start + timedelta(seconds=120))  # type: ignore[method-assign]

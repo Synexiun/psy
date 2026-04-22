@@ -9,16 +9,15 @@ from discipline.psychometric.scoring.mspss import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     MSPSS_FAMILY_POSITIONS,
     MSPSS_FRIENDS_POSITIONS,
     MSPSS_REVERSE_ITEMS,
     MSPSS_SIGNIFICANT_OTHER_POSITIONS,
     MSPSS_SUBSCALES,
+    InvalidResponseError,
     MspssResult,
     score_mspss,
 )
-
 
 VALID_MID = 4  # Neutral midpoint of 1-7 Likert
 

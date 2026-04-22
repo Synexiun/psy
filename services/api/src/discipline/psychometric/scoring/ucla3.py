@@ -215,8 +215,9 @@ scheduling layer, but the assessment itself does not set
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "ucla3-1.0.0"
 ITEM_COUNT = 3

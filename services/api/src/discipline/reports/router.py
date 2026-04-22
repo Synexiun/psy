@@ -19,7 +19,7 @@ surface as of 2026-04-18.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -39,8 +39,8 @@ from .enterprise import (
 )
 from .fhir_bundle import BundleType, assemble_bundle, assemble_bundle_from_resources
 from .fhir_observation import (
-    CssrsObservationSpec,
     LOINC_CODES,
+    CssrsObservationSpec,
     ObservationSpec,
     UnsupportedInstrumentError,
     render_bundle,
@@ -349,7 +349,7 @@ async def request_user_export(payload: UserExportRequest) -> dict[str, object]:
         resource="user.export.archive",
     )
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     export_payload = UserExportPayload(
         user_id=payload.user_id,
         requested_at=now,

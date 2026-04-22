@@ -218,8 +218,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "urica-1.0.0"
 ITEM_COUNT = 16
@@ -381,16 +381,16 @@ def score_urica(raw_items: Sequence[int]) -> UricaResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "SUBSCALE_SIZE",
-    "SUBSCALE_PRECONTEMPLATION_SLOTS",
-    "SUBSCALE_CONTEMPLATION_SLOTS",
     "SUBSCALE_ACTION_SLOTS",
-    "SUBSCALE_MAINTENANCE_SLOTS",
+    "SUBSCALE_CONTEMPLATION_SLOTS",
     "SUBSCALE_LABELS",
+    "SUBSCALE_MAINTENANCE_SLOTS",
+    "SUBSCALE_PRECONTEMPLATION_SLOTS",
+    "SUBSCALE_SIZE",
+    "InvalidResponseError",
     "UricaResult",
     "score_urica",
 ]

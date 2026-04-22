@@ -167,7 +167,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
-
 INSTRUMENT_VERSION: Final[str] = "brief_cope-1.0.0"
 ITEM_COUNT: Final[int] = 28
 ITEM_MIN: Final[int] = 1
@@ -329,11 +328,11 @@ def score_brief_cope(raw_items: Sequence[int]) -> BriefCopeResult:
 __all__ = [
     "BRIEF_COPE_SUBSCALES",
     "BRIEF_COPE_SUBSCALE_POSITIONS",
-    "BriefCopeResult",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "BriefCopeResult",
     "InvalidResponseError",
     "Severity",
     "score_brief_cope",

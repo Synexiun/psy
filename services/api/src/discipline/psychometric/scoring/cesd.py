@@ -166,7 +166,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
-
 INSTRUMENT_VERSION: Final[str] = "cesd-1.0.0"
 ITEM_COUNT: Final[int] = 20
 ITEM_MIN: Final[int] = 0

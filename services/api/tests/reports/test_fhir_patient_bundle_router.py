@@ -35,7 +35,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -48,7 +48,6 @@ from discipline.psychometric.repository import (
 )
 from discipline.shared.idempotency import get_idempotency_store
 from discipline.shared.logging import LogStream, get_stream_logger
-
 
 # ---- Fixtures -----------------------------------------------------------
 
@@ -565,7 +564,7 @@ class TestChronologicalOrder:
             instrument="phq9",
             total=5,
             severity="mild",
-            created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 1, 1, tzinfo=UTC),
             raw_items=tuple([0] * 9),
         )
         _save_record_directly(
@@ -573,7 +572,7 @@ class TestChronologicalOrder:
             instrument="phq9",
             total=10,
             severity="moderate",
-            created_at=datetime(2026, 3, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 3, 15, tzinfo=UTC),
             raw_items=tuple([0] * 9),
         )
         _save_record_directly(
@@ -581,7 +580,7 @@ class TestChronologicalOrder:
             instrument="phq9",
             total=3,
             severity="minimal",
-            created_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 2, 1, tzinfo=UTC),
             raw_items=tuple([0] * 9),
         )
         resp = client.get(

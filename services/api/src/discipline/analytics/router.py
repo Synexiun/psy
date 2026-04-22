@@ -57,7 +57,7 @@ class FramedScoreResponse(BaseModel):
     suppressed_reason: str | None = None
 
     @classmethod
-    def from_dataclass(cls, fs: FramedScore) -> "FramedScoreResponse":
+    def from_dataclass(cls, fs: FramedScore) -> FramedScoreResponse:
         return cls(
             instrument=fs.instrument,
             display=fs.display,
@@ -74,7 +74,7 @@ class FramedTrendResponse(BaseModel):
     suppressed_reason: Literal["insufficient_data"] | None = None
 
     @classmethod
-    def from_dataclass(cls, ft: FramedTrend) -> "FramedTrendResponse":
+    def from_dataclass(cls, ft: FramedTrend) -> FramedTrendResponse:
         return cls(
             instrument=ft.instrument,
             direction_label=ft.direction_label,
@@ -91,7 +91,7 @@ class FramedResilienceResponse(BaseModel):
     tone: Literal["calm", "neutral", "alert"]
 
     @classmethod
-    def from_dataclass(cls, fr: FramedResilience) -> "FramedResilienceResponse":
+    def from_dataclass(cls, fr: FramedResilience) -> FramedResilienceResponse:
         return cls(
             resilience_days=fr.resilience_days,
             days_clean=fr.days_clean,
@@ -113,7 +113,7 @@ class WeeklyReflectionResponse(BaseModel):
     resilience: FramedResilienceResponse | None
 
     @classmethod
-    def from_dataclass(cls, r: WeeklyReflection) -> "WeeklyReflectionResponse":
+    def from_dataclass(cls, r: WeeklyReflection) -> WeeklyReflectionResponse:
         return cls(
             user_id=r.user_id,
             week_ending=r.week_ending,

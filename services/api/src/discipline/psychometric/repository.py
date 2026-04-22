@@ -39,9 +39,9 @@ from __future__ import annotations
 
 import threading
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Callable
+from datetime import UTC, datetime
 
 __all__ = [
     "AssessmentRecord",
@@ -129,7 +129,7 @@ class InMemoryAssessmentRepository:
     def __init__(
         self, *, now_fn: Callable[[], datetime] | None = None
     ) -> None:
-        self._now = now_fn or (lambda: datetime.now(timezone.utc))
+        self._now = now_fn or (lambda: datetime.now(UTC))
         self._by_user: dict[str, list[AssessmentRecord]] = defaultdict(list)
         self._by_id: dict[str, AssessmentRecord] = {}
         self._lock = threading.Lock()

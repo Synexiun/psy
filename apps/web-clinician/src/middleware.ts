@@ -9,6 +9,7 @@ const isPublic = createRouteMatcher([
   '/',
   '/:locale',
   '/:locale/sign-in(.*)',
+  '/:locale/crisis(.*)',
   '/api/health',
 ]);
 
@@ -27,16 +28,12 @@ const isPhiBoundary = createRouteMatcher([
  */
 export default clerkMiddleware(async (auth, req) => {
   if (isPublic(req)) {
-    const intlResponse = intl(req);
-    return intlResponse ?? NextResponse.next();
+    return intl(req);
   }
 
-  const { userId, sessionClaims } = await auth();
-  if (!userId) {
-    await auth.protect();
-  }
+  auth.protect();
 
-  const roles = (sessionClaims?.['roles'] as string[] | undefined) ?? [];
+  const roles = ((await auth()).sessionClaims?.['roles'] as string[] | undefined) ?? [];
   if (!roles.includes('clinician')) {
     const url = req.nextUrl.clone();
     url.pathname = '/forbidden';

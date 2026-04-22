@@ -15,11 +15,9 @@ from discipline.psychometric.scoring.cius import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    CiusResult,
     InvalidResponseError,
     score_cius,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants — pinned against accidental drift

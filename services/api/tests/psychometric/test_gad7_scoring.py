@@ -16,11 +16,9 @@ from discipline.psychometric.scoring.gad7 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    Gad7Result,
     InvalidResponseError,
     score_gad7,
 )
-
 
 # ---- Severity band boundaries (Spitzer 2006) -------------------------------
 

@@ -12,22 +12,21 @@ side.  A failing test must trigger a LOINC lookup, not an "update the string".
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
 from discipline.reports.fhir_observation import (
     CSSRS_ITEM_DISPLAYS,
     CSSRS_RISK_LEVEL_DISPLAYS,
-    CssrsObservationSpec,
     LOINC_CODES,
     LOINC_DISPLAY,
+    CssrsObservationSpec,
     ObservationSpec,
     UnsupportedInstrumentError,
     render_bundle,
     render_cssrs_bundle,
 )
-
 
 # ---- LOINC code registry pinning -------------------------------------------
 
@@ -76,7 +75,7 @@ class TestFhirResourceShape:
             "patient_reference": "Patient/abc123",
             "instrument": "phq9",
             "score": 12,
-            "effective": datetime(2026, 4, 18, 14, 30, 0, tzinfo=timezone.utc),
+            "effective": datetime(2026, 4, 18, 14, 30, 0, tzinfo=UTC),
             "safety_item_positive": False,
         }
         defaults.update(overrides)
@@ -129,7 +128,7 @@ class TestEffectiveDateTimeFormat:
             patient_reference="Patient/1",
             instrument="phq9",
             score=5,
-            effective=datetime(2026, 4, 18, 14, 30, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 14, 30, 0, tzinfo=UTC),
         )
         bundle = render_bundle(spec)
         assert bundle["effectiveDateTime"] == "2026-04-18T14:30:00Z"
@@ -170,7 +169,7 @@ class TestSafetyPositiveInterpretation:
             patient_reference="Patient/abc",
             instrument="phq9",
             score=8,
-            effective=datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC),
             safety_item_positive=safety_positive,
         )
 
@@ -217,7 +216,7 @@ class TestRenderErrors:
             patient_reference="Patient/1",
             instrument="not_a_real_instrument",
             score=5,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         with pytest.raises(UnsupportedInstrumentError, match="not_a_real_instrument"):
             render_bundle(spec)
@@ -227,7 +226,7 @@ class TestRenderErrors:
             patient_reference="Patient/1",
             instrument="phq9",
             score=-1,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         with pytest.raises(ValueError, match="non-negative"):
             render_bundle(spec)
@@ -246,7 +245,7 @@ class TestAllInstrumentsRenderConsistently:
             patient_reference="Patient/universal",
             instrument=instrument,
             score=5,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         bundle = render_bundle(spec)
         assert bundle["resourceType"] == "Observation"
@@ -263,7 +262,7 @@ class TestObservationSpecInvariants:
             patient_reference="Patient/1",
             instrument="phq9",
             score=5,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         with pytest.raises(AttributeError):
             spec.score = 99  # type: ignore[misc]
@@ -273,7 +272,7 @@ class TestObservationSpecInvariants:
             patient_reference="Patient/1",
             instrument="phq9",
             score=5,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         assert spec.safety_item_positive is False
 
@@ -282,7 +281,7 @@ class TestObservationSpecInvariants:
             patient_reference="Patient/1",
             instrument="phq9",
             score=5,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         assert spec.status == "final"
 
@@ -300,7 +299,7 @@ class TestPss10Rendering:
             patient_reference="Patient/pss-subject",
             instrument="pss10",
             score=score,
-            effective=datetime(2026, 4, 18, 14, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 14, 0, 0, tzinfo=UTC),
             safety_item_positive=safety_positive,
         )
 
@@ -356,7 +355,7 @@ class TestCssrsCategoricalRendering:
         defaults: dict[str, object] = {
             "patient_reference": "Patient/cssrs-subject",
             "risk_level": "moderate",
-            "effective": datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            "effective": datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
             "triggering_items": (3,),
             "requires_t3": False,
         }
@@ -432,7 +431,7 @@ class TestCssrsTriggeringItems:
         return CssrsObservationSpec(
             patient_reference="Patient/abc",
             risk_level="acute",
-            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
             triggering_items=items,
             requires_t3=True,
         )
@@ -441,7 +440,7 @@ class TestCssrsTriggeringItems:
         spec = CssrsObservationSpec(
             patient_reference="Patient/none",
             risk_level="none",
-            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
         )
         bundle = render_cssrs_bundle(spec)
         assert "component" not in bundle
@@ -491,7 +490,7 @@ class TestCssrsAcuteInterpretation:
         return CssrsObservationSpec(
             patient_reference="Patient/acute",
             risk_level=risk,  # type: ignore[arg-type]
-            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
             triggering_items=(4, 5),
             requires_t3=requires_t3,
         )
@@ -513,7 +512,7 @@ class TestCssrsValidation:
         spec = CssrsObservationSpec(
             patient_reference="Patient/1",
             risk_level="severe",  # type: ignore[arg-type]  # not a valid band
-            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
         )
         with pytest.raises(ValueError, match="unknown C-SSRS risk_level"):
             render_cssrs_bundle(spec)
@@ -522,7 +521,7 @@ class TestCssrsValidation:
         spec = CssrsObservationSpec(
             patient_reference="Patient/1",
             risk_level="low",
-            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
         )
         with pytest.raises(AttributeError):
             spec.risk_level = "acute"  # type: ignore[misc]
@@ -531,7 +530,7 @@ class TestCssrsValidation:
         spec = CssrsObservationSpec(
             patient_reference="Patient/1",
             risk_level="none",
-            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 10, 0, 0, tzinfo=UTC),
         )
         assert spec.triggering_items == ()
         assert spec.requires_t3 is False

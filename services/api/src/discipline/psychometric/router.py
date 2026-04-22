@@ -1372,7 +1372,8 @@ C-SSRS transport note:
 
 from __future__ import annotations
 
-from typing import Literal
+from collections.abc import Sequence
+from typing import Literal, cast
 from uuid import uuid4
 
 from fastapi import APIRouter, Header, HTTPException
@@ -2100,7 +2101,7 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # is fine.  ``behavior_within_3mo`` defaults to False at the
         # scorer when ``None`` is supplied — the safer default.
         c = score_cssrs_screen(
-            payload.items,
+            cast("Sequence[bool]", payload.items),
             behavior_within_3mo=bool(payload.behavior_within_3mo),
         )
         return AssessmentResult(
@@ -2423,14 +2424,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # a crisis signal; acute ideation is gated by PHQ-9 item 9
         # / C-SSRS per the uniform safety-posture convention.  See
         # ``scoring/dtcq8.py``.
-        d = score_dtcq8(payload.items)
+        dtcq = score_dtcq8(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="dtcq8",
-            total=d.total,
+            total=dtcq.total,
             severity="continuous",
             requires_t3=False,
-            instrument_version=d.instrument_version,
+            instrument_version=dtcq.instrument_version,
         )
     if payload.instrument == "urica":
         # McConnaughy 1983 / DiClemente & Hughes 1990 — 16-item
@@ -3342,18 +3343,18 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # version was extracted for non-symptom-confounded process
         # measurement.  Acute ideation screening stays on PHQ-9
         # item 9 / C-SSRS.  See ``scoring/rrs10.py``.
-        rr = score_rrs10(payload.items)
+        rrs = score_rrs10(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="rrs10",
-            total=rr.total,
+            total=rrs.total,
             severity="continuous",
             requires_t3=False,
             subscales={
-                "brooding": rr.subscale_brooding,
-                "reflection": rr.subscale_reflection,
+                "brooding": rrs.subscale_brooding,
+                "reflection": rrs.subscale_reflection,
             },
-            instrument_version=rr.instrument_version,
+            instrument_version=rrs.instrument_version,
         )
     if payload.instrument == "maas":
         # Brown & Ryan 2003 Mindful Attention Awareness Scale — 15-item
@@ -3772,19 +3773,19 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # is locale-agnostic (only sees the yes/no response);
         # the administration-UI must present the culturally-
         # appropriate translation.  See ``scoring/scoff.py``.
-        sc = score_scoff(payload.items)
+        scoff = score_scoff(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="scoff",
-            total=sc.total,
+            total=scoff.total,
             severity=(
-                "positive_screen" if sc.positive_screen
+                "positive_screen" if scoff.positive_screen
                 else "negative_screen"
             ),
             requires_t3=False,
-            positive_screen=sc.positive_screen,
+            positive_screen=scoff.positive_screen,
             cutoff_used=SCOFF_POSITIVE_CUTOFF,
-            instrument_version=sc.instrument_version,
+            instrument_version=scoff.instrument_version,
         )
     if payload.instrument == "panas10":
         # Thompson 2007 I-PANAS-SF — 10-item cross-cultural PANAS
@@ -3857,18 +3858,18 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # affect per Watson 1988 item derivation, NOT suicidal
         # ideation.  Acute-risk screening stays on C-SSRS /
         # PHQ-9 item 9.  See ``scoring/panas10.py``.
-        p = score_panas10(payload.items)
+        pn = score_panas10(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="panas10",
-            total=p.pa_sum,
+            total=pn.pa_sum,
             severity="continuous",
             requires_t3=False,
             subscales={
-                PANAS10_SUBSCALES[0]: p.pa_sum,
-                PANAS10_SUBSCALES[1]: p.na_sum,
+                PANAS10_SUBSCALES[0]: pn.pa_sum,
+                PANAS10_SUBSCALES[1]: pn.na_sum,
             },
-            instrument_version=p.instrument_version,
+            instrument_version=pn.instrument_version,
         )
     if payload.instrument == "rses":
         # Rosenberg 1965 Self-Esteem Scale — 10-item 0-3 Likert
@@ -4079,14 +4080,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # design; every constant vector lands at the midpoint
         # total of 15 (stronger than FFMQ-15's 8/7 asymmetric
         # differ-by-4 property).  See ``scoring/stai6.py``.
-        s = score_stai6(payload.items)
+        stai = score_stai6(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="stai6",
-            total=s.total,
-            severity=s.severity,
+            total=stai.total,
+            severity=stai.severity,
             requires_t3=False,
-            instrument_version=s.instrument_version,
+            instrument_version=stai.instrument_version,
         )
     if payload.instrument == "fneb":
         # FNE-B — 12-item Brief Fear of Negative Evaluation scale
@@ -4175,14 +4176,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # pinned in the test suite so regression is immediate
         # if reverse-keying positions drift.  See
         # ``scoring/fneb.py``.
-        f = score_fneb(payload.items)
+        fneb = score_fneb(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="fneb",
-            total=f.total,
-            severity=f.severity,
+            total=fneb.total,
+            severity=fneb.severity,
             requires_t3=False,
-            instrument_version=f.instrument_version,
+            instrument_version=fneb.instrument_version,
         )
     if payload.instrument == "ucla3":
         # UCLA-3 — 3-item brief loneliness scale derived by
@@ -4277,14 +4278,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # positive_screen, cutoff_used, triggering_items) —
         # same shape as RSES / STAI-6 / FNE-B / PANAS-10-total.
         # See ``scoring/ucla3.py``.
-        u = score_ucla3(payload.items)
+        ucla = score_ucla3(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="ucla3",
-            total=u.total,
-            severity=u.severity,
+            total=ucla.total,
+            severity=ucla.severity,
             requires_t3=False,
-            instrument_version=u.instrument_version,
+            instrument_version=ucla.instrument_version,
         )
     if payload.instrument == "cius":
         # CIUS — 14-item Compulsive Internet Use Scale (Meerkerk,
@@ -4376,14 +4377,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # scaled_score, positive_screen, cutoff_used,
         # triggering_items) — same shape as RSES / STAI-6 /
         # FNE-B / UCLA-3.  See ``scoring/cius.py``.
-        c = score_cius(payload.items)
+        cius = score_cius(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="cius",
-            total=c.total,
-            severity=c.severity,
+            total=cius.total,
+            severity=cius.severity,
             requires_t3=False,
-            instrument_version=c.instrument_version,
+            instrument_version=cius.instrument_version,
         )
     if payload.instrument == "swls":
         # SWLS — 5-item Satisfaction With Life Scale (Diener,
@@ -4499,14 +4500,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # CIUS / STAI-6 / FNE-B).  ``items`` field = raw input
         # (identity under zero-reverse-keying).  See
         # ``scoring/swls.py``.
-        s = score_swls(payload.items)
+        swls = score_swls(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="swls",
-            total=s.total,
-            severity=s.severity,
+            total=swls.total,
+            severity=swls.severity,
             requires_t3=False,
-            instrument_version=s.instrument_version,
+            instrument_version=swls.instrument_version,
         )
     if payload.instrument == "mspss":
         # MSPSS — 12-item Multidimensional Scale of Perceived Social
@@ -4811,14 +4812,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # RCI ≈ 5 points.  A 5-point GSE delta is clinically
         # meaningful in a Marlatt-style relapse-prevention program.
         # See ``scoring/gse.py``.
-        g = score_gse(payload.items)
+        gse = score_gse(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="gse",
-            total=g.total,
-            severity=g.severity,
+            total=gse.total,
+            severity=gse.severity,
             requires_t3=False,
-            instrument_version=g.instrument_version,
+            instrument_version=gse.instrument_version,
         )
     if payload.instrument == "core10":
         # CORE-10 — 10-item Clinical Outcomes in Routine Evaluation
@@ -4921,17 +4922,17 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         #   form.
         # - No ``index`` — the total IS the published score.
         # - No ``scaled_score`` — no transformation applied.
-        c = score_core10(payload.items)
+        core = score_core10(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="core10",
-            total=c.total,
-            severity=c.severity,
-            positive_screen=c.positive_screen,
-            cutoff_used=c.cutoff_used,
-            requires_t3=c.requires_t3,
-            triggering_items=list(c.triggering_items) or None,
-            instrument_version=c.instrument_version,
+            total=core.total,
+            severity=core.severity,
+            positive_screen=core.positive_screen,
+            cutoff_used=core.cutoff_used,
+            requires_t3=core.requires_t3,
+            triggering_items=list(core.triggering_items) or None,
+            instrument_version=core.instrument_version,
         )
     if payload.instrument == "iesr":
         # IES-R — 22-item Impact of Event Scale-Revised (Weiss &
@@ -5067,21 +5068,21 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # - No ``index`` — the total IS the published score.
         # - No ``scaled_score`` — no transformation applied.
         # - No ``triggering_items`` — no item-level acuity routing.
-        i = score_iesr(payload.items)
+        iesr = score_iesr(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="iesr",
-            total=i.total,
-            severity=i.severity,
-            positive_screen=i.positive_screen,
-            cutoff_used=i.cutoff_used,
+            total=iesr.total,
+            severity=iesr.severity,
+            positive_screen=iesr.positive_screen,
+            cutoff_used=iesr.cutoff_used,
             requires_t3=False,
             subscales={
-                IESR_SUBSCALES[0]: i.intrusion,
-                IESR_SUBSCALES[1]: i.avoidance,
-                IESR_SUBSCALES[2]: i.hyperarousal,
+                IESR_SUBSCALES[0]: iesr.intrusion,
+                IESR_SUBSCALES[1]: iesr.avoidance,
+                IESR_SUBSCALES[2]: iesr.hyperarousal,
             },
-            instrument_version=i.instrument_version,
+            instrument_version=iesr.instrument_version,
         )
     if payload.instrument == "hads":
         # HADS — 14-item Hospital Anxiety and Depression Scale
@@ -5419,20 +5420,20 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # - DASS-21 trajectory — Ronk 2013 MCID ≈ 3 points per
         #   subscale; RCI methodology confirms clinical
         #   significance for a 3+ point subscale delta.
-        d = score_dass21(payload.items)
+        dass = score_dass21(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="dass21",
-            total=d.total,
-            severity=d.severity,
-            positive_screen=d.positive_screen,
+            total=dass.total,
+            severity=dass.severity,
+            positive_screen=dass.positive_screen,
             requires_t3=False,
             subscales={
-                DASS21_SUBSCALES[0]: d.depression,
-                DASS21_SUBSCALES[1]: d.anxiety,
-                DASS21_SUBSCALES[2]: d.stress,
+                DASS21_SUBSCALES[0]: dass.depression,
+                DASS21_SUBSCALES[1]: dass.anxiety,
+                DASS21_SUBSCALES[2]: dass.stress,
             },
-            instrument_version=d.instrument_version,
+            instrument_version=dass.instrument_version,
         )
     if payload.instrument == "ftnd":
         # FTND — 6-item Fagerström Test for Nicotine Dependence
@@ -5586,16 +5587,16 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         #   = 3 to item 1 = 0 ("no longer smokes within 5 min")
         #   is a major clinical milestone frequently preceding
         #   sustained abstinence.
-        f = score_ftnd(payload.items)
+        ftnd = score_ftnd(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="ftnd",
-            total=f.total,
-            severity=f.severity,
-            positive_screen=f.positive_screen,
-            cutoff_used=f.cutoff_used,
+            total=ftnd.total,
+            severity=ftnd.severity,
+            positive_screen=ftnd.positive_screen,
+            cutoff_used=ftnd.cutoff_used,
             requires_t3=False,
-            instrument_version=f.instrument_version,
+            instrument_version=ftnd.instrument_version,
         )
     if payload.instrument == "brief_cope":
         # Brief COPE — 28-item coping-strategies inventory
@@ -5841,14 +5842,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         #
         # T3 posture — WEMWBS has NO safety items.  Acute-risk
         # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
-        w = score_wemwbs(payload.items)
+        wem = score_wemwbs(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="wemwbs",
-            total=w.total,
-            severity=w.severity,
+            total=wem.total,
+            severity=wem.severity,
             requires_t3=False,
-            instrument_version=w.instrument_version,
+            instrument_version=wem.instrument_version,
         )
     if payload.instrument == "igds9sf":
         # IGDS9-SF — Pontes & Griffiths 2015 Internet Gaming Disorder
@@ -5959,17 +5960,17 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # T3 posture — IGDS9-SF measures gaming behavior, not
         # suicidality.  Acute-risk screening stays on C-SSRS /
         # PHQ-9 item 9 / CORE-10 item 6.
-        i = score_igds9sf(payload.items)
+        igd = score_igds9sf(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="igds9sf",
-            total=i.total,
-            severity=i.severity,
+            total=igd.total,
+            severity=igd.severity,
             requires_t3=False,
-            positive_screen=i.positive_screen,
-            cutoff_used=i.cutoff_used,
-            endorsed_item_count=i.endorsed_item_count,
-            instrument_version=i.instrument_version,
+            positive_screen=igd.positive_screen,
+            cutoff_used=igd.cutoff_used,
+            endorsed_item_count=igd.endorsed_item_count,
+            instrument_version=igd.instrument_version,
         )
     if payload.instrument == "pcs":
         # PCS — Sullivan 1995 Pain Catastrophizing Scale
@@ -6076,15 +6077,15 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         #
         # T3 posture — PCS has NO safety items.  Acute-risk
         # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10 item 6.
-        p = score_pcs(payload.items)
+        pcs = score_pcs(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="pcs",
-            total=p.total,
-            severity=p.severity,
+            total=pcs.total,
+            severity=pcs.severity,
             requires_t3=False,
-            subscales=p.subscales,
-            instrument_version=p.instrument_version,
+            subscales=pcs.subscales,
+            instrument_version=pcs.instrument_version,
         )
     if payload.instrument == "ess":
         # ESS — Johns 1991 Epworth Sleepiness Scale (Sleep
@@ -6233,14 +6234,14 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # T3 posture — SPIN has NO safety items.  Acute-risk
         # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10
         # item 6.
-        s = score_spin(payload.items)
+        spin = score_spin(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="spin",
-            total=s.total,
-            severity=s.severity,
+            total=spin.total,
+            severity=spin.severity,
             requires_t3=False,
-            instrument_version=s.instrument_version,
+            instrument_version=spin.instrument_version,
         )
     if payload.instrument == "cuditr":
         # CUDIT-R — Adamson 2010 Cannabis Use Disorder Identification
@@ -6282,15 +6283,15 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         # T3 posture — CUDIT-R has NO safety items.  Acute-risk
         # screening stays on C-SSRS / PHQ-9 item 9 / CORE-10
         # item 6.
-        c = score_cuditr(payload.items)
+        cud = score_cuditr(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="cuditr",
-            total=c.total,
-            severity=c.severity,
+            total=cud.total,
+            severity=cud.severity,
             requires_t3=False,
-            positive_screen=c.positive_screen,
-            instrument_version=c.instrument_version,
+            positive_screen=cud.positive_screen,
+            instrument_version=cud.instrument_version,
         )
     if payload.instrument == "cesd":
         # CES-D — Radloff 1977 Center for Epidemiologic Studies
@@ -6325,15 +6326,15 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
         #
         # No subscales (unidimensional per Radloff 1977 EFA).
         # No T3: CES-D measures depressive symptoms, not ideation.
-        d = score_cesd(payload.items)
+        ces = score_cesd(payload.items)
         return AssessmentResult(
             assessment_id=str(uuid4()),
             instrument="cesd",
-            total=d.total,
-            severity=d.severity,
+            total=ces.total,
+            severity=ces.severity,
             requires_t3=False,
-            positive_screen=d.positive_screen,
-            instrument_version=d.instrument_version,
+            positive_screen=ces.positive_screen,
+            instrument_version=ces.instrument_version,
         )
     if payload.instrument == "sas_sv":
         # SAS-SV — Kwon 2013 Smartphone Addiction Scale - Short Version.
@@ -6376,7 +6377,7 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
             "MDQ requires functional_impairment (Part 3: one of "
             "'none'/'minor'/'moderate'/'serious')"
         )
-    m = score_mdq(
+    mdq = score_mdq(
         payload.items,
         concurrent_symptoms=payload.concurrent_symptoms,
         functional_impairment=payload.functional_impairment,
@@ -6389,11 +6390,11 @@ def _dispatch(payload: AssessmentRequest) -> AssessmentResult:
     return AssessmentResult(
         assessment_id=str(uuid4()),
         instrument="mdq",
-        total=m.positive_count,
-        severity="positive_screen" if m.positive_screen else "negative_screen",
+        total=mdq.positive_count,
+        severity="positive_screen" if mdq.positive_screen else "negative_screen",
         requires_t3=False,
-        positive_screen=m.positive_screen,
-        instrument_version=m.instrument_version,
+        positive_screen=mdq.positive_screen,
+        instrument_version=mdq.instrument_version,
     )
 
 
@@ -6472,7 +6473,7 @@ async def submit_assessment(
         # Storing an AssessmentResult in the cache means we re-serve the
         # same assessment_id + identical severity/total fields, which is
         # what a retrying client expects on a network retry.
-        return cached.response
+        return cast(AssessmentResult, cached.response)
 
     try:
         result = _dispatch(payload)

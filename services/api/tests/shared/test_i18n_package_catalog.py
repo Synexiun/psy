@@ -36,7 +36,6 @@ from discipline.shared.i18n.package_catalog import (
     verify_catalog_parity,
 )
 
-
 # ---- Helpers ---------------------------------------------------------------
 
 
@@ -401,10 +400,20 @@ class TestPublicReExports:
     def test_init_exports_load_path(self) -> None:
         from discipline.shared.i18n import (
             CatalogStatus as ReExportedStatus,
+        )
+        from discipline.shared.i18n import (
             is_clinical_key as ReExportedIsClinical,
+        )
+        from discipline.shared.i18n import (
             is_locale_releasable as ReExportedIsReleasable,
+        )
+        from discipline.shared.i18n import (
             releasable_locales as ReExportedReleasable,
+        )
+        from discipline.shared.i18n import (
             resolve_clinical_message as ReExportedResolve,
+        )
+        from discipline.shared.i18n import (
             verify_catalog_parity as ReExportedVerify,
         )
 

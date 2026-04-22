@@ -8,8 +8,16 @@
     "note": "Draft scaffold. MUST receive Arabic native-speaker clinical review (Modern Standard Arabic, mental-health register) before v1.0 launch. Numeric scores use Latin digits per spec."
   },
   "app": {
-    "name": "Discipline OS",
-    "tagline": "اللحظة بين الرغبة والفعل."
+    "welcome": {
+      "title": "مرحبًا بعودتك",
+      "body": "ابدأ بتسجيل حالتك أو افتح إحدى الأدوات."
+    },
+    "urge": {
+      "intensityLabel": "ما شدّة الرغبة الآن؟",
+      "intensityScaleMin": "بالكاد موجودة",
+      "intensityScaleMax": "طاغية"
+    },
+    "name": "Discipline OS"
   },
   "common": {
     "action": {
@@ -69,28 +77,55 @@
       "plusSub": "تخصيص، مسارات موسّعة، يوميات صوتية، مشاركة مع المعالج."
     }
   },
-  "app": {
-    "welcome": {
-      "title": "مرحبًا بعودتك",
-      "body": "ابدأ بتسجيل حالتك أو افتح إحدى الأدوات."
+  "assessment": {
+    "phq9": {
+      "name": "PHQ-9",
+      "description": "فحص الاكتئاب"
     },
-    "urge": {
-      "intensityLabel": "ما شدّة الرغبة الآن؟",
-      "intensityScaleMin": "بالكاد موجودة",
-      "intensityScaleMax": "طاغية"
+    "gad7": {
+      "name": "GAD-7",
+      "description": "فحص القلق"
+    },
+    "audit": {
+      "name": "AUDIT",
+      "description": "فحص استخدام الكحول"
+    },
+    "auditC": {
+      "name": "AUDIT-C",
+      "description": "فحص مختصر للكحول"
+    },
+    "dast10": {
+      "name": "DAST-10",
+      "description": "فحص استخدام المخدرات"
+    },
+    "pss10": {
+      "name": "PSS-10",
+      "description": "مقياس الضغط المُدرَك"
+    },
+    "who5": {
+      "name": "WHO-5",
+      "description": "مؤشر الرفاه"
+    },
+    "dtcq8": {
+      "name": "DTCQ-8",
+      "description": "الإغراء وفعالية الذات"
+    },
+    "urica": {
+      "name": "URICA",
+      "description": "الاستعداد للتغيير"
+    },
+    "cssrs": {
+      "name": "C-SSRS",
+      "description": "تقييم خطر الانتحار"
     }
   },
-  "assessment": {
-    "phq9": { "name": "PHQ-9", "description": "فحص الاكتئاب" },
-    "gad7": { "name": "GAD-7", "description": "فحص القلق" },
-    "audit": { "name": "AUDIT", "description": "فحص استخدام الكحول" },
-    "auditC": { "name": "AUDIT-C", "description": "فحص مختصر للكحول" },
-    "dast10": { "name": "DAST-10", "description": "فحص استخدام المخدرات" },
-    "pss10": { "name": "PSS-10", "description": "مقياس الضغط المُدرَك" },
-    "who5": { "name": "WHO-5", "description": "مؤشر الرفاه" },
-    "dtcq8": { "name": "DTCQ-8", "description": "الإغراء وفعالية الذات" },
-    "urica": { "name": "URICA", "description": "الاستعداد للتغيير" },
-    "cssrs": { "name": "C-SSRS", "description": "تقييم خطر الانتحار" }
+  "privacy": {
+    "headline": "Privacy",
+    "body": "Your data stays on your device unless you explicitly choose to share it. We do not sell data, run ads, or use behavioral fingerprinting."
+  },
+  "safety": {
+    "headline": "Safety",
+    "body": "Discipline OS is not a crisis hotline replacement. If you are in immediate danger, use the crisis path or call your local emergency number."
   },
   "severity": {
     "none": "لا شيء",

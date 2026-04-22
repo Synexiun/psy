@@ -15,17 +15,16 @@ from discipline.psychometric.scoring.dudit import (
     DUDIT_CUTOFF_FEMALE,
     DUDIT_CUTOFF_MALE,
     DUDIT_CUTOFF_UNSPECIFIED,
-    DuditResult,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
-    InvalidResponseError,
     LIKERT_ITEM_MAX,
     LIKERT_ITEM_MIN,
     TRINARY_ITEM_INDICES_1,
     TRINARY_VALUES,
+    DuditResult,
+    InvalidResponseError,
     score_dudit,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -52,11 +51,11 @@ class TestConstants:
         """Items 10-11 accept only 0/2/4 — a response of 1 or 3 on
         these items is rejected even though it sits within the
         numerical envelope 0-4."""
-        assert TRINARY_VALUES == frozenset({0, 2, 4})
+        assert frozenset({0, 2, 4}) == TRINARY_VALUES
 
     def test_trinary_indices_are_ten_and_eleven(self) -> None:
         """Exactly the last two items take the trinary envelope."""
-        assert TRINARY_ITEM_INDICES_1 == frozenset({10, 11})
+        assert frozenset({10, 11}) == TRINARY_ITEM_INDICES_1
 
     def test_male_cutoff_is_six(self) -> None:
         """Berman 2005: ≥6 for men (sensitivity 0.90, specificity 0.88

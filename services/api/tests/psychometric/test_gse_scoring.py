@@ -6,11 +6,11 @@ import pytest
 
 from discipline.psychometric.scoring.gse import (
     GSE_REVERSE_ITEMS,
-    GseResult,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    GseResult,
     InvalidResponseError,
     score_gse,
 )

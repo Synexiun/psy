@@ -49,8 +49,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "audit-c-1.0.0"
 ITEM_COUNT = 3
@@ -154,8 +155,8 @@ __all__ = [
     "AUDIT_C_CUTOFF_FEMALE",
     "AUDIT_C_CUTOFF_MALE",
     "AUDIT_C_CUTOFF_UNSPECIFIED",
-    "AuditCResult",
     "INSTRUMENT_VERSION",
+    "AuditCResult",
     "InvalidResponseError",
     "Sex",
     "score_audit_c",

@@ -56,8 +56,9 @@ Reference:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "cssrs-screen-1.0.0"
 ITEM_COUNT = 6
@@ -213,15 +214,15 @@ def score_cssrs_screen(
 
 
 __all__ = [
-    "CssrsResult",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_ACTIVE_IDEATION",
     "ITEM_INTENT",
     "ITEM_METHOD",
     "ITEM_PASSIVE_IDEATION",
     "ITEM_PAST_BEHAVIOR",
     "ITEM_PLAN",
+    "CssrsResult",
+    "InvalidResponseError",
     "Risk",
     "score_cssrs_screen",
 ]

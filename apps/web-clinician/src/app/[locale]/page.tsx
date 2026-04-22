@@ -5,7 +5,7 @@ export default async function ClinicianHomePage({
   params,
 }: {
   params: Promise<{ locale: string }>;
-}) {
+}): Promise<React.JSX.Element> {
   const { locale } = await params;
   setRequestLocale(locale);
   return <ClinicianHome />;
@@ -18,7 +18,7 @@ function ClinicianHome() {
       <header className="flex items-baseline justify-between border-b pb-4">
         <div>
           <h1 className="text-2xl font-semibold">{t('app.name')} · Clinician</h1>
-          <p className="text-sm text-[hsl(215,16%,47%)]">
+          <p className="text-sm text-[hsl(215,18%,42%)]">
             {t('app.welcome.body')}
           </p>
         </div>
@@ -28,7 +28,7 @@ function ClinicianHome() {
         <h2 id="clients-heading" className="text-lg font-medium">
           Clients
         </h2>
-        <p className="mt-1 text-sm text-[hsl(215,16%,47%)]">
+        <p className="mt-1 text-sm text-[hsl(215,18%,42%)]">
           Only clients who have actively opted into sharing appear here. Re-authentication
           is required before any individual-level view.
         </p>

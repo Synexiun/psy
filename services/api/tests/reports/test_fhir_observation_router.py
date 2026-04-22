@@ -22,7 +22,7 @@ Coverage matrix:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -35,7 +35,6 @@ from discipline.psychometric.repository import (
 )
 from discipline.shared.idempotency import get_idempotency_store
 from discipline.shared.logging import LogStream, get_stream_logger
-
 
 # ---- Fixtures -----------------------------------------------------------
 
@@ -525,7 +524,7 @@ class TestUnsupportedInstrument:
             severity="unknown",
             requires_t3=False,
             raw_items=(1, 2, 3),
-            created_at=datetime(2026, 4, 18, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 18, tzinfo=UTC),
         )
         repo.save(record)
         resp = client.get(

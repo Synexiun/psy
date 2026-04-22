@@ -29,11 +29,11 @@ from discipline.psychometric.scoring.dass21 import (
     DASS21_STRESS_POSITIONS,
     DASS21_STRESS_SEVERITY_THRESHOLDS,
     DASS21_SUBSCALES,
-    Dass21Result,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    Dass21Result,
     InvalidResponseError,
     score_dass21,
 )

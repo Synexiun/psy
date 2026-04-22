@@ -113,8 +113,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "pacs-1.0.0"
 ITEM_COUNT = 5
@@ -206,10 +206,10 @@ def score_pacs(raw_items: Sequence[int]) -> PacsResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "InvalidResponseError",
     "PacsResult",
     "score_pacs",
 ]

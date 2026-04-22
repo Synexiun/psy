@@ -16,11 +16,9 @@ from discipline.psychometric.scoring.audit_c import (
     AUDIT_C_CUTOFF_MALE,
     AUDIT_C_CUTOFF_UNSPECIFIED,
     INSTRUMENT_VERSION,
-    AuditCResult,
     InvalidResponseError,
     score_audit_c,
 )
-
 
 # =============================================================================
 # Constants — pinned to Bush 1998

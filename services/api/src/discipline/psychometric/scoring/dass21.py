@@ -212,8 +212,9 @@ References
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "dass21-1.0.0"
 ITEM_COUNT = 21
@@ -488,11 +489,11 @@ __all__ = [
     "DASS21_STRESS_POSITIONS",
     "DASS21_STRESS_SEVERITY_THRESHOLDS",
     "DASS21_SUBSCALES",
-    "Dass21Result",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "Dass21Result",
     "InvalidResponseError",
     "Severity",
     "score_dass21",

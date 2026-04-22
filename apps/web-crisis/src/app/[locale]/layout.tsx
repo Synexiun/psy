@@ -1,3 +1,4 @@
+import React from 'react';
 import { notFound } from 'next/navigation';
 import { SUPPORTED_LOCALES, isRtl, isCrisisLocale } from '@/lib/locale';
 

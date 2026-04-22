@@ -37,7 +37,6 @@ from discipline.psychometric.scoring.k10 import (
     ITEM_MIN,
     K10_SEVERITY_THRESHOLDS,
     InvalidResponseError,
-    K10Result,
     score_k10,
 )
 

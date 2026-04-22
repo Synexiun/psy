@@ -101,8 +101,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "pcl5-1.0.0"
 ITEM_COUNT = 20
@@ -254,13 +255,13 @@ def score_pcl5(raw_items: Sequence[int]) -> Pcl5Result:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "PCL5_CLUSTERS",
     "PCL5_DSM5_ALGORITHM_THRESHOLDS",
     "PCL5_POSITIVE_CUTOFF",
+    "InvalidResponseError",
     "Pcl5Result",
     "Screen",
     "score_pcl5",

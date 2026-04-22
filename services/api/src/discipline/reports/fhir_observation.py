@@ -25,7 +25,7 @@ Conventions:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 # LOINC canonical codes for total scores.  Validated against the LOINC
@@ -173,7 +173,7 @@ def _require_utc(dt: datetime) -> datetime:
             "ObservationSpec.effective must be timezone-aware; "
             "naive datetimes are rejected to keep FHIR output unambiguous"
         )
-    return dt.astimezone(timezone.utc)
+    return dt.astimezone(UTC)
 
 
 def _format_iso8601_z(dt: datetime) -> str:
@@ -390,9 +390,9 @@ def render_cssrs_bundle(spec: CssrsObservationSpec) -> dict[str, object]:
 __all__ = [
     "CSSRS_ITEM_DISPLAYS",
     "CSSRS_RISK_LEVEL_DISPLAYS",
-    "CssrsObservationSpec",
     "LOINC_CODES",
     "LOINC_DISPLAY",
+    "CssrsObservationSpec",
     "ObservationSpec",
     "UnsupportedInstrumentError",
     "render_bundle",

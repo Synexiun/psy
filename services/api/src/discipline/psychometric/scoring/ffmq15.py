@@ -225,8 +225,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "ffmq15-1.0.0"
 ITEM_COUNT = 15
@@ -444,11 +445,11 @@ __all__ = [
     "FFMQ15_OBSERVING_POSITIONS",
     "FFMQ15_REVERSE_ITEMS",
     "FFMQ15_SUBSCALES",
-    "Ffmq15Result",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "Ffmq15Result",
     "InvalidResponseError",
     "Severity",
     "score_ffmq15",

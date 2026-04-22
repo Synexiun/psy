@@ -41,7 +41,6 @@ from discipline.psychometric.scoring.oasis import (
     ITEM_MIN,
     OASIS_POSITIVE_CUTOFF,
     InvalidResponseError,
-    OasisResult,
     score_oasis,
 )
 

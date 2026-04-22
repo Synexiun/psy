@@ -41,7 +41,6 @@ from discipline.psychometric.scoring.phq15 import (
     ITEM_MIN,
     PHQ15_SEVERITY_THRESHOLDS,
     InvalidResponseError,
-    Phq15Result,
     score_phq15,
 )
 

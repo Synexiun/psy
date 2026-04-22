@@ -64,8 +64,9 @@ Reference:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "pss10-1.0.0"
 ITEM_COUNT = 10
@@ -195,9 +196,7 @@ def score_pss10(raw_items: Sequence[int]) -> Pss10Result:
 
 
 __all__ = [
-    "Band",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
@@ -205,7 +204,9 @@ __all__ = [
     "PSS10_MODERATE_UPPER",
     "PSS10_TOTAL_MAX",
     "PSS10_TOTAL_MIN",
-    "Pss10Result",
     "REVERSE_SCORED_ITEMS_1INDEXED",
+    "Band",
+    "InvalidResponseError",
+    "Pss10Result",
     "score_pss10",
 ]

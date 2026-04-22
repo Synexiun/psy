@@ -127,8 +127,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "bis11-1.0.0"
 ITEM_COUNT = 30
@@ -316,13 +317,13 @@ def score_bis11(raw_items: Sequence[int]) -> Bis11Result:
 __all__ = [
     "BIS11_SEVERITY_THRESHOLDS",
     "BIS11_SUBSCALES",
-    "Bis11Result",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "REVERSE_SCORED_ITEMS_1INDEXED",
+    "Bis11Result",
+    "InvalidResponseError",
     "Severity",
     "score_bis11",
 ]

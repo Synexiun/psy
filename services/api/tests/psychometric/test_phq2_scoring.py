@@ -38,7 +38,6 @@ from discipline.psychometric.scoring.phq2 import (
     ITEM_MIN,
     PHQ2_POSITIVE_CUTOFF,
     InvalidResponseError,
-    Phq2Result,
     score_phq2,
 )
 

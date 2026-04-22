@@ -103,8 +103,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "phq2-1.0.0"
 ITEM_COUNT = 2
@@ -205,11 +206,11 @@ def score_phq2(raw_items: Sequence[int]) -> Phq2Result:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "PHQ2_POSITIVE_CUTOFF",
+    "InvalidResponseError",
     "Phq2Result",
     "Screen",
     "score_phq2",

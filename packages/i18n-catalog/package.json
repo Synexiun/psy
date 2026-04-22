@@ -16,9 +16,11 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
+    "test": "vitest run",
     "check:parity": "node --experimental-strip-types scripts/check-parity.ts"
   },
   "devDependencies": {
-    "typescript": "~5.6.2"
+    "typescript": "~5.6.2",
+    "vitest": "^2.1.0"
   }
 }

@@ -36,7 +36,6 @@ import pytest
 from discipline.psychometric.scoring import fneb
 from discipline.psychometric.scoring.fneb import (
     FNEB_REVERSE_ITEMS,
-    FnebResult,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
@@ -44,7 +43,6 @@ from discipline.psychometric.scoring.fneb import (
     InvalidResponseError,
     score_fneb,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

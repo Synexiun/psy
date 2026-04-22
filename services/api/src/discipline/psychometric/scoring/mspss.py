@@ -293,8 +293,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "mspss-1.0.0"
 ITEM_COUNT = 12
@@ -471,12 +472,12 @@ __all__ = [
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "InvalidResponseError",
     "MSPSS_FAMILY_POSITIONS",
     "MSPSS_FRIENDS_POSITIONS",
     "MSPSS_REVERSE_ITEMS",
     "MSPSS_SIGNIFICANT_OTHER_POSITIONS",
     "MSPSS_SUBSCALES",
+    "InvalidResponseError",
     "MspssResult",
     "Severity",
     "score_mspss",

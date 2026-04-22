@@ -225,8 +225,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "maas-1.0.0"
 ITEM_COUNT = 15
@@ -329,10 +329,10 @@ def score_maas(raw_items: Sequence[int]) -> MaasResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "InvalidResponseError",
     "MaasResult",
     "score_maas",
 ]

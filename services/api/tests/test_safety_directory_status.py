@@ -10,20 +10,15 @@ A reshape (renaming ``stale_entries`` to ``stale``, dropping the
 
 from __future__ import annotations
 
-from datetime import date, timedelta
-from typing import Any
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
 
 from discipline.app import create_app
 from discipline.content.safety_directory import (
-    CountryDirectory,
-    DirectoryMeta,
-    Hotline,
     MirrorDriftError,
 )
-
 
 # ---- Fixtures --------------------------------------------------------------
 

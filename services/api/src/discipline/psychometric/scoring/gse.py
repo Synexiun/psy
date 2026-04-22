@@ -246,8 +246,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "gse-1.0.0"
 ITEM_COUNT = 10
@@ -380,11 +381,11 @@ def score_gse(raw_items: Sequence[int]) -> GseResult:
 
 __all__ = [
     "GSE_REVERSE_ITEMS",
-    "GseResult",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "GseResult",
     "InvalidResponseError",
     "Severity",
     "score_gse",

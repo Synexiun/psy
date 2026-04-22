@@ -23,7 +23,6 @@ from discipline.psychometric.scoring.spin import (
     score_spin,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -72,7 +71,7 @@ class TestConstants:
     def test_severity_thresholds_pinned_to_connor_2000(self) -> None:
         # Connor 2000 Table 4 + Davidson 2004 normative distributions.
         expected = ((20, "none"), (30, "mild"), (40, "moderate"), (50, "severe"), (68, "very_severe"))
-        assert SPIN_SEVERITY_THRESHOLDS == expected
+        assert expected == SPIN_SEVERITY_THRESHOLDS
 
     def test_thresholds_cover_full_range(self) -> None:
         # Final upper must equal ITEM_COUNT × ITEM_MAX

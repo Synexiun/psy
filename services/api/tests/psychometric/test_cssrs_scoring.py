@@ -34,7 +34,6 @@ from discipline.psychometric.scoring.cssrs import (
     score_cssrs_screen,
 )
 
-
 # Helpful literal: an all-negative response is the baseline against
 # which every positive-item test sets exactly one bit.  Using a named
 # constant makes the intent of each test obvious at a glance.

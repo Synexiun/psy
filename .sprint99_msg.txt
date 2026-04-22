@@ -1,0 +1,11 @@
+test: Sprint 99 — identity, clinical-pdf, and system endpoint coverage (+41 tests, 7329 total)
+
+- tests/identity/test_identity_router.py  (6 tests)  GET /v1/me stub contract
+- tests/reports/test_clinical_pdf_router.py  (6 tests)  POST /v1/reports/clinical/pdf 501 stub
+- tests/test_system_endpoints.py  (29 tests)  GET /system/locale-status + GET /system/safety-directory-status
+
+System tests cover: locale releasability gate (en=source, fr/ar/fa=draft), RTL direction
+flags for ar/fa, stale-entry shape invariants, mirror-parity bool + drift-detail null rule.
+Clinical-PDF tests fix detail envelope path (FastAPI wraps HTTPException in {"detail": ...}).
+
+Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>

@@ -27,7 +27,6 @@ from discipline.shared.http.phi_boundary import (
 )
 from discipline.shared.logging import LogStream, get_stream_logger
 
-
 # ---- Fixtures --------------------------------------------------------------
 
 

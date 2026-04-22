@@ -214,8 +214,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "erq-1.0.0"
 ITEM_COUNT = 10
@@ -348,11 +348,11 @@ def score_erq(raw_items: Sequence[int]) -> ErqResult:
 
 __all__ = [
     "ERQ_SUBSCALES",
-    "ErqResult",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "ErqResult",
+    "InvalidResponseError",
     "score_erq",
 ]

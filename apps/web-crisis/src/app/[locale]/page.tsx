@@ -6,6 +6,8 @@ export function generateStaticParams() {
   return SUPPORTED_LOCALES.map((locale) => ({ locale }));
 }
 
+import React from 'react';
+
 export default async function CrisisLocalePage({
   params,
 }: {
@@ -32,15 +34,15 @@ function CrisisIndex({ locale }: { locale: CrisisLocale }) {
         {visible.map((entry) => (
           <li
             key={`${entry.country}-${entry.locale}`}
-            className="rounded-xl border border-[hsl(0,84%,60%)]/20 bg-[hsl(0,84%,97%)] p-5"
+            className="rounded-xl border border-crisis-500/20 bg-[hsl(0,84%,97%)] p-5"
           >
-            <h2 className="text-sm font-medium uppercase tracking-wide text-[hsl(0,84%,40%)]">
+            <h2 className="text-sm font-medium uppercase tracking-wide text-crisis-600">
               {entry.country}
             </h2>
 
             <a
               href={`tel:${sanitizeTel(entry.emergency.number)}`}
-              className="mt-2 flex min-h-[56px] items-center justify-center rounded-xl bg-[hsl(0,84%,60%)] px-6 text-lg font-medium text-white hover:bg-[hsl(0,84%,54%)]"
+              className="mt-2 flex min-h-[56px] items-center justify-center rounded-xl bg-crisis-500 px-6 text-lg font-medium text-white hover:bg-crisis-600"
               data-analytics-event="crisis_call_emergency"
               data-country={entry.country}
             >
@@ -55,7 +57,7 @@ function CrisisIndex({ locale }: { locale: CrisisLocale }) {
                     {h.number && (
                       <a
                         href={`tel:${sanitizeTel(h.number)}`}
-                        className="inline-flex min-h-[44px] items-center rounded-md bg-[hsl(0,84%,60%)] px-4 text-white hover:bg-[hsl(0,84%,54%)]"
+                        className="inline-flex min-h-[44px] items-center rounded-md bg-crisis-500 px-4 text-white hover:bg-crisis-600"
                         data-analytics-event="crisis_call_hotline"
                         data-hotline-id={h.id}
                       >
@@ -65,7 +67,7 @@ function CrisisIndex({ locale }: { locale: CrisisLocale }) {
                     {h.sms && (
                       <a
                         href={smsHref(h.sms)}
-                        className="inline-flex min-h-[44px] items-center rounded-md border border-[hsl(0,84%,60%)] px-4 text-[hsl(0,84%,40%)]"
+                        className="inline-flex min-h-[44px] items-center rounded-md border border-crisis-500 px-4 text-crisis-600"
                       >
                         {copy.smsLabel}: {h.sms}
                       </a>

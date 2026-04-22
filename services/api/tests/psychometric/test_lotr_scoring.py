@@ -39,14 +39,13 @@ from discipline.psychometric.scoring.lotr import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     LOTR_FILLER_POSITIONS,
     LOTR_REVERSE_ITEMS,
     LOTR_SCORED_POSITIONS,
+    InvalidResponseError,
     LotrResult,
     score_lotr,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixture helpers

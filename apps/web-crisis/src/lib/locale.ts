@@ -7,7 +7,12 @@
 
 export type CrisisLocale = 'en' | 'fr' | 'ar' | 'fa';
 
-export const SUPPORTED_LOCALES: ReadonlyArray<CrisisLocale> = ['en', 'fr', 'ar', 'fa'];
+export const SUPPORTED_LOCALES: ReadonlyArray<CrisisLocale> = Object.freeze([
+  'en',
+  'fr',
+  'ar',
+  'fa',
+]);
 
 export const isRtl = (locale: CrisisLocale): boolean => locale === 'ar' || locale === 'fa';
 

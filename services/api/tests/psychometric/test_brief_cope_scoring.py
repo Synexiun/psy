@@ -22,8 +22,8 @@ from __future__ import annotations
 import pytest
 
 from discipline.psychometric.scoring.brief_cope import (
-    BRIEF_COPE_SUBSCALES,
     BRIEF_COPE_SUBSCALE_POSITIONS,
+    BRIEF_COPE_SUBSCALES,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,

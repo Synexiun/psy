@@ -14,10 +14,8 @@ import pytest
 
 from discipline.psychometric.trajectories import (
     RCI_THRESHOLDS,
-    TrajectoryPoint,
     compute_point,
 )
-
 
 # ---- Threshold values (Jacobson & Truax 1991) ------------------------------
 

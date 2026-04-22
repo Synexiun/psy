@@ -44,7 +44,6 @@ from discipline.psychometric.scoring.pcl5 import (
     PCL5_DSM5_ALGORITHM_THRESHOLDS,
     PCL5_POSITIVE_CUTOFF,
     InvalidResponseError,
-    Pcl5Result,
     score_pcl5,
 )
 

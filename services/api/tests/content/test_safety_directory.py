@@ -16,19 +16,17 @@ from pathlib import Path
 import pytest
 
 from discipline.content.safety_directory import (
+    _DEFAULT_API_PATH,
+    _DEFAULT_PACKAGE_PATH,
     CountryDirectory,
     DirectoryMeta,
     Hotline,
     MirrorDriftError,
-    StaleEntry,
-    _DEFAULT_API_PATH,
-    _DEFAULT_PACKAGE_PATH,
     check_freshness,
     compute_directory_sha256,
     is_locale_blocked,
     verify_mirror_parity,
 )
-
 
 # ---- Fixtures --------------------------------------------------------------
 

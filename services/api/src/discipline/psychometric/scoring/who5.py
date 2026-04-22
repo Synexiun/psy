@@ -41,8 +41,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "who5-1.0.0"
 ITEM_COUNT = 5
@@ -147,12 +148,12 @@ def score_who5(raw_items: Sequence[int]) -> Who5Result:
 
 
 __all__ = [
-    "Band",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "RAW_TO_INDEX_MULTIPLIER",
     "WHO5_DEPRESSION_SCREEN_CUTOFF",
     "WHO5_POOR_WELLBEING_CUTOFF",
+    "Band",
+    "InvalidResponseError",
     "Who5Result",
     "score_who5",
 ]

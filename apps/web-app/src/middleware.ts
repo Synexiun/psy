@@ -1,6 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import createMiddleware from 'next-intl/middleware';
-import { NextResponse } from 'next/server';
+
 import { routing } from './i18n/routing';
 
 const intl = createMiddleware(routing);
@@ -24,12 +24,11 @@ const isPublic = createRouteMatcher(PUBLIC_ROUTES);
  *   3. The crisis path MUST remain public regardless of auth state — enforced
  *      via PUBLIC_ROUTES above.
  */
-export default clerkMiddleware(async (auth, req) => {
+export default clerkMiddleware((auth, req) => {
   if (!isPublic(req)) {
-    await auth.protect();
+    auth.protect();
   }
-  const intlResponse = intl(req);
-  return intlResponse ?? NextResponse.next();
+  return intl(req);
 });
 
 export const config = {

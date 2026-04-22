@@ -18,8 +18,9 @@ through the safety framework — see Docs/Whitepapers/04_Safety_Framework.md §T
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "phq9-1.0.0"
 ITEM_COUNT = 9
@@ -82,8 +83,8 @@ def score_phq9(raw_items: Sequence[int]) -> Phq9Result:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "PHQ9_SEVERITY_THRESHOLDS",
+    "InvalidResponseError",
     "Phq9Result",
     "Severity",
     "score_phq9",

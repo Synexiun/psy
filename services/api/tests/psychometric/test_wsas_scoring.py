@@ -39,9 +39,8 @@ from discipline.psychometric.scoring.wsas import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     WSAS_SEVERITY_THRESHOLDS,
-    WsasResult,
+    InvalidResponseError,
     score_wsas,
 )
 

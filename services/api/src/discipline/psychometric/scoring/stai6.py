@@ -185,8 +185,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "stai6-1.0.0"
 ITEM_COUNT = 6
@@ -337,8 +338,8 @@ __all__ = [
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "InvalidResponseError",
     "STAI6_REVERSE_ITEMS",
+    "InvalidResponseError",
     "Severity",
     "Stai6Result",
     "score_stai6",

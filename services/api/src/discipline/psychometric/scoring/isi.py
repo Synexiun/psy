@@ -92,8 +92,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "isi-1.0.0"
 ITEM_COUNT = 7
@@ -213,10 +214,10 @@ def score_isi(raw_items: Sequence[int]) -> IsiResult:
 __all__ = [
     "INSTRUMENT_VERSION",
     "ISI_SEVERITY_THRESHOLDS",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "InvalidResponseError",
     "IsiResult",
     "Severity",
     "score_isi",

@@ -27,7 +27,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from .fhir_observation import ObservationSpec, render_bundle
@@ -62,7 +62,7 @@ def _format_iso8601_z(dt: datetime) -> str:
             "Bundle timestamp must be timezone-aware; "
             "naive datetimes are rejected to keep FHIR output unambiguous"
         )
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def assemble_bundle_from_resources(
@@ -98,7 +98,7 @@ def assemble_bundle_from_resources(
         )
 
     effective_id = identifier or str(uuid.uuid4())
-    effective_ts = timestamp or datetime.now(tz=timezone.utc)
+    effective_ts = timestamp or datetime.now(tz=UTC)
 
     entries: list[dict[str, object]] = [
         {

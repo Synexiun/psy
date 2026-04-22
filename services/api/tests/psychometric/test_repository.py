@@ -10,7 +10,7 @@ module level; router-level integration tests live in
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -47,7 +47,7 @@ def _record(
         severity=severity,
         requires_t3=requires_t3,
         raw_items=raw_items,
-        created_at=created_at or datetime(2026, 4, 18, tzinfo=timezone.utc),
+        created_at=created_at or datetime(2026, 4, 18, tzinfo=UTC),
     )
     base.update(overrides)
     return AssessmentRecord(**base)  # type: ignore[arg-type]
@@ -62,7 +62,7 @@ class TestAssessmentRecord:
         a record after it's handed to a reader — e.g. a chart renderer
         sorting the list in place must not corrupt the stored copy."""
         r = _record()
-        with pytest.raises(Exception):  # noqa: B017 — FrozenInstanceError
+        with pytest.raises(Exception):
             r.total = 99  # type: ignore[misc]
 
     def test_raw_items_is_tuple(self) -> None:
@@ -141,9 +141,9 @@ class TestHistoryFor:
         """Sort order matters — the UI renders a top-to-bottom timeline
         where the most recent assessment is at the top."""
         repo = InMemoryAssessmentRepository()
-        t1 = datetime(2026, 4, 18, 10, 0, tzinfo=timezone.utc)
-        t2 = datetime(2026, 4, 18, 12, 0, tzinfo=timezone.utc)
-        t3 = datetime(2026, 4, 18, 14, 0, tzinfo=timezone.utc)
+        t1 = datetime(2026, 4, 18, 10, 0, tzinfo=UTC)
+        t2 = datetime(2026, 4, 18, 12, 0, tzinfo=UTC)
+        t3 = datetime(2026, 4, 18, 14, 0, tzinfo=UTC)
         repo.save(_record(assessment_id="a", created_at=t1))
         repo.save(_record(assessment_id="c", created_at=t3))
         repo.save(_record(assessment_id="b", created_at=t2))
@@ -152,7 +152,7 @@ class TestHistoryFor:
 
     def test_respects_limit(self) -> None:
         repo = InMemoryAssessmentRepository()
-        base = datetime(2026, 4, 18, tzinfo=timezone.utc)
+        base = datetime(2026, 4, 18, tzinfo=UTC)
         for i in range(10):
             repo.save(
                 _record(
@@ -171,7 +171,7 @@ class TestHistoryFor:
         case.  A regression to a smaller default would silently hide
         history."""
         repo = InMemoryAssessmentRepository()
-        base = datetime(2026, 4, 18, tzinfo=timezone.utc)
+        base = datetime(2026, 4, 18, tzinfo=UTC)
         for i in range(60):
             repo.save(
                 _record(
@@ -204,7 +204,7 @@ class TestCountFor:
         limit)`` — the UI uses it to decide whether to show a 'load
         older' control, which needs the true total."""
         repo = InMemoryAssessmentRepository()
-        base = datetime(2026, 4, 18, tzinfo=timezone.utc)
+        base = datetime(2026, 4, 18, tzinfo=UTC)
         for i in range(75):
             repo.save(
                 _record(
@@ -320,6 +320,6 @@ class TestClockInjection:
         """``repo.now()`` returns the clock the router uses to stamp
         records.  Tests that pin creation times use this to feed the
         repo a fixed timestamp without monkey-patching ``datetime``."""
-        fixed = datetime(2026, 1, 1, tzinfo=timezone.utc)
+        fixed = datetime(2026, 1, 1, tzinfo=UTC)
         repo = InMemoryAssessmentRepository(now_fn=lambda: fixed)
         assert repo.now() == fixed

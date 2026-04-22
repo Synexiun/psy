@@ -38,7 +38,6 @@ from discipline.psychometric.scoring.pcptsd5 import (
     ITEM_MIN,
     PCPTSD5_POSITIVE_CUTOFF,
     InvalidResponseError,
-    PcPtsd5Result,
     score_pcptsd5,
 )
 

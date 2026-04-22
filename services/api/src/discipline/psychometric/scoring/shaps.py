@@ -283,8 +283,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "shaps-1.0.0"
 ITEM_COUNT = 14
@@ -438,12 +439,12 @@ def score_shaps(raw_items: Sequence[int]) -> ShapsResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "SHAPS_DICHOTOMIZE_THRESHOLD_INCLUSIVE",
     "SHAPS_POSITIVE_CUTOFF",
+    "InvalidResponseError",
     "Screen",
     "ShapsResult",
     "score_shaps",

@@ -280,8 +280,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "hads-1.0.0"
 ITEM_COUNT = 14
@@ -522,11 +523,11 @@ __all__ = [
     "HADS_REVERSE_ITEMS",
     "HADS_SEVERITY_THRESHOLDS",
     "HADS_SUBSCALES",
-    "HadsResult",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "HadsResult",
     "InvalidResponseError",
     "Severity",
     "score_hads",

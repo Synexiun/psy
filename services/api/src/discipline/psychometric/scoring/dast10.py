@@ -71,8 +71,9 @@ Reference:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "dast10-1.0.0"
 ITEM_COUNT = 10
@@ -210,19 +211,19 @@ def score_dast10(raw_items: Sequence[int]) -> Dast10Result:
 
 
 __all__ = [
-    "Band",
     "DAST10_LOW_UPPER",
     "DAST10_MODERATE_UPPER",
     "DAST10_NONE_UPPER",
     "DAST10_SUBSTANTIAL_UPPER",
     "DAST10_TOTAL_MAX",
     "DAST10_TOTAL_MIN",
-    "Dast10Result",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "REVERSE_SCORED_ITEMS_1INDEXED",
+    "Band",
+    "Dast10Result",
+    "InvalidResponseError",
     "score_dast10",
 ]

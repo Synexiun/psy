@@ -91,8 +91,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "audit-1.0.0"
 ITEM_COUNT = 10
@@ -226,14 +227,14 @@ __all__ = [
     "AUDIT_LOW_RISK_UPPER",
     "AUDIT_TOTAL_MAX",
     "AUDIT_TOTAL_MIN",
-    "AuditResult",
-    "Band",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "RESTRICTED_SCALE_ITEMS_1INDEXED",
     "RESTRICTED_SCALE_VALUES",
+    "AuditResult",
+    "Band",
+    "InvalidResponseError",
     "score_audit",
 ]

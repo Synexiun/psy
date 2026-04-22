@@ -140,8 +140,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "aaq2-1.0.0"
 ITEM_COUNT = 7
@@ -246,11 +246,11 @@ def score_aaq2(raw_items: Sequence[int]) -> Aaq2Result:
 
 __all__ = [
     "AAQ2_POSITIVE_CUTOFF",
-    "Aaq2Result",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "Aaq2Result",
     "InvalidResponseError",
     "score_aaq2",
 ]

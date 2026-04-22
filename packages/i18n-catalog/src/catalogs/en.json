@@ -7,8 +7,16 @@
     "reviewedAt": "2026-04-18"
   },
   "app": {
-    "name": "Discipline OS",
-    "tagline": "The moment between urge and action."
+    "welcome": {
+      "title": "Welcome back",
+      "body": "Start with a check-in or open a tool."
+    },
+    "urge": {
+      "intensityLabel": "How strong is the urge, right now?",
+      "intensityScaleMin": "Barely there",
+      "intensityScaleMax": "Overwhelming"
+    },
+    "name": "Discipline OS"
   },
   "common": {
     "action": {
@@ -68,28 +76,55 @@
       "plusSub": "Personalization, extended trajectories, voice journal, clinician sharing."
     }
   },
-  "app": {
-    "welcome": {
-      "title": "Welcome back",
-      "body": "Start with a check-in or open a tool."
+  "assessment": {
+    "phq9": {
+      "name": "PHQ-9",
+      "description": "Depression screener"
     },
-    "urge": {
-      "intensityLabel": "How strong is the urge, right now?",
-      "intensityScaleMin": "Barely there",
-      "intensityScaleMax": "Overwhelming"
+    "gad7": {
+      "name": "GAD-7",
+      "description": "Anxiety screener"
+    },
+    "audit": {
+      "name": "AUDIT",
+      "description": "Alcohol use screener"
+    },
+    "auditC": {
+      "name": "AUDIT-C",
+      "description": "Brief alcohol use screener"
+    },
+    "dast10": {
+      "name": "DAST-10",
+      "description": "Drug use screener"
+    },
+    "pss10": {
+      "name": "PSS-10",
+      "description": "Perceived stress scale"
+    },
+    "who5": {
+      "name": "WHO-5",
+      "description": "Wellbeing index"
+    },
+    "dtcq8": {
+      "name": "DTCQ-8",
+      "description": "Temptation / self-efficacy"
+    },
+    "urica": {
+      "name": "URICA",
+      "description": "Readiness to change"
+    },
+    "cssrs": {
+      "name": "C-SSRS",
+      "description": "Suicide risk assessment"
     }
   },
-  "assessment": {
-    "phq9": { "name": "PHQ-9", "description": "Depression screener" },
-    "gad7": { "name": "GAD-7", "description": "Anxiety screener" },
-    "audit": { "name": "AUDIT", "description": "Alcohol use screener" },
-    "auditC": { "name": "AUDIT-C", "description": "Brief alcohol use screener" },
-    "dast10": { "name": "DAST-10", "description": "Drug use screener" },
-    "pss10": { "name": "PSS-10", "description": "Perceived stress scale" },
-    "who5": { "name": "WHO-5", "description": "Wellbeing index" },
-    "dtcq8": { "name": "DTCQ-8", "description": "Temptation / self-efficacy" },
-    "urica": { "name": "URICA", "description": "Readiness to change" },
-    "cssrs": { "name": "C-SSRS", "description": "Suicide risk assessment" }
+  "privacy": {
+    "headline": "Privacy",
+    "body": "Your data stays on your device unless you explicitly choose to share it. We do not sell data, run ads, or use behavioral fingerprinting."
+  },
+  "safety": {
+    "headline": "Safety",
+    "body": "Discipline OS is not a crisis hotline replacement. If you are in immediate danger, use the crisis path or call your local emergency number."
   },
   "severity": {
     "none": "None",

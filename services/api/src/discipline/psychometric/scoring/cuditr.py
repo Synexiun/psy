@@ -178,7 +178,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
-
 INSTRUMENT_VERSION: Final[str] = "cuditr-1.0.0"
 ITEM_COUNT: Final[int] = 8
 ITEM_MIN: Final[int] = 0
@@ -305,10 +304,10 @@ def score_cuditr(raw_items: Sequence[int]) -> CuditRResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
+    "ITEM_8_WEIGHT",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "ITEM_8_WEIGHT",
     "POSITIVE_SCREEN_CUTOFF",
     "TOTAL_MAX",
     "CuditRResult",

@@ -21,7 +21,6 @@ import pytest
 
 from discipline.psychometric.scoring.aaq2 import (
     AAQ2_POSITIVE_CUTOFF,
-    Aaq2Result,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
@@ -29,7 +28,6 @@ from discipline.psychometric.scoring.aaq2 import (
     InvalidResponseError,
     score_aaq2,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

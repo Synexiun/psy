@@ -35,7 +35,6 @@ import pytest
 
 from discipline.psychometric.scoring.scssf import (
     INSTRUMENT_VERSION,
-    InvalidResponseError,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
@@ -43,6 +42,7 @@ from discipline.psychometric.scoring.scssf import (
     SCSSF_SUBSCALES,
     SCSSF_TOTAL_MAX,
     SCSSF_TOTAL_MIN,
+    InvalidResponseError,
     ScsSfResult,
     score_scssf,
 )

@@ -112,8 +112,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "dudit-1.0.0"
 ITEM_COUNT = 11
@@ -271,14 +272,14 @@ __all__ = [
     "DUDIT_CUTOFF_FEMALE",
     "DUDIT_CUTOFF_MALE",
     "DUDIT_CUTOFF_UNSPECIFIED",
-    "DuditResult",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
-    "InvalidResponseError",
     "LIKERT_ITEM_MAX",
     "LIKERT_ITEM_MIN",
-    "Sex",
     "TRINARY_ITEM_INDICES_1",
     "TRINARY_VALUES",
+    "DuditResult",
+    "InvalidResponseError",
+    "Sex",
     "score_dudit",
 ]

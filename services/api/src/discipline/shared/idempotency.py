@@ -42,9 +42,10 @@ from __future__ import annotations
 import hashlib
 import json
 import threading
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, TypeVar
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
@@ -161,7 +162,7 @@ class IdempotencyStore:
                 f"ttl_seconds must be positive, got {ttl_seconds}"
             )
         self._ttl = timedelta(seconds=ttl_seconds)
-        self._now = now_fn or (lambda: datetime.now(timezone.utc))
+        self._now = now_fn or (lambda: datetime.now(UTC))
         self._data: dict[str, _Entry] = {}
         self._lock = threading.Lock()
 

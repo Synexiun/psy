@@ -178,8 +178,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "tas20-1.0.0"
 ITEM_COUNT = 20
@@ -357,9 +358,7 @@ def score_tas20(raw_items: Sequence[int]) -> Tas20Result:
 
 
 __all__ = [
-    "Band",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
@@ -369,6 +368,8 @@ __all__ = [
     "TAS20_SUBSCALES",
     "TAS20_TOTAL_MAX",
     "TAS20_TOTAL_MIN",
+    "Band",
+    "InvalidResponseError",
     "Tas20Result",
     "score_tas20",
 ]

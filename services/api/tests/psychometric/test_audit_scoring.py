@@ -36,10 +36,9 @@ from discipline.psychometric.scoring.audit import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    AuditResult,
-    InvalidResponseError,
     RESTRICTED_SCALE_ITEMS_1INDEXED,
     RESTRICTED_SCALE_VALUES,
+    InvalidResponseError,
     score_audit,
 )
 
@@ -102,13 +101,13 @@ class TestConstants:
     def test_restricted_items_are_nine_and_ten(self) -> None:
         """Only items 9 and 10 use the 0/2/4 scale per WHO 2001.
         Adding or removing an item from this set is a clinical change."""
-        assert RESTRICTED_SCALE_ITEMS_1INDEXED == frozenset({9, 10})
+        assert frozenset({9, 10}) == RESTRICTED_SCALE_ITEMS_1INDEXED
 
     def test_restricted_values_are_zero_two_four(self) -> None:
         """Published response options for items 9 and 10 are
         'No' (0) / 'Yes, but not in the last year' (2) / 'Yes, during
         the last year' (4).  1 and 3 are not response options."""
-        assert RESTRICTED_SCALE_VALUES == frozenset({0, 2, 4})
+        assert frozenset({0, 2, 4}) == RESTRICTED_SCALE_VALUES
 
     def test_instrument_version_stable(self) -> None:
         assert INSTRUMENT_VERSION == "audit-1.0.0"
@@ -359,7 +358,7 @@ class TestResultShape:
 
     def test_result_is_frozen(self) -> None:
         r = score_audit(_items())
-        with pytest.raises(Exception):  # noqa: B017 — FrozenInstanceError
+        with pytest.raises(Exception):
             r.total = 99  # type: ignore[misc]
 
     def test_instrument_version_in_result(self) -> None:

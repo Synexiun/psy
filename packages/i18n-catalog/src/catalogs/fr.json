@@ -8,8 +8,16 @@
     "note": "Awaiting native-speaker clinical review before v1.0 launch."
   },
   "app": {
-    "name": "Discipline OS",
-    "tagline": "L'instant entre l'envie et l'acte."
+    "welcome": {
+      "title": "Bon retour",
+      "body": "Commencez par un bilan ou ouvrez un outil."
+    },
+    "urge": {
+      "intensityLabel": "À quel point l'envie est-elle forte, là, maintenant ?",
+      "intensityScaleMin": "À peine présente",
+      "intensityScaleMax": "Accablante"
+    },
+    "name": "Discipline OS"
   },
   "common": {
     "action": {
@@ -69,28 +77,55 @@
       "plusSub": "Personnalisation, trajectoires étendues, journal vocal, partage clinicien."
     }
   },
-  "app": {
-    "welcome": {
-      "title": "Bon retour",
-      "body": "Commencez par un bilan ou ouvrez un outil."
+  "assessment": {
+    "phq9": {
+      "name": "PHQ-9",
+      "description": "Dépistage de la dépression"
     },
-    "urge": {
-      "intensityLabel": "À quel point l'envie est-elle forte, là, maintenant ?",
-      "intensityScaleMin": "À peine présente",
-      "intensityScaleMax": "Accablante"
+    "gad7": {
+      "name": "GAD-7",
+      "description": "Dépistage de l'anxiété"
+    },
+    "audit": {
+      "name": "AUDIT",
+      "description": "Dépistage de l'usage d'alcool"
+    },
+    "auditC": {
+      "name": "AUDIT-C",
+      "description": "Dépistage bref de l'alcool"
+    },
+    "dast10": {
+      "name": "DAST-10",
+      "description": "Dépistage de l'usage de drogues"
+    },
+    "pss10": {
+      "name": "PSS-10",
+      "description": "Échelle de stress perçu"
+    },
+    "who5": {
+      "name": "WHO-5",
+      "description": "Indice de bien-être"
+    },
+    "dtcq8": {
+      "name": "DTCQ-8",
+      "description": "Tentation / auto-efficacité"
+    },
+    "urica": {
+      "name": "URICA",
+      "description": "Disposition au changement"
+    },
+    "cssrs": {
+      "name": "C-SSRS",
+      "description": "Évaluation du risque suicidaire"
     }
   },
-  "assessment": {
-    "phq9": { "name": "PHQ-9", "description": "Dépistage de la dépression" },
-    "gad7": { "name": "GAD-7", "description": "Dépistage de l'anxiété" },
-    "audit": { "name": "AUDIT", "description": "Dépistage de l'usage d'alcool" },
-    "auditC": { "name": "AUDIT-C", "description": "Dépistage bref de l'alcool" },
-    "dast10": { "name": "DAST-10", "description": "Dépistage de l'usage de drogues" },
-    "pss10": { "name": "PSS-10", "description": "Échelle de stress perçu" },
-    "who5": { "name": "WHO-5", "description": "Indice de bien-être" },
-    "dtcq8": { "name": "DTCQ-8", "description": "Tentation / auto-efficacité" },
-    "urica": { "name": "URICA", "description": "Disposition au changement" },
-    "cssrs": { "name": "C-SSRS", "description": "Évaluation du risque suicidaire" }
+  "privacy": {
+    "headline": "Confidentialité",
+    "body": "Vos données restent sur votre appareil, sauf si vous choisissez explicitement de les partager. Nous ne vendons pas de données, ne diffusons pas de publicités et n'utilisons pas de prise d'empreinte comportementale."
+  },
+  "safety": {
+    "headline": "Sécurité",
+    "body": "Discipline OS ne remplace pas une ligne d'écoute d'urgence. Si vous êtes en danger immédiat, utilisez le parcours de crise ou appelez les urgences locales."
   },
   "severity": {
     "none": "Aucune",

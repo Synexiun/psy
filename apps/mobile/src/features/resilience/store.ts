@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { MMKV } from 'react-native-mmkv';
 
-const storage = new MMKV({ id: 'resilience', encryptionKey: 'placeholder-wire-keychain' });
+// TODO: derive encryptionKey from device keychain before enabling MMKV encryption.
+// A hardcoded key is worse than no encryption (false sense of security).
+const storage = new MMKV({ id: 'resilience' });
 
 const mmkvStorage = {
   getItem: (name: string) => {

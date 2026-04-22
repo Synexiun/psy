@@ -29,7 +29,6 @@ from discipline.analytics.framing import (
 )
 from discipline.psychometric.trajectories import compute_point
 
-
 # Stigmatizing / moralizing tokens that MUST NOT appear anywhere in framed
 # output.  Reviewed with the clinical-copy lexicon in
 # Docs/bUSINESS/09_Brand_Positioning.md §voice.

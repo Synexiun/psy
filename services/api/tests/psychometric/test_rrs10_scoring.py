@@ -19,11 +19,11 @@ import pytest
 
 from discipline.psychometric.scoring.rrs10 import (
     INSTRUMENT_VERSION,
-    InvalidResponseError,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
     RRS10_SUBSCALES,
+    InvalidResponseError,
     Rrs10Result,
     score_rrs10,
 )

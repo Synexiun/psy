@@ -240,8 +240,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "swls-1.0.0"
 ITEM_COUNT = 5
@@ -387,8 +388,8 @@ __all__ = [
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "InvalidResponseError",
     "SWLS_REVERSE_ITEMS",
+    "InvalidResponseError",
     "Severity",
     "SwlsResult",
     "score_swls",

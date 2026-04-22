@@ -34,7 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 # Bump whenever the archive schema changes in a way that would break a
@@ -118,7 +118,7 @@ def _ensure_utc(dt: datetime, *, field_name: str) -> datetime:
         raise NonUtcTimestampError(
             f"{field_name} is naive; expected a UTC-aware datetime"
         )
-    if dt.utcoffset() != timezone.utc.utcoffset(dt):
+    if dt.utcoffset() != UTC.utcoffset(dt):
         raise NonUtcTimestampError(
             f"{field_name} is not UTC (offset={dt.utcoffset()})"
         )
@@ -131,7 +131,7 @@ def _iso_utc(dt: datetime) -> str:
     Using ``Z`` instead of ``+00:00`` yields a byte-identical output
     regardless of the platform's default isoformat behavior; some
     Python versions emit ``+00:00`` and some emit ``Z``."""
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return dt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _is_empty_payload(payload: UserExportPayload) -> bool:

@@ -15,13 +15,13 @@ from discipline.psychometric.scoring.sds import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
-    SDS_CUTOFFS,
     SDS_CUTOFF_AMPHETAMINE,
     SDS_CUTOFF_CANNABIS,
     SDS_CUTOFF_COCAINE,
     SDS_CUTOFF_HEROIN,
     SDS_CUTOFF_UNSPECIFIED,
+    SDS_CUTOFFS,
+    InvalidResponseError,
     SdsResult,
     score_sds,
 )
@@ -62,12 +62,12 @@ class TestConstants:
         """Conservative default: unspecified → lowest published cutoff
         (cannabis/cocaine = 3).  Pins the safety-posture rationale."""
         assert SDS_CUTOFF_UNSPECIFIED == 3
-        assert SDS_CUTOFF_UNSPECIFIED == min(
+        assert min(
             SDS_CUTOFF_HEROIN,
             SDS_CUTOFF_CANNABIS,
             SDS_CUTOFF_COCAINE,
             SDS_CUTOFF_AMPHETAMINE,
-        )
+        ) == SDS_CUTOFF_UNSPECIFIED
 
     def test_cutoffs_table_exposes_all_substances(self) -> None:
         """SDS_CUTOFFS must cover every Substance Literal value."""

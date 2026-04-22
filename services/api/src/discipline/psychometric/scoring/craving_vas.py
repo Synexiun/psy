@@ -128,8 +128,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "craving_vas-1.0.0"
 ITEM_COUNT = 1
@@ -222,10 +222,10 @@ def score_craving_vas(raw_items: Sequence[int]) -> CravingVasResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "CravingVasResult",
+    "InvalidResponseError",
     "score_craving_vas",
 ]

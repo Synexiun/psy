@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 import pytest
@@ -24,13 +24,12 @@ from discipline.reports.user_export import (
     build_json_archive,
 )
 
-
 # ---- Fixtures --------------------------------------------------------------
 
 
 def _now_utc() -> datetime:
     """A pinned timestamp so determinism tests don't drift with wall clock."""
-    return datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc)
+    return datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC)
 
 
 def _sample_payload(

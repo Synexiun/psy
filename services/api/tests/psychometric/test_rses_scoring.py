@@ -31,12 +31,11 @@ from discipline.psychometric.scoring.rses import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     RSES_REVERSE_ITEMS,
+    InvalidResponseError,
     RsesResult,
     score_rses,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

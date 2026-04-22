@@ -288,7 +288,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
-
 INSTRUMENT_VERSION: Final[str] = "igds9sf-1.0.0"
 ITEM_COUNT: Final[int] = 9
 ITEM_MIN: Final[int] = 1

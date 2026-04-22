@@ -39,7 +39,6 @@ from discipline.psychometric.scoring.gad2 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    Gad2Result,
     InvalidResponseError,
     score_gad2,
 )

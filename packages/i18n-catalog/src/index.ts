@@ -24,9 +24,9 @@ export const DEFAULT_LOCALE: Locale = 'en';
 
 const loaders: Record<Locale, () => Promise<{ default: Catalog }>> = {
   en: () => Promise.resolve({ default: en as Catalog }),
-  fr: () => import('./catalogs/fr.json') as Promise<{ default: Catalog }>,
-  ar: () => import('./catalogs/ar.json') as Promise<{ default: Catalog }>,
-  fa: () => import('./catalogs/fa.json') as Promise<{ default: Catalog }>,
+  fr: () => import('./catalogs/fr.json') as unknown as Promise<{ default: Catalog }>,
+  ar: () => import('./catalogs/ar.json') as unknown as Promise<{ default: Catalog }>,
+  fa: () => import('./catalogs/fa.json') as unknown as Promise<{ default: Catalog }>,
 };
 
 export const loadCatalog = async (locale: Locale): Promise<Catalog> => {

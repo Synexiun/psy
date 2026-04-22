@@ -20,10 +20,8 @@ from discipline.psychometric.scoring.phq9 import (
     PHQ9_SAFETY_ITEM_INDEX,
     PHQ9_SEVERITY_THRESHOLDS,
     InvalidResponseError,
-    Phq9Result,
     score_phq9,
 )
-
 
 # ---- Severity band boundaries (Kroenke 2001 Table 3) -----------------------
 

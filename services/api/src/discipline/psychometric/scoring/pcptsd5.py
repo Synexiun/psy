@@ -80,8 +80,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "pcptsd5-1.0.0"
 ITEM_COUNT = 5
@@ -194,11 +195,11 @@ def score_pcptsd5(raw_items: Sequence[int]) -> PcPtsd5Result:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "PCPTSD5_POSITIVE_CUTOFF",
+    "InvalidResponseError",
     "PcPtsd5Result",
     "Screen",
     "score_pcptsd5",

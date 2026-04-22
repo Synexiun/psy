@@ -11,8 +11,9 @@ Severity bands (Spitzer 2006):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "gad7-1.0.0"
 ITEM_COUNT = 7

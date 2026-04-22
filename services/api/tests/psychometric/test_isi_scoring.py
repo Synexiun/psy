@@ -37,7 +37,6 @@ from discipline.psychometric.scoring.isi import (
     ITEM_MAX,
     ITEM_MIN,
     InvalidResponseError,
-    IsiResult,
     score_isi,
 )
 

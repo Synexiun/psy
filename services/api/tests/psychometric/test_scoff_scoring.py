@@ -25,12 +25,11 @@ from discipline.psychometric.scoring.scoff import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     SCOFF_POSITIVE_CUTOFF,
+    InvalidResponseError,
     ScoffResult,
     score_scoff,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

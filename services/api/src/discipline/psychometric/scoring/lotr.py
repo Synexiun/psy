@@ -171,8 +171,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "lotr-1.0.0"
 ITEM_COUNT = 10
@@ -321,13 +321,13 @@ def score_lotr(raw_items: Sequence[int]) -> LotrResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "LOTR_FILLER_POSITIONS",
     "LOTR_REVERSE_ITEMS",
     "LOTR_SCORED_POSITIONS",
+    "InvalidResponseError",
     "LotrResult",
     "score_lotr",
 ]

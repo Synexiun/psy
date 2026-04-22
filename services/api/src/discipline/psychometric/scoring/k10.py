@@ -129,8 +129,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "k10-1.0.0"
 ITEM_COUNT = 10
@@ -255,11 +256,11 @@ def score_k10(raw_items: Sequence[int]) -> K10Result:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "K10_SEVERITY_THRESHOLDS",
+    "InvalidResponseError",
     "K10Result",
     "Severity",
     "score_k10",

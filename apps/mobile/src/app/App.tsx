@@ -1,3 +1,4 @@
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -21,12 +22,16 @@ const queryClient = new QueryClient({
   },
 });
 
+// React Navigation 7 types are built against React 19; RN 0.76 uses React 18.
+const SafeNavigationContainer = NavigationContainer as unknown as React.FC<any>;
+const SafeStackNavigator = Stack.Navigator as unknown as React.FC<any>;
+
 export function App() {
   return (
     <SafeAreaProvider>
       <QueryClientProvider client={queryClient}>
-        <NavigationContainer>
-          <Stack.Navigator initialRouteName="Home">
+        <SafeNavigationContainer>
+          <SafeStackNavigator initialRouteName="Home">
             <Stack.Screen name="Home" component={HomeScreen} />
             <Stack.Screen name="UrgeLog" component={UrgeLogScreen} />
             <Stack.Screen
@@ -34,8 +39,8 @@ export function App() {
               component={CrisisScreen}
               options={{ animation: 'none', gestureEnabled: false }}
             />
-          </Stack.Navigator>
-        </NavigationContainer>
+          </SafeStackNavigator>
+        </SafeNavigationContainer>
       </QueryClientProvider>
     </SafeAreaProvider>
   );

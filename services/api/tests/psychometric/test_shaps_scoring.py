@@ -67,7 +67,6 @@ from discipline.psychometric.scoring.shaps import (
     SHAPS_DICHOTOMIZE_THRESHOLD_INCLUSIVE,
     SHAPS_POSITIVE_CUTOFF,
     InvalidResponseError,
-    ShapsResult,
     score_shaps,
 )
 

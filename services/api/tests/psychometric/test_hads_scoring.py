@@ -11,11 +11,11 @@ from discipline.psychometric.scoring.hads import (
     HADS_REVERSE_ITEMS,
     HADS_SEVERITY_THRESHOLDS,
     HADS_SUBSCALES,
-    HadsResult,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    HadsResult,
     InvalidResponseError,
     score_hads,
 )

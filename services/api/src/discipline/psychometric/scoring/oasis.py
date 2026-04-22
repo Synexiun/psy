@@ -112,8 +112,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "oasis-1.0.0"
 ITEM_COUNT = 5
@@ -216,11 +217,11 @@ def score_oasis(raw_items: Sequence[int]) -> OasisResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "OASIS_POSITIVE_CUTOFF",
+    "InvalidResponseError",
     "OasisResult",
     "Screen",
     "score_oasis",

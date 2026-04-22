@@ -19,7 +19,6 @@ from discipline.shared.i18n.negotiation import (
     negotiate_locale,
 )
 
-
 # ---- Supported-set invariants ----------------------------------------------
 
 
@@ -32,7 +31,7 @@ def test_default_locale_is_english() -> None:
 
 
 def test_rtl_locales_are_ar_and_fa_only() -> None:
-    assert RTL_LOCALES == frozenset({"ar", "fa"})
+    assert frozenset({"ar", "fa"}) == RTL_LOCALES
 
 
 @pytest.mark.parametrize(("locale", "expected"), [("en", False), ("fr", False), ("ar", True), ("fa", True)])

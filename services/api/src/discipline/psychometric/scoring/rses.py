@@ -173,8 +173,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "rses-1.0.0"
 ITEM_COUNT = 10
@@ -340,8 +341,8 @@ __all__ = [
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "InvalidResponseError",
     "RSES_REVERSE_ITEMS",
+    "InvalidResponseError",
     "RsesResult",
     "Severity",
     "score_rses",

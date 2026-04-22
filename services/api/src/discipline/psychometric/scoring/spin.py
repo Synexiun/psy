@@ -200,7 +200,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
-
 INSTRUMENT_VERSION: Final[str] = "spin-1.0.0"
 ITEM_COUNT: Final[int] = 17
 ITEM_MIN: Final[int] = 0
@@ -348,8 +347,8 @@ __all__ = [
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "InvalidResponseError",
     "SPIN_SEVERITY_THRESHOLDS",
+    "InvalidResponseError",
     "Severity",
     "SpinResult",
     "score_spin",

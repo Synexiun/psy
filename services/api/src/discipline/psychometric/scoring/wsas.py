@@ -161,8 +161,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "wsas-1.0.0"
 ITEM_COUNT = 5
@@ -288,12 +289,12 @@ def score_wsas(raw_items: Sequence[int]) -> WsasResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "Severity",
     "WSAS_SEVERITY_THRESHOLDS",
+    "InvalidResponseError",
+    "Severity",
     "WsasResult",
     "score_wsas",
 ]

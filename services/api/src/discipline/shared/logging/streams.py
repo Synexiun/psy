@@ -30,14 +30,14 @@ import hmac
 import logging
 import os
 import sys
-from collections.abc import Sequence
-from enum import Enum
-from typing import Any
+from collections.abc import Callable, Sequence
+from enum import StrEnum
+from typing import Any, cast
 
 import structlog
 
 
-class LogStream(str, Enum):
+class LogStream(StrEnum):
     """Destinations.  Do not add new values without a compliance review."""
 
     APP = "app"
@@ -54,7 +54,7 @@ GENESIS_SENTINEL: str = "genesis"
 # Fallback secret used when ``AUDIT_CHAIN_SECRET`` is not configured.  Present
 # so local development and unit tests don't have to set an env var, but any
 # chain signed with this secret is by definition not tamper-evident in prod.
-_DEV_FALLBACK_SECRET = "dev-only-secret"
+_DEV_FALLBACK_SECRET = "dev-only-secret"  # noqa: S105
 
 
 _CONFIGURED: dict[LogStream, structlog.stdlib.BoundLogger] = {}
@@ -65,7 +65,8 @@ def _stream_level(stream: LogStream) -> int:
     # Audit / security are always INFO+ so nothing gets filtered below the retention bar.
     if stream in (LogStream.AUDIT, LogStream.SECURITY, LogStream.SAFETY):
         return logging.INFO
-    return logging.getLevelName(os.environ.get("LOG_LEVEL", "INFO").upper())
+    level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+    return int(logging.getLevelName(level_name))
 
 
 def _chain_secret() -> bytes:
@@ -113,7 +114,7 @@ def _merkle_advance(stream: LogStream, record: str) -> str:
     return digest
 
 
-def _chain_processor(stream: LogStream):
+def _chain_processor(stream: LogStream) -> Callable[..., Any]:
     def processor(_logger: Any, _method: str, event_dict: dict[str, Any]) -> dict[str, Any]:
         record = _record_for_chain(event_dict)
         event_dict["prev_hash"] = _merkle_prev(stream)
@@ -211,7 +212,7 @@ def get_stream_logger(stream: LogStream) -> structlog.stdlib.BoundLogger:
     ).bind(stream=stream.value)
 
     _CONFIGURED[stream] = logger
-    return logger
+    return cast("structlog.stdlib.BoundLogger", logger)
 
 
 __all__ = [

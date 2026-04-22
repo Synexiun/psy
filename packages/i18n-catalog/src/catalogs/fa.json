@@ -8,8 +8,16 @@
     "note": "Draft scaffold. MUST receive Persian native-speaker clinical review before v1.0 launch. Clinical instrument scores use Latin digits; body copy uses Persian wording."
   },
   "app": {
-    "name": "Discipline OS",
-    "tagline": "لحظه‌ی بین میل و عمل."
+    "welcome": {
+      "title": "خوش آمدید",
+      "body": "با یک وضعیت‌سنجی شروع کنید یا ابزاری را باز کنید."
+    },
+    "urge": {
+      "intensityLabel": "شدت میل در همین لحظه چقدر است؟",
+      "intensityScaleMin": "تقریباً ناچیز",
+      "intensityScaleMax": "طاقت‌فرسا"
+    },
+    "name": "Discipline OS"
   },
   "common": {
     "action": {
@@ -69,28 +77,55 @@
       "plusSub": "شخصی‌سازی، روندهای گسترده، دفترچه‌ی صوتی، اشتراک با درمانگر."
     }
   },
-  "app": {
-    "welcome": {
-      "title": "خوش آمدید",
-      "body": "با یک وضعیت‌سنجی شروع کنید یا ابزاری را باز کنید."
+  "assessment": {
+    "phq9": {
+      "name": "PHQ-9",
+      "description": "غربالگری افسردگی"
     },
-    "urge": {
-      "intensityLabel": "شدت میل در همین لحظه چقدر است؟",
-      "intensityScaleMin": "تقریباً ناچیز",
-      "intensityScaleMax": "طاقت‌فرسا"
+    "gad7": {
+      "name": "GAD-7",
+      "description": "غربالگری اضطراب"
+    },
+    "audit": {
+      "name": "AUDIT",
+      "description": "غربالگری مصرف الکل"
+    },
+    "auditC": {
+      "name": "AUDIT-C",
+      "description": "غربالگری مختصر الکل"
+    },
+    "dast10": {
+      "name": "DAST-10",
+      "description": "غربالگری مصرف مواد"
+    },
+    "pss10": {
+      "name": "PSS-10",
+      "description": "مقیاس استرس ادراک‌شده"
+    },
+    "who5": {
+      "name": "WHO-5",
+      "description": "شاخص بهزیستی"
+    },
+    "dtcq8": {
+      "name": "DTCQ-8",
+      "description": "وسوسه و خودکارآمدی"
+    },
+    "urica": {
+      "name": "URICA",
+      "description": "آمادگی برای تغییر"
+    },
+    "cssrs": {
+      "name": "C-SSRS",
+      "description": "ارزیابی خطر خودکشی"
     }
   },
-  "assessment": {
-    "phq9": { "name": "PHQ-9", "description": "غربالگری افسردگی" },
-    "gad7": { "name": "GAD-7", "description": "غربالگری اضطراب" },
-    "audit": { "name": "AUDIT", "description": "غربالگری مصرف الکل" },
-    "auditC": { "name": "AUDIT-C", "description": "غربالگری مختصر الکل" },
-    "dast10": { "name": "DAST-10", "description": "غربالگری مصرف مواد" },
-    "pss10": { "name": "PSS-10", "description": "مقیاس استرس ادراک‌شده" },
-    "who5": { "name": "WHO-5", "description": "شاخص بهزیستی" },
-    "dtcq8": { "name": "DTCQ-8", "description": "وسوسه و خودکارآمدی" },
-    "urica": { "name": "URICA", "description": "آمادگی برای تغییر" },
-    "cssrs": { "name": "C-SSRS", "description": "ارزیابی خطر خودکشی" }
+  "privacy": {
+    "headline": "Privacy",
+    "body": "Your data stays on your device unless you explicitly choose to share it. We do not sell data, run ads, or use behavioral fingerprinting."
+  },
+  "safety": {
+    "headline": "Safety",
+    "body": "Discipline OS is not a crisis hotline replacement. If you are in immediate danger, use the crisis path or call your local emergency number."
   },
   "severity": {
     "none": "هیچ",

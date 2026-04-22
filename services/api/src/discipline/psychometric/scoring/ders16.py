@@ -167,8 +167,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "ders16-1.0.0"
 ITEM_COUNT = 16
@@ -307,11 +307,11 @@ def score_ders16(raw_items: Sequence[int]) -> Ders16Result:
 
 __all__ = [
     "DERS16_SUBSCALES",
-    "Ders16Result",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "Ders16Result",
+    "InvalidResponseError",
     "score_ders16",
 ]

@@ -241,8 +241,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "core10-1.0.0"
 ITEM_COUNT = 10
@@ -438,11 +439,11 @@ __all__ = [
     "CORE10_REVERSE_ITEMS",
     "CORE10_RISK_ITEM",
     "CORE10_SEVERITY_THRESHOLDS",
-    "Core10Result",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "Core10Result",
     "InvalidResponseError",
     "Severity",
     "score_core10",

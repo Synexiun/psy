@@ -29,12 +29,11 @@ from discipline.psychometric.scoring.pss10 import (
     PSS10_MODERATE_UPPER,
     PSS10_TOTAL_MAX,
     PSS10_TOTAL_MIN,
+    REVERSE_SCORED_ITEMS_1INDEXED,
     InvalidResponseError,
     Pss10Result,
-    REVERSE_SCORED_ITEMS_1INDEXED,
     score_pss10,
 )
-
 
 # Zero-indexed positions of reverse-scored items (4, 5, 7, 8 are
 # 1-indexed; subtract 1 for 0-indexed array access).  Pinned here
@@ -94,7 +93,7 @@ class TestConstants:
         published instrument.  The frozenset identity is part of
         the instrument's clinical definition — a refactor that drops
         one of these items silently mis-scores every administration."""
-        assert REVERSE_SCORED_ITEMS_1INDEXED == frozenset({4, 5, 7, 8})
+        assert frozenset({4, 5, 7, 8}) == REVERSE_SCORED_ITEMS_1INDEXED
 
     def test_reverse_scored_set_is_frozen(self) -> None:
         """A set here would be mutable — a defensive cast to

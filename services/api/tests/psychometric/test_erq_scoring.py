@@ -33,12 +33,12 @@ import pytest
 
 from discipline.psychometric.scoring.erq import (
     ERQ_SUBSCALES,
-    ErqResult,
     INSTRUMENT_VERSION,
-    InvalidResponseError,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    ErqResult,
+    InvalidResponseError,
     score_erq,
 )
 

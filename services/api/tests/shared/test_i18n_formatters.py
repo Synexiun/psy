@@ -18,7 +18,6 @@ from discipline.shared.i18n.formatters import (
     format_number_clinical,
 )
 
-
 # ---- The critical invariant: clinical scores always Latin ------------------
 
 

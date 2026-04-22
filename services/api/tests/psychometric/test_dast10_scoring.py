@@ -40,12 +40,11 @@ from discipline.psychometric.scoring.dast10 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    REVERSE_SCORED_ITEMS_1INDEXED,
     Dast10Result,
     InvalidResponseError,
-    REVERSE_SCORED_ITEMS_1INDEXED,
     score_dast10,
 )
-
 
 # Zero-indexed position of the reverse-scored item (item 3 → 0-idx 2).
 # Pinned here only for test-baseline construction — the instrument's
@@ -107,7 +106,7 @@ class TestConstants:
         want to?") is the only reverse-scored item in the DAST-10.
         A refactor that adds or drops items here silently mis-scores
         every administration."""
-        assert REVERSE_SCORED_ITEMS_1INDEXED == frozenset({3})
+        assert frozenset({3}) == REVERSE_SCORED_ITEMS_1INDEXED
 
     def test_reverse_scored_set_is_frozen(self) -> None:
         """Defensive cast to frozenset prevents a consumer from

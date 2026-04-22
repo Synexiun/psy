@@ -20,7 +20,6 @@ import pytest
 
 from discipline.psychometric.scoring.asrs6 import (
     ASRS6_POSITIVE_CUTOFF,
-    Asrs6Result,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
@@ -29,7 +28,6 @@ from discipline.psychometric.scoring.asrs6 import (
     InvalidResponseError,
     score_asrs6,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

@@ -149,8 +149,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "cdrisc10-1.0.0"
 ITEM_COUNT = 10
@@ -246,11 +246,11 @@ def score_cdrisc10(raw_items: Sequence[int]) -> Cdrisc10Result:
 
 
 __all__ = [
-    "Cdrisc10Result",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "Cdrisc10Result",
+    "InvalidResponseError",
     "score_cdrisc10",
 ]

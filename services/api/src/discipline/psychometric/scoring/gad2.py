@@ -108,8 +108,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "gad2-1.0.0"
 ITEM_COUNT = 2
@@ -211,11 +212,11 @@ def score_gad2(raw_items: Sequence[int]) -> Gad2Result:
 __all__ = [
     "GAD2_POSITIVE_CUTOFF",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "Gad2Result",
+    "InvalidResponseError",
     "Screen",
     "score_gad2",
 ]

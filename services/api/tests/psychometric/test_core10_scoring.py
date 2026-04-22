@@ -9,11 +9,11 @@ from discipline.psychometric.scoring.core10 import (
     CORE10_REVERSE_ITEMS,
     CORE10_RISK_ITEM,
     CORE10_SEVERITY_THRESHOLDS,
-    Core10Result,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    Core10Result,
     InvalidResponseError,
     score_core10,
 )

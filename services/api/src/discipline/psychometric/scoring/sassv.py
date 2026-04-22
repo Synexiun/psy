@@ -168,7 +168,6 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final, Literal
 
-
 INSTRUMENT_VERSION: Final[str] = "sas-sv-1.0.0"
 ITEM_COUNT: Final[int] = 10
 ITEM_MIN: Final[int] = 1   # 1-6 Likert — NOT zero-indexed
@@ -321,7 +320,7 @@ __all__ = [
     "TOTAL_MIN",
     "InvalidResponseError",
     "SasSvResult",
-    "Sex",
     "Severity",
+    "Sex",
     "score_sas_sv",
 ]

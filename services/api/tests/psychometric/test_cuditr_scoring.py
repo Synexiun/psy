@@ -13,17 +13,16 @@ import pytest
 
 from discipline.psychometric.scoring.cuditr import (
     INSTRUMENT_VERSION,
+    ITEM_8_WEIGHT,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    ITEM_8_WEIGHT,
     POSITIVE_SCREEN_CUTOFF,
     TOTAL_MAX,
     CuditRResult,
     InvalidResponseError,
     score_cuditr,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -97,8 +97,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "ocir-1.0.0"
 ITEM_COUNT = 18
@@ -246,12 +247,12 @@ def score_ocir(raw_items: Sequence[int]) -> OcirResult:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "OCIR_POSITIVE_CUTOFF",
     "OCIR_SUBSCALES",
+    "InvalidResponseError",
     "OcirResult",
     "Screen",
     "score_ocir",

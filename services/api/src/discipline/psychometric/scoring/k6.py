@@ -116,8 +116,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "k6-1.0.0"
 ITEM_COUNT = 6
@@ -213,11 +213,11 @@ def score_k6(raw_items: Sequence[int]) -> K6Result:
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "K6_POSITIVE_CUTOFF",
+    "InvalidResponseError",
     "K6Result",
     "score_k6",
 ]

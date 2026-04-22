@@ -24,7 +24,6 @@ from discipline.psychometric.scoring.cesd import (
     score_cesd,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -71,7 +70,7 @@ class TestConstants:
 
     def test_reverse_scored_items_set(self) -> None:
         # Radloff 1977: positively-worded items at positions 4,8,12,16.
-        assert REVERSE_SCORED_ITEMS == frozenset({4, 8, 12, 16})
+        assert frozenset({4, 8, 12, 16}) == REVERSE_SCORED_ITEMS
 
     def test_reverse_scored_items_count(self) -> None:
         assert len(REVERSE_SCORED_ITEMS) == 4

@@ -21,7 +21,6 @@ from discipline.psychometric.scoring.ffmq15 import (
     score_ffmq15,
 )
 
-
 # ---------------------------------------------------------------------------
 # Module constants — pin the published factor structure
 # ---------------------------------------------------------------------------

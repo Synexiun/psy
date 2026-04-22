@@ -12,7 +12,8 @@ formatting DOES use the regional variant where provided (see :mod:`.formatters`)
 
 from __future__ import annotations
 
-from typing import Literal, Sequence
+from collections.abc import Sequence
+from typing import Literal
 
 Locale = Literal["en", "fr", "ar", "fa"]
 
@@ -64,10 +65,10 @@ def negotiate_locale(
 
 
 __all__ = [
-    "Locale",
-    "SUPPORTED_LOCALES",
     "DEFAULT_LOCALE",
     "RTL_LOCALES",
+    "SUPPORTED_LOCALES",
+    "Locale",
     "is_rtl",
     "negotiate_locale",
 ]

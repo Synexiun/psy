@@ -96,8 +96,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "mdq-1.0.0"
 ITEM_COUNT = 13
@@ -288,15 +289,15 @@ def score_mdq(
 
 
 __all__ = [
-    "ImpairmentLevel",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "MDQ_IMPAIRMENT_LEVELS",
     "MDQ_POSITIVE_IMPAIRMENT_LEVELS",
     "MDQ_POSITIVE_ITEM_THRESHOLD",
+    "ImpairmentLevel",
+    "InvalidResponseError",
     "MdqResult",
     "Screen",
     "score_mdq",

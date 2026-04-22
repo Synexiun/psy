@@ -199,8 +199,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "brs-1.0.0"
 ITEM_COUNT = 6
@@ -386,11 +387,11 @@ def score_brs(raw_items: Sequence[int]) -> BrsResult:
 __all__ = [
     "BRS_REVERSE_ITEMS",
     "BRS_SEVERITY_THRESHOLDS",
-    "BrsResult",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "BrsResult",
     "InvalidResponseError",
     "Severity",
     "score_brs",

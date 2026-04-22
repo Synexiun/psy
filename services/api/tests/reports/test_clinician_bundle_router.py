@@ -16,7 +16,6 @@ Coverage matrix:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
 import pytest
@@ -24,7 +23,6 @@ from fastapi.testclient import TestClient
 
 from discipline.app import create_app
 from discipline.shared.logging import LogStream, get_stream_logger
-
 
 # ---- Fixtures --------------------------------------------------------------
 

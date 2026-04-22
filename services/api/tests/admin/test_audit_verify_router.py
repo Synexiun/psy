@@ -27,7 +27,6 @@ from discipline.shared.logging import (
 )
 from discipline.shared.logging.streams import GENESIS_SENTINEL, _record_for_chain
 
-
 # ---- Fixtures --------------------------------------------------------------
 
 

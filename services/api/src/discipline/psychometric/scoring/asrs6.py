@@ -128,8 +128,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "asrs6-1.0.0"
 ITEM_COUNT = 6
@@ -265,12 +265,12 @@ def score_asrs6(raw_items: Sequence[int]) -> Asrs6Result:
 
 __all__ = [
     "ASRS6_POSITIVE_CUTOFF",
-    "Asrs6Result",
     "INSTRUMENT_VERSION",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
     "ITEM_THRESHOLDS",
+    "Asrs6Result",
     "InvalidResponseError",
     "score_asrs6",
 ]

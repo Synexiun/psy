@@ -1,6 +1,6 @@
 export const dynamic = 'force-static';
 
-export default function ForbiddenPage() {
+export default function ForbiddenPage(): React.JSX.Element {
   return (
     <main className="mx-auto flex min-h-screen max-w-lg flex-col items-center justify-center px-6 text-center">
       <h1 className="text-2xl font-semibold">Access denied</h1>

@@ -16,14 +16,12 @@ import pytest
 
 from discipline.psychometric.scoring.who5 import (
     INSTRUMENT_VERSION,
-    InvalidResponseError,
     RAW_TO_INDEX_MULTIPLIER,
     WHO5_DEPRESSION_SCREEN_CUTOFF,
     WHO5_POOR_WELLBEING_CUTOFF,
-    Who5Result,
+    InvalidResponseError,
     score_who5,
 )
-
 
 # =============================================================================
 # Constants — pinned to published source

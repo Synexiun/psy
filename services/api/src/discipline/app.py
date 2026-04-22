@@ -1,16 +1,29 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from discipline import __version__
+
+# Routers are imported from each module.
+# Modules are added incrementally as features land.
+from discipline.admin.router import router as admin_router
+from discipline.analytics.router import router as analytics_router
+from discipline.clinical.router import router as clinical_router
 from discipline.config import get_settings
+from discipline.content.router import router as content_router
 from discipline.content.safety_directory import (
     MirrorDriftError,
     check_freshness,
     verify_mirror_parity,
 )
+from discipline.identity.router import router as identity_router
+from discipline.intervention.router import router as intervention_router
+from discipline.psychometric.router import router as psychometric_router
+from discipline.reports.router import router as reports_router
+from discipline.resilience.router import router as resilience_router
+from discipline.shared.db import _get_engine
 from discipline.shared.http import PhiBoundaryMiddleware
 from discipline.shared.i18n import SUPPORTED_LOCALES
 from discipline.shared.i18n.package_catalog import (
@@ -18,19 +31,8 @@ from discipline.shared.i18n.package_catalog import (
     load_catalog,
 )
 from discipline.shared.logging import configure_logging
+from discipline.shared.redis_client import get_redis_client, reset_pool
 from discipline.shared.tracing import configure_tracing
-
-# Routers are imported from each module.
-# Modules are added incrementally as features land.
-from discipline.admin.router import router as admin_router
-from discipline.identity.router import router as identity_router
-from discipline.intervention.router import router as intervention_router
-from discipline.clinical.router import router as clinical_router
-from discipline.resilience.router import router as resilience_router
-from discipline.psychometric.router import router as psychometric_router
-from discipline.analytics.router import router as analytics_router
-from discipline.reports.router import router as reports_router
-from discipline.content.router import router as content_router
 
 
 @asynccontextmanager
@@ -38,7 +40,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     configure_logging(settings.log_level)
     configure_tracing(settings.otel_service_name, settings.otel_endpoint)
+
+    # Eagerly initialize singletons so failures surface at startup
+    # rather than on the first request.
+    _ = get_redis_client()
+    _ = _get_engine()
+
     yield
+
+    # Graceful shutdown: close shared pools so uvicorn workers don't
+    # leak connections on reload / scale-in.
+    reset_pool()
+    engine = _get_engine()
+    await engine.dispose()
 
 
 def create_app() -> FastAPI:
@@ -56,7 +70,40 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["system"])
     async def health() -> JSONResponse:
-        return JSONResponse({"status": "ok", "version": __version__})
+        """Operational health check.
+
+        Verifies PostgreSQL and Redis connectivity.  Returns 503 if
+        either dependency is unreachable so the load balancer can
+        shift traffic away from an unhealthy task.
+        """
+        checks: dict[str, str] = {}
+        status_code = 200
+
+        # Redis check
+        try:
+            redis_client = get_redis_client()
+            redis_client.ping()
+            checks["redis"] = "ok"
+        except Exception as exc:
+            checks["redis"] = f"error: {exc}"
+            status_code = 503
+
+        # PostgreSQL check
+        try:
+            from sqlalchemy import text
+            engine = _get_engine()
+            async with engine.connect() as conn:
+                result = await conn.execute(text("SELECT 1"))
+                _ = result.scalar()
+            checks["postgres"] = "ok"
+        except Exception as exc:
+            checks["postgres"] = f"error: {exc}"
+            status_code = 503
+
+        return JSONResponse(
+            {"status": "ok" if status_code == 200 else "degraded", "checks": checks, "version": __version__},
+            status_code=status_code,
+        )
 
     @app.get("/system/locale-status", tags=["system"])
     async def locale_status() -> JSONResponse:

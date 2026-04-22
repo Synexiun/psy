@@ -310,8 +310,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "aces-1.0.0"
 ITEM_COUNT = 10
@@ -447,12 +448,12 @@ def score_aces(raw_items: Sequence[int]) -> AcesResult:
 
 __all__ = [
     "ACES_POSITIVE_CUTOFF",
-    "AcesResult",
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "AcesResult",
+    "InvalidResponseError",
     "Screen",
     "score_aces",
 ]

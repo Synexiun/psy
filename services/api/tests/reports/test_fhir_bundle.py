@@ -11,13 +11,12 @@ from __future__ import annotations
 
 import json
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
 from discipline.reports.fhir_bundle import assemble_bundle
 from discipline.reports.fhir_observation import ObservationSpec
-
 
 # ---- Helpers ---------------------------------------------------------------
 
@@ -32,7 +31,7 @@ def _spec(
         patient_reference="Patient/test-001",
         instrument=instrument,
         score=score,
-        effective=datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc),
+        effective=datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC),
         safety_item_positive=safety_positive,
     )
 
@@ -79,7 +78,7 @@ class TestBundleTopLevelShape:
 
 class TestBundleTimestamp:
     def test_timestamp_is_iso_z_format(self) -> None:
-        ts = datetime(2026, 4, 18, 14, 30, 0, tzinfo=timezone.utc)
+        ts = datetime(2026, 4, 18, 14, 30, 0, tzinfo=UTC)
         bundle = assemble_bundle([_spec()], timestamp=ts)
         assert bundle["timestamp"] == "2026-04-18T14:30:00Z"
 
@@ -159,7 +158,7 @@ class TestBundleErrors:
             patient_reference="Patient/1",
             instrument="not_a_thing",
             score=5,
-            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=timezone.utc),
+            effective=datetime(2026, 4, 18, 0, 0, 0, tzinfo=UTC),
         )
         from discipline.reports.fhir_observation import UnsupportedInstrumentError
 
@@ -195,7 +194,7 @@ class TestBundleIsJsonSerializable:
         datetime / UUID / dataclass leaks to catch consumers off guard."""
         bundle = assemble_bundle(
             [_spec("phq9"), _spec("gad7")],
-            timestamp=datetime(2026, 4, 18, 12, 0, 0, tzinfo=timezone.utc),
+            timestamp=datetime(2026, 4, 18, 12, 0, 0, tzinfo=UTC),
         )
         serialized = json.dumps(bundle)
         reparsed = json.loads(serialized)

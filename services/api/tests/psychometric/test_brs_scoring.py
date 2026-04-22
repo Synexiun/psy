@@ -24,15 +24,14 @@ from discipline.psychometric.scoring import brs
 from discipline.psychometric.scoring.brs import (
     BRS_REVERSE_ITEMS,
     BRS_SEVERITY_THRESHOLDS,
-    BrsResult,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    BrsResult,
     InvalidResponseError,
     score_brs,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

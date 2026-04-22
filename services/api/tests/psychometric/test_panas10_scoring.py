@@ -41,14 +41,13 @@ from discipline.psychometric.scoring.panas10 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     PANAS10_NA_POSITIONS,
     PANAS10_PA_POSITIONS,
     PANAS10_SUBSCALES,
+    InvalidResponseError,
     Panas10Result,
     score_panas10,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

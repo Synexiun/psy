@@ -1,5 +1,5 @@
 import type { Metadata } from 'next';
-import { NextIntlClientProvider, hasLocale } from 'next-intl';
+import { NextIntlClientProvider } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { Inter, IBM_Plex_Sans_Arabic, Vazirmatn } from 'next/font/google';
@@ -46,24 +46,29 @@ export default async function LocaleLayout({
 }: {
   children: React.ReactNode;
   params: Promise<{ locale: string }>;
-}) {
+}): Promise<React.JSX.Element> {
   const { locale } = await params;
-  if (!hasLocale(routing.locales, locale)) notFound();
+  if (!(routing.locales as readonly string[]).includes(locale)) notFound();
   setRequestLocale(locale);
 
   const dir = isRtl(locale as Locale) ? 'rtl' : 'ltr';
 
-  return (
-    <ClerkProvider>
-      <html
-        lang={locale}
-        dir={dir}
-        className={`${inter.variable} ${plexArabic.variable} ${vazirmatn.variable}`}
-      >
-        <body className="min-h-screen bg-white text-[hsl(222,47%,11%)] antialiased">
-          <NextIntlClientProvider>{children}</NextIntlClientProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+  const clerkKey = process.env['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'];
+  const shell = (
+    <html
+      lang={locale}
+      dir={dir}
+      className={`${inter.variable} ${plexArabic.variable} ${vazirmatn.variable}`}
+    >
+      <body className="min-h-screen bg-white text-[hsl(222,47%,11%)] antialiased">
+        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+      </body>
+    </html>
   );
+
+  if (!clerkKey) {
+    return shell;
+  }
+
+  return <ClerkProvider publishableKey={clerkKey}>{shell}</ClerkProvider>;
 }

@@ -50,7 +50,6 @@ from discipline.psychometric.scoring.ocir import (
     OCIR_POSITIVE_CUTOFF,
     OCIR_SUBSCALES,
     InvalidResponseError,
-    OcirResult,
     score_ocir,
 )
 

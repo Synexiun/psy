@@ -46,17 +46,16 @@ from discipline.psychometric.scoring.tas20 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     TAS20_NON_ALEXITHYMIC_UPPER,
     TAS20_POSSIBLE_UPPER,
     TAS20_REVERSE_ITEMS,
     TAS20_SUBSCALES,
     TAS20_TOTAL_MAX,
     TAS20_TOTAL_MIN,
+    InvalidResponseError,
     Tas20Result,
     score_tas20,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixture helpers

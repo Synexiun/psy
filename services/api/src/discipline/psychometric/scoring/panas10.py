@@ -212,8 +212,9 @@ Citations:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "panas10-1.0.0"
 ITEM_COUNT = 10
@@ -369,10 +370,10 @@ __all__ = [
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
-    "InvalidResponseError",
     "PANAS10_NA_POSITIONS",
     "PANAS10_PA_POSITIONS",
     "PANAS10_SUBSCALES",
+    "InvalidResponseError",
     "Panas10Result",
     "Severity",
     "score_panas10",

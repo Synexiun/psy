@@ -13,6 +13,9 @@ Contract the middleware enforces:
 
 from __future__ import annotations
 
+from typing import Any
+from unittest.mock import patch
+
 import pytest
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -22,7 +25,6 @@ from discipline.shared.http.phi_boundary import (
     PHI_BOUNDARY_HEADER,
     PHI_BOUNDARY_VALUE,
 )
-
 
 # ---- Fixtures --------------------------------------------------------------
 
@@ -162,10 +164,29 @@ class TestLiveClinicianBundleRoute:
         assert resp.status_code == 200
         assert resp.headers.get(PHI_BOUNDARY_HEADER) == PHI_BOUNDARY_VALUE
 
-    def test_health_endpoint_does_not_have_phi_header(self) -> None:
+    @patch("discipline.app.get_redis_client")
+    @patch("discipline.app._get_engine")
+    def test_health_endpoint_does_not_have_phi_header(
+        self,
+        mock_get_engine: Any,
+        mock_get_redis: Any,
+    ) -> None:
         """Regression guard in the other direction: a non-PHI route must
         not get the header, or the boundary marker loses its meaning."""
+        from unittest.mock import AsyncMock, MagicMock
+
         from discipline.app import create_app
+
+        mock_get_redis.return_value = MagicMock()
+        mock_conn = AsyncMock()
+        # scalar() is synchronous on SQLAlchemy Result; use a plain Mock for it
+        mock_result = MagicMock()
+        mock_result.scalar.return_value = 1
+        mock_conn.execute.return_value = mock_result
+        mock_engine = MagicMock()
+        mock_engine.connect.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_engine.connect.return_value.__aexit__ = AsyncMock(return_value=False)
+        mock_get_engine.return_value = mock_engine
 
         app = create_app()
         client = TestClient(app)

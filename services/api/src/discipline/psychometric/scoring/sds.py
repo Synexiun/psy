@@ -139,8 +139,9 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Literal
 
 INSTRUMENT_VERSION = "sds-1.0.0"
 ITEM_COUNT = 5
@@ -289,7 +290,6 @@ def score_sds(
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
@@ -299,6 +299,7 @@ __all__ = [
     "SDS_CUTOFF_COCAINE",
     "SDS_CUTOFF_HEROIN",
     "SDS_CUTOFF_UNSPECIFIED",
+    "InvalidResponseError",
     "SdsResult",
     "Substance",
     "score_sds",

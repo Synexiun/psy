@@ -22,7 +22,6 @@ from discipline.analytics.framing import (
     FramedTrend,
 )
 from discipline.analytics.weekly_reflection import (
-    WeeklyReflection,
     WeeklyReflectionInput,
     compose,
 )

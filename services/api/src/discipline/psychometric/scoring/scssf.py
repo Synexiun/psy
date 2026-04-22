@@ -232,8 +232,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "scssf-1.0.0"
 ITEM_COUNT = 12
@@ -423,15 +423,15 @@ def score_scssf(raw_items: Sequence[int]) -> ScsSfResult:
 
 
 __all__ = [
+    "INSTRUMENT_VERSION",
+    "ITEM_COUNT",
+    "ITEM_MAX",
+    "ITEM_MIN",
     "SCSSF_REVERSE_ITEMS",
     "SCSSF_SUBSCALES",
     "SCSSF_TOTAL_MAX",
     "SCSSF_TOTAL_MIN",
-    "ScsSfResult",
-    "INSTRUMENT_VERSION",
     "InvalidResponseError",
-    "ITEM_COUNT",
-    "ITEM_MAX",
-    "ITEM_MIN",
+    "ScsSfResult",
     "score_scssf",
 ]

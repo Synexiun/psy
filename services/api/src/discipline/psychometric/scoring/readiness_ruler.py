@@ -147,8 +147,8 @@ References:
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 INSTRUMENT_VERSION = "readiness_ruler-1.0.0"
 ITEM_COUNT = 1
@@ -249,10 +249,10 @@ def score_readiness_ruler(
 
 __all__ = [
     "INSTRUMENT_VERSION",
-    "InvalidResponseError",
     "ITEM_COUNT",
     "ITEM_MAX",
     "ITEM_MIN",
+    "InvalidResponseError",
     "ReadinessRulerResult",
     "score_readiness_ruler",
 ]

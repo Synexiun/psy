@@ -107,17 +107,17 @@ class TestConstants:
     def test_impairment_levels_are_the_four_published(self) -> None:
         """Four-point Hirschfeld impairment scale.  Adding or removing
         a label would break both the scorer gate and the wire format."""
-        assert MDQ_IMPAIRMENT_LEVELS == frozenset(
+        assert frozenset(
             {"none", "minor", "moderate", "serious"}
-        )
+        ) == MDQ_IMPAIRMENT_LEVELS
 
     def test_positive_impairment_levels_are_moderate_serious(self) -> None:
         """Only moderate and serious satisfy the Part 3 gate.
         Demoting minor into this set would over-fire the screen against
         the published specificity of 0.90."""
-        assert MDQ_POSITIVE_IMPAIRMENT_LEVELS == frozenset(
+        assert frozenset(
             {"moderate", "serious"}
-        )
+        ) == MDQ_POSITIVE_IMPAIRMENT_LEVELS
 
     def test_positive_impairment_is_subset_of_all_levels(self) -> None:
         """Structural invariant — the positive set must live inside the
@@ -528,7 +528,7 @@ class TestResultShape:
 
     def test_result_is_frozen(self) -> None:
         r = _score(7)
-        with pytest.raises(Exception):  # noqa: B017 — FrozenInstanceError
+        with pytest.raises(Exception):
             r.positive_count = 99  # type: ignore[misc]
 
     def test_positive_count_matches_sum(self) -> None:

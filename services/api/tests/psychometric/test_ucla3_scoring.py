@@ -13,12 +13,10 @@ from discipline.psychometric.scoring.ucla3 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     UCLA3_REVERSE_ITEMS,
-    Ucla3Result,
+    InvalidResponseError,
     score_ucla3,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants — pinned against accidental drift

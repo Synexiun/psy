@@ -21,10 +21,10 @@ import pytest
 
 from discipline.psychometric.scoring.maas import (
     INSTRUMENT_VERSION,
-    InvalidResponseError,
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
+    InvalidResponseError,
     MaasResult,
     score_maas,
 )

@@ -14,13 +14,13 @@ Coverage matrix:
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from discipline.app import create_app
-
 
 # ---- Fixtures --------------------------------------------------------------
 
@@ -21853,21 +21853,21 @@ class TestTrajectoryHistoryEndpoint:
         """PHQ-9 from 5 to 7: |Δ|=2 < 5.2 → no_reliable_change.
         Delta is still echoed (the arithmetic result is meaningful
         even when the RCI classifier says 'below threshold')."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         _save_record(
             assessment_id="a1",
             user_id="user-1",
             instrument="phq9",
             total=5,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
         )
         _save_record(
             assessment_id="a2",
             user_id="user-1",
             instrument="phq9",
             total=7,
-            created_at=datetime(2026, 4, 8, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 8, tzinfo=UTC),
         )
 
         resp = client.get(
@@ -21889,21 +21889,21 @@ class TestTrajectoryHistoryEndpoint:
         self, client: TestClient
     ) -> None:
         """PHQ-9 15 → 8: Δ=-7, |Δ|≥5.2, lower-is-better → improvement."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         _save_record(
             assessment_id="a1",
             user_id="user-1",
             instrument="phq9",
             total=15,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
         )
         _save_record(
             assessment_id="a2",
             user_id="user-1",
             instrument="phq9",
             total=8,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
         )
 
         resp = client.get(
@@ -21921,21 +21921,21 @@ class TestTrajectoryHistoryEndpoint:
         self, client: TestClient
     ) -> None:
         """PHQ-9 3 → 10: Δ=+7, |Δ|≥5.2, lower-is-better → deterioration."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         _save_record(
             assessment_id="a1",
             user_id="user-1",
             instrument="phq9",
             total=3,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
         )
         _save_record(
             assessment_id="a2",
             user_id="user-1",
             instrument="phq9",
             total=10,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
         )
 
         resp = client.get(
@@ -21953,7 +21953,7 @@ class TestTrajectoryHistoryEndpoint:
         totals would silently compress deltas by 4× and misclassify
         every clinically meaningful change.  This is a correctness
         bar, not a stylistic preference."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # Raw 5 → index 20; raw 10 → index 40.  Δ on index = 20 ≥ 17,
         # higher-is-better → improvement.  On raw scale |Δ| = 5 (way
@@ -21965,7 +21965,7 @@ class TestTrajectoryHistoryEndpoint:
             instrument="who5",
             total=5,
             index=20,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
             raw_items=(1, 1, 1, 1, 1),
         )
         _save_record(
@@ -21974,7 +21974,7 @@ class TestTrajectoryHistoryEndpoint:
             instrument="who5",
             total=10,
             index=40,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
             raw_items=(2, 2, 2, 2, 2),
         )
 
@@ -21995,14 +21995,14 @@ class TestTrajectoryHistoryEndpoint:
         returns the time series (clients can render the raw chart) but
         every direction is ``insufficient_data`` and ``delta`` is null
         (matches trajectories.py contract)."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         _save_record(
             assessment_id="c1",
             user_id="user-1",
             instrument="cssrs",
             total=2,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
             raw_items=(1, 1, 0, 0, 0, 0),
             triggering_items=(1, 2),
         )
@@ -22011,7 +22011,7 @@ class TestTrajectoryHistoryEndpoint:
             user_id="user-1",
             instrument="cssrs",
             total=0,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
             raw_items=(0, 0, 0, 0, 0, 0),
             triggering_items=(),
         )
@@ -22032,14 +22032,14 @@ class TestTrajectoryHistoryEndpoint:
     def test_dast10_has_no_rci_threshold(self, client: TestClient) -> None:
         """DAST-10 has no validated RCI threshold — same
         insufficient_data semantics as C-SSRS."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         _save_record(
             assessment_id="d1",
             user_id="user-1",
             instrument="dast10",
             total=6,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
             raw_items=(1, 1, 1, 0, 1, 0, 1, 1, 0, 0),
         )
         _save_record(
@@ -22047,7 +22047,7 @@ class TestTrajectoryHistoryEndpoint:
             user_id="user-1",
             instrument="dast10",
             total=1,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
             raw_items=(0, 0, 1, 0, 0, 0, 0, 0, 0, 0),
         )
 
@@ -22067,28 +22067,28 @@ class TestTrajectoryHistoryEndpoint:
         filtering, a cross-instrument 'composite' trajectory would be
         clinically meaningless — PHQ-9 and GAD-7 have different scale
         ranges and different RCI thresholds."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         _save_record(
             assessment_id="p1",
             user_id="user-1",
             instrument="phq9",
             total=10,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
         )
         _save_record(
             assessment_id="g1",
             user_id="user-1",
             instrument="gad7",
             total=12,
-            created_at=datetime(2026, 4, 5, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 5, tzinfo=UTC),
         )
         _save_record(
             assessment_id="p2",
             user_id="user-1",
             instrument="phq9",
             total=4,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
         )
 
         resp = client.get(
@@ -22103,7 +22103,7 @@ class TestTrajectoryHistoryEndpoint:
     def test_multi_user_isolation(self, client: TestClient) -> None:
         """User A's phq9 trajectory is empty if A has no phq9 records,
         even if user B has a long phq9 series.  Privacy boundary."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         for i in range(3):
             _save_record(
@@ -22111,7 +22111,7 @@ class TestTrajectoryHistoryEndpoint:
                 user_id="user-B",
                 instrument="phq9",
                 total=i * 5,
-                created_at=datetime(2026, 4, 1 + i, tzinfo=timezone.utc),
+                created_at=datetime(2026, 4, 1 + i, tzinfo=UTC),
             )
 
         # user-A has no records.
@@ -22138,7 +22138,7 @@ class TestTrajectoryHistoryEndpoint:
         """Records saved out of chronological order must still sort
         oldest-first.  The *earliest* by ``created_at`` is the
         baseline — not the first-saved."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         # Saved in: middle, first, last.  Expected trajectory order:
         # first (baseline) → middle → last.
@@ -22147,21 +22147,21 @@ class TestTrajectoryHistoryEndpoint:
             user_id="user-1",
             instrument="phq9",
             total=10,
-            created_at=datetime(2026, 4, 8, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 8, tzinfo=UTC),
         )
         _save_record(
             assessment_id="first",
             user_id="user-1",
             instrument="phq9",
             total=15,
-            created_at=datetime(2026, 4, 1, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 1, tzinfo=UTC),
         )
         _save_record(
             assessment_id="last",
             user_id="user-1",
             instrument="phq9",
             total=3,
-            created_at=datetime(2026, 4, 15, tzinfo=timezone.utc),
+            created_at=datetime(2026, 4, 15, tzinfo=UTC),
         )
 
         resp = client.get(
@@ -22269,7 +22269,7 @@ class TestTrajectoryHistoryEndpoint:
         ``no_reliable_change``.  Guards against a regression where
         the handler compares to the PREVIOUS reading instead of the
         baseline."""
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         totals = [10, 11, 9, 12]
         for i, total in enumerate(totals):
@@ -22279,7 +22279,7 @@ class TestTrajectoryHistoryEndpoint:
                 instrument="phq9",
                 total=total,
                 created_at=datetime(
-                    2026, 4, 1 + i, tzinfo=timezone.utc
+                    2026, 4, 1 + i, tzinfo=UTC
                 ),
             )
 

@@ -38,12 +38,10 @@ from discipline.psychometric.scoring.stai6 import (
     ITEM_COUNT,
     ITEM_MAX,
     ITEM_MIN,
-    InvalidResponseError,
     STAI6_REVERSE_ITEMS,
-    Stai6Result,
+    InvalidResponseError,
     score_stai6,
 )
-
 
 # ---------------------------------------------------------------------------
 # Constants

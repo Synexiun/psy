@@ -10,7 +10,7 @@ state is Clerk session + admin role claim).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -113,7 +113,7 @@ async def verify_audit_chain(payload: VerifyChainRequest) -> VerifyChainResponse
         valid=not broken,
         total_records=len(records),
         broken_indices=broken,
-        verified_at=datetime.now(timezone.utc),
+        verified_at=datetime.now(UTC),
     )
 
 

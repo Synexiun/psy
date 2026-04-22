@@ -40,7 +40,6 @@ import pytest
 
 from discipline.psychometric.scoring.aces import (
     ACES_POSITIVE_CUTOFF,
-    AcesResult,
     INSTRUMENT_VERSION,
     ITEM_COUNT,
     ITEM_MAX,
@@ -48,7 +47,6 @@ from discipline.psychometric.scoring.aces import (
     InvalidResponseError,
     score_aces,
 )
-
 
 # --------------------------------------------------------------------
 # Constants — pin Felitti 1998 source-of-truth values so a refactor

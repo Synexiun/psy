@@ -29,7 +29,6 @@ from discipline.shared.logging import (
 )
 from discipline.shared.logging.streams import _chain_processor, _record_for_chain
 
-
 # ---- Fixtures --------------------------------------------------------------
 
 

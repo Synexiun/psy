@@ -35,17 +35,11 @@ References:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TypeVar
 
 # The k-anonymity threshold.  Changing this value is a privacy-policy
 # decision — do NOT adjust without a DPIA + compliance review.  Pinned
 # as a module constant so every caller routes through the same value.
 K_ANONYMITY_THRESHOLD: int = 5
-
-
-# Generic type for the value being suppressed.  Supports int / float and
-# any wrapper type a caller might pass (e.g. a tagged numeric).
-T = TypeVar("T")
 
 
 # ---- Exceptions ------------------------------------------------------------
@@ -60,7 +54,7 @@ class InvalidCohortSizeError(ValueError):
 # ---- Core primitive --------------------------------------------------------
 
 
-def suppress_below_k(value: T, n: int, *, k: int = K_ANONYMITY_THRESHOLD) -> T | None:
+def suppress_below_k[T](value: T, n: int, *, k: int = K_ANONYMITY_THRESHOLD) -> T | None:
     """Return ``value`` if the backing cohort is at least ``k``, else ``None``.
 
     This is the k-anonymity gate for enterprise aggregate rendering.  A
@@ -157,8 +151,8 @@ async def engagement_for_org(_org_id: str) -> OrgEngagement:
 
 
 __all__ = [
-    "InvalidCohortSizeError",
     "K_ANONYMITY_THRESHOLD",
+    "InvalidCohortSizeError",
     "OrgEngagement",
     "OrgEngagementSnapshot",
     "build_org_engagement",

@@ -5,7 +5,7 @@ export default async function EnterpriseDashboardPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
-}) {
+}): Promise<React.JSX.Element> {
   const { locale } = await params;
   setRequestLocale(locale);
   return <EnterpriseDashboard />;
