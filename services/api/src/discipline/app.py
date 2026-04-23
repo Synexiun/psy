@@ -24,6 +24,7 @@ from discipline.memory.router import router as memory_router
 from discipline.signal.router import router as signal_router
 from discipline.compliance.router import router as compliance_router
 from discipline.billing.router import router as billing_router
+from discipline.enterprise.router import router as enterprise_router
 from discipline.notifications.router import router as notifications_router
 from discipline.pattern.router import router as pattern_router
 from discipline.psychometric.router import router as psychometric_router
@@ -222,6 +223,7 @@ def create_app() -> FastAPI:
     app.include_router(notifications_router, prefix="/v1")
     app.include_router(pattern_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")
+    app.include_router(enterprise_router, prefix="/v1")
     app.include_router(admin_router, prefix="/v1")
 
     return app
