@@ -20,6 +20,7 @@ from discipline.content.safety_directory import (
 )
 from discipline.identity.router import router as identity_router
 from discipline.intervention.router import router as intervention_router
+from discipline.memory.router import router as memory_router
 from discipline.psychometric.router import router as psychometric_router
 from discipline.reports.router import router as reports_router
 from discipline.resilience.router import router as resilience_router
@@ -210,6 +211,7 @@ def create_app() -> FastAPI:
     app.include_router(analytics_router, prefix="/v1")
     app.include_router(reports_router, prefix="/v1")
     app.include_router(content_router, prefix="/v1")
+    app.include_router(memory_router, prefix="/v1")
     app.include_router(admin_router, prefix="/v1")
 
     return app
