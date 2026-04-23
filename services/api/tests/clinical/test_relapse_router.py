@@ -14,6 +14,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from discipline.app import create_app
+from discipline.clinical.repository import reset_relapse_repository
+
+
+@pytest.fixture(autouse=True)
+def _clear_relapses() -> None:
+    reset_relapse_repository()
 
 
 @pytest.fixture
@@ -92,19 +98,18 @@ class TestRelapseHappyPath:
         assert isinstance(body["next_steps"], list)
         assert len(body["next_steps"]) > 0
 
-    def test_response_has_message_field(self, client: TestClient) -> None:
+    def test_response_has_compassion_message_field(self, client: TestClient) -> None:
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        assert isinstance(body["message"], str)
-        assert len(body["message"]) > 0
+        assert isinstance(body["compassion_message"], str)
+        assert len(body["compassion_message"]) > 0
 
-    def test_resilience_streak_days_present_and_non_negative(self, client: TestClient) -> None:
+    def test_resilience_preserved_flag_is_true(self, client: TestClient) -> None:
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        assert isinstance(body["resilience_streak_days"], int)
-        assert body["resilience_streak_days"] >= 0
+        assert body["resilience_preserved"] is True
 
-    def test_resilience_urges_handled_total_non_negative(self, client: TestClient) -> None:
+    def test_reviewed_flag_is_false_by_default(self, client: TestClient) -> None:
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        assert body["resilience_urges_handled_total"] >= 0
+        assert body["reviewed"] is False
 
     def test_context_tags_defaults_to_empty_list(self, client: TestClient) -> None:
         """context_tags is optional; omitting it must still produce 201."""
@@ -144,33 +149,33 @@ class TestCompassionFirstCopy:
                 f"next_steps leaked shame-adjacent token {token!r}"
             )
 
-    def test_message_has_no_streak_reset_framing(self, client: TestClient) -> None:
+    def test_compassion_message_has_no_streak_reset_framing(self, client: TestClient) -> None:
         """Resilience streak never resets — CLAUDE.md Rule #3.  The relapse
         message must never use 'streak reset', 'reset your streak', etc."""
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        text = body["message"].lower()
+        text = body["compassion_message"].lower()
         assert "streak reset" not in text
         assert "reset your streak" not in text
         assert "reset" not in text
 
-    def test_message_has_no_future_relapse_prediction(self, client: TestClient) -> None:
+    def test_compassion_message_has_no_future_relapse_prediction(self, client: TestClient) -> None:
         """P4 framing rule applies here too: no predictive language."""
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        text = body["message"].lower()
+        text = body["compassion_message"].lower()
         for token in ("will relapse", "likely to", "predicted", "forecast"):
             assert token not in text, f"predictive token {token!r} in relapse message"
 
-    def test_message_contains_no_better_worse_moral_framing(self, client: TestClient) -> None:
+    def test_compassion_message_contains_no_better_worse_moral_framing(self, client: TestClient) -> None:
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        text = body["message"].lower()
+        text = body["compassion_message"].lower()
         assert not re.search(r"\bbetter\b", text), "'better' is a moral frame in relapse copy"
         assert not re.search(r"\bworse\b", text), "'worse' is a moral frame in relapse copy"
 
-    def test_compassion_message_is_in_next_steps(self, client: TestClient) -> None:
-        """The signed clinical template includes 'compassion_message' as the
-        first next-step — verifies the template hasn't been stripped."""
+    def test_next_steps_contains_review_prompt(self, client: TestClient) -> None:
+        """The signed clinical template includes 'review_prompt' as a
+        next-step — verifies the template hasn't been stripped."""
         body = client.post(_URL, json=_valid_payload(), headers=_IK_HEADER).json()
-        assert "compassion_message" in body["next_steps"]
+        assert "review_prompt" in body["next_steps"]
 
 
 # =============================================================================
