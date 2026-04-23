@@ -24,6 +24,7 @@ from discipline.memory.router import router as memory_router
 from discipline.signal.router import router as signal_router
 from discipline.compliance.router import router as compliance_router
 from discipline.notifications.router import router as notifications_router
+from discipline.pattern.router import router as pattern_router
 from discipline.psychometric.router import router as psychometric_router
 from discipline.reports.router import router as reports_router
 from discipline.resilience.router import router as resilience_router
@@ -218,6 +219,7 @@ def create_app() -> FastAPI:
     app.include_router(signal_router, prefix="/v1")
     app.include_router(compliance_router, prefix="/v1")
     app.include_router(notifications_router, prefix="/v1")
+    app.include_router(pattern_router, prefix="/v1")
     app.include_router(admin_router, prefix="/v1")
 
     return app
