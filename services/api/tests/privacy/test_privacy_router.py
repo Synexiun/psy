@@ -304,3 +304,78 @@ class TestExportIdUniqueness:
         body_a = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
         body_b = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
         assert body_a["export_id"] != body_b["export_id"]
+
+
+# ---------------------------------------------------------------------------
+# PrivacyService.run_pending_hard_deletes unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestRunPendingHardDeletes:
+    """Unit tests for the hard-delete cascade method.
+
+    Tests run with db=None (no live database), which triggers the graceful
+    degradation path and returns an empty list.
+    """
+
+    @pytest.mark.asyncio
+    async def test_no_db_returns_empty_list(self) -> None:
+        from datetime import UTC, datetime
+
+        from discipline.privacy.service import PrivacyService
+
+        svc = PrivacyService()
+        result = await svc.run_pending_hard_deletes(datetime.now(UTC), db=None)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_returns_list_type(self) -> None:
+        from datetime import UTC, datetime
+
+        from discipline.privacy.service import PrivacyService
+
+        svc = PrivacyService()
+        result = await svc.run_pending_hard_deletes(datetime.now(UTC), db=None)
+        assert isinstance(result, list)
+
+    @pytest.mark.asyncio
+    async def test_with_mock_db_executes_queries(self) -> None:
+        from datetime import UTC, datetime
+        from unittest.mock import AsyncMock, MagicMock
+
+        from discipline.privacy.service import PrivacyService
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.mappings.return_value.all.return_value = [
+            {"id": "u-001", "external_id": "clerk_u_001"},
+            {"id": "u-002", "external_id": "clerk_u_002"},
+        ]
+        mock_db.execute.return_value = mock_result
+
+        svc = PrivacyService()
+        result = await svc.run_pending_hard_deletes(datetime.now(UTC), db=mock_db)
+
+        # Should have returned the two user ids.
+        assert set(result) == {"u-001", "u-002"}
+        # Should have called flush once.
+        mock_db.flush.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_with_mock_db_no_pending(self) -> None:
+        from datetime import UTC, datetime
+        from unittest.mock import AsyncMock, MagicMock
+
+        from discipline.privacy.service import PrivacyService
+
+        mock_db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.mappings.return_value.all.return_value = []
+        mock_db.execute.return_value = mock_result
+
+        svc = PrivacyService()
+        result = await svc.run_pending_hard_deletes(datetime.now(UTC), db=mock_db)
+
+        assert result == []
+        # No flush needed when nothing to delete.
+        mock_db.flush.assert_not_called()

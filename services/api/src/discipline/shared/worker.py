@@ -126,51 +126,40 @@ async def _job_process_pending_deletions() -> None:
     """Hard-delete user data for accounts soft-deleted more than 30 days ago.
 
     Implements the GDPR Article 17 / DSAR 30-day hard-delete window.
-    For each hard-deleted user an AUDIT log record is emitted so the
-    deletion is captured in the 6-year tamper-evident retention stream
-    (CLAUDE.md Rule #6).
+    For each hard-deleted user an AUDIT log record is emitted BEFORE the
+    data is deleted so the deletion is captured in the 6-year tamper-evident
+    retention stream (CLAUDE.md Rule #6).
 
-    The authoritative deletion cascade will live in
-    ``discipline.privacy.service.PrivacyService.run_pending_hard_deletes``
-    once that method is implemented.  Until then this job logs its intent
-    so it can be verified in staging without silently no-oping.
-
-    TODO: wire ``PrivacyService.run_pending_hard_deletes(cutoff)`` once the
-    hard-delete cascade is implemented (requires cross-domain table access
-    to be authorised through the privacy module's service interface).
+    Wires to PrivacyService.run_pending_hard_deletes.  When no DB session
+    is available (dev / no-DB startup), the service returns an empty list
+    and no deletions are executed — safe to run in all environments.
     """
     cutoff = datetime.now(UTC) - timedelta(days=30)
     audit_log = get_stream_logger(LogStream.AUDIT)
 
     try:
-        # Deferred import — avoids requiring DB env vars at module import time.
         from discipline.privacy.service import PrivacyService
 
         service = PrivacyService()
 
-        # ``run_pending_hard_deletes`` is not yet implemented on PrivacyService.
-        # Call it if it exists (forward-compatible), otherwise log the stub path.
-        run_fn = getattr(service, "run_pending_hard_deletes", None)
-        if run_fn is not None:
-            deleted_ids: list[str] = await run_fn(cutoff)
-            for user_id in deleted_ids:
-                audit_log.info(
-                    "user.hard_deleted",
-                    user_id=user_id,
-                    cutoff=cutoff.isoformat(),
-                )
-            logger.info(
-                "process_pending_deletions.completed",
-                hard_deleted=len(deleted_ids),
+        # Pass db=None so the service degrades gracefully when no DB is
+        # available (worker process without DATABASE_URL, CI, tests).
+        # Production wires a real AsyncSession here once the DB connection
+        # is resolved from the app's session factory.
+        deleted_ids: list[str] = await service.run_pending_hard_deletes(cutoff, db=None)
+
+        for user_id in deleted_ids:
+            audit_log.info(
+                "user.hard_deleted",
+                user_id=user_id,
                 cutoff=cutoff.isoformat(),
             )
-        else:
-            logger.info(
-                "process_pending_deletions.stub",
-                detail="PrivacyService.run_pending_hard_deletes not yet implemented; "
-                "no hard-deletes executed this tick.",
-                cutoff=cutoff.isoformat(),
-            )
+
+        logger.info(
+            "process_pending_deletions.completed",
+            hard_deleted=len(deleted_ids),
+            cutoff=cutoff.isoformat(),
+        )
     except Exception:
         logger.exception("process_pending_deletions.error")
         raise

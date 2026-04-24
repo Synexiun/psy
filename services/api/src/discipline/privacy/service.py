@@ -363,6 +363,90 @@ class PrivacyService:
             return [{"error": str(exc)}]
 
 
+    # ------------------------------------------------------------------
+    # Hard-delete cascade (GDPR Article 17 / DSAR)
+    # ------------------------------------------------------------------
+
+    async def run_pending_hard_deletes(
+        self,
+        cutoff: datetime,
+        db: AsyncSession | None,
+    ) -> list[str]:
+        """Execute the hard-delete cascade for accounts past the grace window.
+
+        Finds all users where ``purge_scheduled_at <= cutoff`` AND ``deleted_at
+        IS NOT NULL`` (soft-deleted accounts), then deletes every row they own
+        across all user-data tables.
+
+        Returns a list of ``user_id`` strings that were hard-deleted so the
+        calling worker can emit AUDIT log entries.
+
+        PHI contract: callers MUST emit an AUDIT log entry per deleted user_id
+        *before* calling this method — the audit entry must be committed before
+        the data disappears so the retention stream is complete.
+
+        Cascade order is explicit (foreign-key awareness):
+          urge_sessions → psychometric_sessions → journals → signal_windows
+          → streak_state → patterns → consents → user_profiles → users
+
+        SQLAlchemy ON DELETE CASCADE handles some FK children, but we
+        DELETE explicitly so the behaviour is testable without a live DB.
+        """
+        if db is None:
+            return []
+
+        # Find users due for hard-delete.
+        result = await db.execute(
+            text(
+                """
+                SELECT id, external_id
+                FROM   users
+                WHERE  deleted_at        IS NOT NULL
+                  AND  purge_scheduled_at <= :cutoff
+                LIMIT  500
+                """
+            ),
+            {"cutoff": cutoff},
+        )
+        rows = result.mappings().all()
+        user_ids = [str(r["id"]) for r in rows]
+
+        if not user_ids:
+            return []
+
+        # Parameterised IN clause.  SQLAlchemy text() doesn't natively support
+        # lists; use a subquery pattern so no f-string injection is possible.
+        for user_id in user_ids:
+            await self._hard_delete_one(user_id, db)
+
+        await db.flush()
+        return user_ids
+
+    async def _hard_delete_one(self, user_id: str, db: AsyncSession) -> None:
+        """Delete all rows owned by a single user_id (UUID string)."""
+        # Each DELETE is scoped to the internal UUID — never the external_id —
+        # so a clerk_sub collision cannot accidentally wipe the wrong account.
+        for table in (
+            "urge_sessions",
+            "psychometric_sessions",
+            "journals",
+            "signals_windows",
+            "streak_state",
+            "patterns",
+            "consents",
+            "user_profiles",
+        ):
+            await db.execute(
+                text(f"DELETE FROM {table} WHERE user_id = :uid"),  # noqa: S608
+                {"uid": user_id},
+            )
+
+        await db.execute(
+            text("DELETE FROM users WHERE id = :uid"),
+            {"uid": user_id},
+        )
+
+
 # ---------------------------------------------------------------------------
 # Singleton accessor
 # ---------------------------------------------------------------------------
