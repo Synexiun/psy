@@ -48,3 +48,26 @@ export const buildButtonClasses = (
   };
   return `${base} ${sizing[size]} ${variants[variant]}`;
 };
+
+/**
+ * buildInputClasses returns Tailwind utility classes for an input field state.
+ * Mirrors the styling used by the Input and Textarea components in web.tsx.
+ */
+export const buildInputClasses = (
+  options?: { invalid?: boolean; disabled?: boolean },
+): string => {
+  const base =
+    'w-full rounded-lg border border-[hsl(220,14%,82%)] bg-white px-3 py-2.5 text-sm text-[hsl(222,47%,11%)] placeholder:text-[hsl(215,16%,57%)] transition-colors min-h-[44px] focus:outline-none focus:ring-2 focus:ring-[hsl(217,91%,52%)]/30 focus:border-[hsl(217,91%,52%)]';
+
+  const disabledCls =
+    options?.disabled === true
+      ? 'cursor-not-allowed opacity-50 bg-[hsl(220,14%,96%)]'
+      : '';
+
+  const invalidCls =
+    options?.invalid === true
+      ? 'border-[hsl(0,84%,60%)] focus:ring-[hsl(0,84%,60%)]/30'
+      : '';
+
+  return `${base} ${disabledCls} ${invalidCls}`.trim();
+};

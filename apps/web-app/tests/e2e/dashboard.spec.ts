@@ -1,8 +1,8 @@
 /**
  * E2E tests for the authenticated user app dashboard.
  *
- * These test the public-facing parts of the dashboard (crisis CTA, i18n,
- * layout). Auth-gated content is tested at the middleware level in unit tests.
+ * Covers: layout, streak widget, pattern cards, quick actions,
+ * state indicator, mood sparkline, crisis CTA, i18n, RTL, a11y.
  */
 
 import { expect, test } from '@playwright/test';
@@ -22,7 +22,7 @@ test.describe('Dashboard per locale', () => {
       });
 
       test('crisis CTA links to crisis page', async ({ page }) => {
-        const cta = page.locator(`a[href="/${locale}/crisis"]`);
+        const cta = page.locator(`a[href="/${locale}/crisis"]`).first();
         await expect(cta).toBeVisible();
       });
 
@@ -40,6 +40,29 @@ test.describe('Dashboard per locale', () => {
         const html = page.locator('html');
         const lang = await html.getAttribute('lang');
         expect(lang).toBe(locale);
+      });
+
+      test('renders streak widgets', async ({ page }) => {
+        await expect(page.getByRole('img', { name: /continuous streak/i })).toBeVisible();
+        await expect(page.getByRole('img', { name: /resilience streak/i })).toBeVisible();
+      });
+
+      test('renders quick action grid', async ({ page }) => {
+        const grid = page.locator('section[aria-labelledby="quick-actions"]');
+        await expect(grid.getByRole('link', { name: /check in/i })).toBeVisible();
+        await expect(grid.getByRole('link', { name: /coping tool/i })).toBeVisible();
+        await expect(grid.getByRole('link', { name: /journal/i })).toBeVisible();
+        await expect(grid.getByRole('link', { name: /crisis help/i })).toBeVisible();
+      });
+
+      test('renders state indicator badge', async ({ page }) => {
+        const badge = page.locator('[role="img"][aria-label^="Current state"]').first();
+        await expect(badge).toBeVisible();
+      });
+
+      test('renders mood sparkline', async ({ page }) => {
+        const sparkline = page.locator('svg[role="img"][aria-label*="Mood trend"]').first();
+        await expect(sparkline).toBeVisible();
       });
     });
   }

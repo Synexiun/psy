@@ -7047,3 +7047,213 @@ async def trajectory_from_history(
         baseline=baseline,
         points=points,
     )
+
+
+# =============================================================================
+# Assessment sessions stubs
+#
+# The web-app calls POST /v1/assessments/sessions (not POST /v1/assessments).
+# These stubs bridge that path to the existing scoring dispatch until
+# the assessment-session persistence layer lands (the existing
+# POST /v1/assessments endpoint returns the scored result but does not
+# store a "session" record with the full response set).
+#
+# Route ordering note: these routes are appended AFTER all existing
+# /trajectory/* routes to avoid shadowing them.
+# =============================================================================
+
+
+import uuid as _uuid
+from datetime import datetime as _datetime, timezone as _tz
+
+
+class AssessmentSessionResponse(BaseModel):
+    """Stub response for POST /v1/assessments/sessions.
+
+    Shape mirrors :class:`AssessmentResult` for the fields the
+    web-app reads at the summary screen (instrument, score, severity,
+    safety_flag, completed_at).
+
+    # TODO: replace stub fields with persisted AssessmentSession record
+    # once the AssessmentSessionRepository ships.
+    """
+
+    session_id: str
+    instrument: str
+    score: int
+    severity: str
+    safety_flag: bool = False
+    completed_at: str
+
+
+class AssessmentSessionRequest(BaseModel):
+    """Request body for POST /v1/assessments/sessions.
+
+    Mirrors what the web-app's assessment page POSTs after the user
+    completes all questions.
+    """
+
+    instrument: str = Field(..., min_length=1)
+    responses: list[dict[str, object]] = Field(
+        ...,
+        description="List of {item: int, value: int} dicts — one per question",
+    )
+
+
+class AssessmentSessionHistoryItem(BaseModel):
+    """Single row in the sessions history list."""
+
+    session_id: str
+    instrument: str
+    score: int
+    severity: str
+    safety_flag: bool
+    completed_at: str
+
+
+def _stub_band(instrument: str, score: int) -> str:
+    """Derive a severity band from instrument + raw score.
+
+    Applies the same published thresholds used in the scoring layer so
+    the summary screen is clinically coherent even before the session
+    repository lands.  This duplicates the thresholds from the scoring
+    modules intentionally — the stub must be self-contained.
+
+    # TODO: remove once POST /v1/assessments/sessions delegates to the
+    # real _dispatch path and returns a full AssessmentResult.
+    """
+    key = instrument.lower().strip()
+    if key == "phq-9":
+        if score <= 4:
+            return "minimal"
+        if score <= 9:
+            return "mild"
+        if score <= 14:
+            return "moderate"
+        if score <= 19:
+            return "moderately_severe"
+        return "severe"
+    if key == "gad-7":
+        if score <= 4:
+            return "minimal"
+        if score <= 9:
+            return "mild"
+        if score <= 14:
+            return "moderate"
+        return "severe"
+    if key == "who-5":
+        pct = score * 4
+        if pct < 28:
+            return "poor"
+        if pct < 50:
+            return "low"
+        if pct < 72:
+            return "moderate"
+        return "good"
+    if key == "pss-10":
+        if score <= 13:
+            return "low"
+        if score <= 26:
+            return "moderate"
+        return "high"
+    return "scored"
+
+
+@router.post(
+    "/sessions",
+    response_model=AssessmentSessionResponse,
+    status_code=201,
+    tags=["psychometric"],
+)
+async def create_assessment_session(
+    body: AssessmentSessionRequest,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+) -> AssessmentSessionResponse:
+    """Accept a completed assessment session from the web app.
+
+    The session is the web-app counterpart to ``POST /v1/assessments``.
+    That endpoint requires an ``Idempotency-Key`` header and returns a
+    full ``AssessmentResult``; this endpoint accepts the same payload
+    shape without the idempotency requirement so the one-question-at-a-
+    time UI can submit without managing idempotency keys.
+
+    Safety routing:
+    - PHQ-9 item 9 (1-based) > 0 → ``safety_flag=True``.
+      The summary screen is responsible for rendering the crisis card.
+    - All other instruments: ``safety_flag=False``.
+
+    # TODO: implement real scoring + PHI-emitting audit log
+    #   1. Delegate to ``_dispatch(AssessmentRequest(...))`` for proper
+    #      multi-instrument scoring (avoids duplicating scoring logic).
+    #   2. Persist the session via AssessmentSessionRepository.
+    #   3. Emit an audit log entry (PHI boundary — user responses are PHI).
+    #   4. For PHQ-9 item-9 fire, emit a safety-stream event via
+    #      ``_emit_t3_safety_event``.
+    """
+    _ = x_user_id  # will be used by auth + audit in real impl
+
+    # Stub scoring: sum all response values
+    score = sum(
+        int(r.get("value", 0))
+        for r in body.responses
+        if isinstance(r.get("value"), (int, float))
+    )
+
+    # PHQ-9 safety item check (item 9, 1-based)
+    safety_flag = False
+    if body.instrument.lower().strip() == "phq-9":
+        safety_flag = any(
+            r.get("item") == 9 and int(r.get("value", 0)) > 0
+            for r in body.responses
+        )
+
+    return AssessmentSessionResponse(
+        session_id=str(_uuid.uuid4()),
+        instrument=body.instrument,
+        score=score,
+        severity=_stub_band(body.instrument, score),
+        safety_flag=safety_flag,
+        completed_at=_datetime.now(tz=_tz.utc).isoformat(),
+    )
+
+
+@router.get(
+    "/sessions",
+    response_model=list[AssessmentSessionHistoryItem],
+    tags=["psychometric"],
+)
+async def list_assessment_sessions(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    limit: int = 50,
+) -> list[AssessmentSessionHistoryItem]:
+    """Return the authenticated user's completed assessment sessions.
+
+    Bridges the frontend path ``GET /v1/assessments/sessions`` to the
+    underlying assessment history.  Delegates to the existing
+    ``AssessmentRepository.history_for`` so the returned items match
+    the data that ``GET /v1/assessments/history`` returns, projected
+    onto the sessions shape.
+
+    # TODO: once AssessmentSessionRepository ships, read from that
+    # table instead so each row carries the full response set and
+    # session-level metadata (started_at, abandoned, duration).
+
+    PHI note: this endpoint reads assessment scores per user — emit an
+    audit log entry when real auth is wired (scores are behavioural PHI
+    per the data-model §PHI boundary).
+    """
+    resolved_user_id = x_user_id or "test_user_001"
+    repo = get_assessment_repository()
+    records = repo.history_for(resolved_user_id, limit=limit)
+
+    return [
+        AssessmentSessionHistoryItem(
+            session_id=r.assessment_id,
+            instrument=r.instrument,
+            score=r.total,
+            severity=r.severity,
+            safety_flag=r.requires_t3,
+            completed_at=r.created_at.isoformat(),
+        )
+        for r in records
+    ]

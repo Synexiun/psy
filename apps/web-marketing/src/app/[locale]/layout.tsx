@@ -26,16 +26,24 @@ const vazirmatn = Vazirmatn({
   variable: '--font-vazirmatn',
 });
 
-export const metadata: Metadata = {
-  metadataBase: new URL('https://www.disciplineos.com'),
-  title: {
-    default: 'Discipline OS — support in the moment between urge and action',
-    template: '%s · Discipline OS',
-  },
-  description:
-    'Evidence-based coping tools, safety resources, and pattern insights. Private by design.',
-  robots: { index: true, follow: true },
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  return {
+    alternates: {
+      canonical: `https://www.disciplineos.com/${locale}`,
+      languages: {
+        en: 'https://www.disciplineos.com/en',
+        fr: 'https://www.disciplineos.com/fr',
+        ar: 'https://www.disciplineos.com/ar',
+        fa: 'https://www.disciplineos.com/fa',
+      },
+    },
+  };
+}
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));

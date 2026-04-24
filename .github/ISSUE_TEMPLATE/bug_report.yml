@@ -1,0 +1,52 @@
+name: Bug Report
+description: Report a bug in Discipline OS
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **WARNING: Never include real user data, patient data, or PHI in bug reports.**
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the bug
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - P0 — Clinical safety (crisis path broken, data loss)
+        - P1 — Core feature broken
+        - P2 — Degraded experience
+        - P3 — Minor issue
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      multiple: true
+      options:
+        - Web app
+        - iOS mobile
+        - Android mobile
+        - Clinician portal
+        - Enterprise portal
+        - Crisis page
+        - API / backend

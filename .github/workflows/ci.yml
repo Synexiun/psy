@@ -1,0 +1,330 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Default permissions: read-only.  Jobs that need id-token (OIDC) or
+# pull-requests write declare their own narrower permissions block.
+permissions:
+  contents: read
+  id-token: write   # Required for AWS OIDC credential exchange
+  pull-requests: read
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.12.0"
+
+jobs:
+  # ─── Lint & Typecheck ────────────────────────────────────────────────────────
+  lint-typecheck:
+    name: Lint & Typecheck
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+  # ─── Unit Tests (Vitest) ─────────────────────────────────────────────────────
+  test-web:
+    name: Web Unit Tests
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm run test
+        env:
+          # Prevent Next.js telemetry in CI
+          NEXT_TELEMETRY_DISABLED: "1"
+
+  # ─── E2E Tests (Playwright) ──────────────────────────────────────────────────
+  test-e2e-web-app:
+    name: E2E Tests (web-app)
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('apps/web-app/package.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm --filter @disciplineos/web-app exec playwright install --with-deps chromium
+
+      - name: Install Playwright system deps (cached hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm --filter @disciplineos/web-app exec playwright install-deps chromium
+
+      - name: Build web-app for E2E
+        run: pnpm --filter @disciplineos/web-app build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+
+      - name: Run E2E tests
+        run: pnpm --filter @disciplineos/web-app test:e2e
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web-app/playwright-report/
+          retention-days: 7
+
+  # ─── Python: Ruff + Mypy + Pytest ────────────────────────────────────────────
+  test-python:
+    name: Python Lint, Typecheck & Tests
+    runs-on: ubuntu-latest
+    needs: lint-typecheck
+    defaults:
+      run:
+        working-directory: services/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "services/api/pyproject.toml"
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        run: uv sync --extra dev
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Mypy typecheck
+        run: uv run mypy .
+
+      - name: Pytest
+        run: uv run pytest -q
+        env:
+          DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.TEST_REDIS_URL }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          AUDIT_CHAIN_SECRET: ${{ secrets.AUDIT_CHAIN_SECRET }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          # Localstack in CI uses dummy credentials — real AWS access is obtained
+          # via OIDC role assumption in the deploy-staging job, not here.
+          AWS_ACCESS_KEY_ID: "test"
+          AWS_SECRET_ACCESS_KEY: "test"
+          AWS_DEFAULT_REGION: "us-east-1"
+
+  # ─── Build All Web Apps ───────────────────────────────────────────────────────
+  build-web:
+    name: Build All Web Apps
+    runs-on: ubuntu-latest
+    needs: [test-web, test-e2e-web-app, test-python]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build all web apps
+        run: pnpm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          # web-app (Clerk)
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          # web-clinician
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_CLINICIAN: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_CLINICIAN }}
+          CLERK_SECRET_KEY_CLINICIAN: ${{ secrets.CLERK_SECRET_KEY_CLINICIAN }}
+          # web-enterprise
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_ENTERPRISE: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY_ENTERPRISE }}
+          CLERK_SECRET_KEY_ENTERPRISE: ${{ secrets.CLERK_SECRET_KEY_ENTERPRISE }}
+          # API
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+  # ─── Bundle Size Gate ─────────────────────────────────────────────────────────
+  bundle-size:
+    name: Bundle Size Gate
+    runs-on: ubuntu-latest
+    needs: build-web
+    # Reporting gate only — does not block merge yet.
+    # Remove continue-on-error once baselines are established.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web-app
+        run: pnpm --filter @disciplineos/web-app build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          NEXT_PUBLIC_API_URL: ${{ secrets.NEXT_PUBLIC_API_URL }}
+
+      - name: Build web-marketing
+        run: pnpm --filter @disciplineos/web-marketing build
+        env:
+          NEXT_TELEMETRY_DISABLED: "1"
+
+      - name: Check bundle budgets
+        run: node .github/scripts/check-bundle-size.js
+
+  # ─── Deploy to Staging (main branch only) ────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: build-web
+    # Only run on direct pushes to main — not on PRs, not on workflow_dispatch
+    # from a non-main branch. This mirrors the "Merge to main → staging (auto)"
+    # step in Docs/Technicals/08_Infrastructure_DevOps.md §8.1.
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: staging
+    # Explicit permissions for this job — id-token is the OIDC grant that lets
+    # aws-actions/configure-aws-credentials call sts:AssumeRoleWithWebIdentity.
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          # AWS_ROLE_ARN is the output of infra/iam/github-actions-oidc.tf.
+          # Set it as a GitHub repository secret after running `terraform apply`.
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push API container
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build \
+            -t $ECR_REGISTRY/discipline-os-api:$IMAGE_TAG \
+            services/api/
+          docker push $ECR_REGISTRY/discipline-os-api:$IMAGE_TAG
+          # Also tag :latest so ECS can reference it without a specific SHA when
+          # registering a new task definition in the next step.
+          docker tag  $ECR_REGISTRY/discipline-os-api:$IMAGE_TAG \
+                      $ECR_REGISTRY/discipline-os-api:latest
+          docker push $ECR_REGISTRY/discipline-os-api:latest
+
+      - name: Deploy to ECS staging
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          aws ecs update-service \
+            --cluster staging-disciplineos-cluster \
+            --service staging-disciplineos-api \
+            --force-new-deployment \
+            --region us-east-1

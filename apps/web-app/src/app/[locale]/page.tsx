@@ -1,52 +1,110 @@
 'use client';
 
+import { use } from 'react';
 import { useTranslations } from 'next-intl';
-import { useAuth } from '@clerk/nextjs';
-import { buildButtonClasses } from '@disciplineos/design-system/primitives/web';
+import { Layout } from '@/components/Layout';
+import { StreakWidget } from '@/components/StreakWidget';
+import { PatternCard } from '@/components/PatternCard';
+import { QuickActions } from '@/components/QuickActions';
+import { StateIndicator } from '@/components/StateIndicator';
+import { MoodSparkline } from '@/components/MoodSparkline';
+import { useStreak, usePatterns, useStateEstimate, useCheckInHistory } from '@/hooks/useDashboardData';
 
 export default function DashboardPage({
   params,
 }: {
   params: Promise<{ locale: string }>;
 }): React.JSX.Element {
-  // params is read but not awaited in client component; Next.js injects it
-  const { locale } = params as unknown as { locale: string };
+  const { locale } = use(params);
   return <DashboardInner locale={locale} />;
 }
 
 function DashboardInner({ locale }: { locale: string }) {
   const t = useTranslations();
-  const { isSignedIn } = useAuth();
+  const streak = useStreak();
+  const patterns = usePatterns();
+  const state = useStateEstimate();
+  const checkInHistory = useCheckInHistory();
+
+  const isLoading = streak.isLoading || patterns.isLoading || state.isLoading || checkInHistory.isLoading;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8 sm:py-12">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">{t('app.welcome.title')}</h1>
-        <a
-          href={`/${locale}/crisis`}
-          className={buildButtonClasses('crisis', 'md')}
-          data-analytics-event="crisis_cta_click"
-        >
-          {t('crisis.cta.primary')}
-        </a>
-      </header>
+    <Layout locale={locale}>
+      <div className="space-y-6">
+        <header className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+              {t('app.welcome.title')}
+            </h1>
+            <p className="mt-1 text-sm text-ink-500">{t('app.welcome.body')}</p>
+          </div>
+          <a
+            href={`/${locale}/crisis`}
+            className="hidden items-center gap-2 rounded-lg bg-crisis-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-crisis-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crisis-300 lg:inline-flex"
+          >
+            <span aria-hidden="true">🚨</span>
+            {t('crisis.cta.primary')}
+          </a>
+        </header>
 
-      <p className="mt-3 text-[hsl(215,16%,47%)]">{t('app.welcome.body')}</p>
+        <QuickActions locale={locale} />
 
-      <section aria-labelledby="check-in" className="mt-8 rounded-xl border bg-white p-6 shadow-sm">
-        <h2 id="check-in" className="text-lg font-medium">
-          {t('app.urge.intensityLabel')}
-        </h2>
-        <p className="mt-1 text-sm text-[hsl(215,16%,47%)]">
-          {t('app.urge.intensityScaleMin')} → {t('app.urge.intensityScaleMax')}
-        </p>
-      </section>
+        <section aria-labelledby="state-heading">
+          <h2 id="state-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400">
+            {t('common.state.online')}
+          </h2>
+          <StateIndicator data={state.data} isLoading={state.isLoading} />
+        </section>
 
-      {!isSignedIn && (
-        <p className="mt-6 text-sm text-[hsl(215,16%,47%)]">
-          {t('nav.signIn')} · {t('nav.signOut')}
-        </p>
-      )}
-    </main>
+        <section aria-labelledby="streak-heading">
+          <h2 id="streak-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400">
+            Streaks
+          </h2>
+          <StreakWidget data={streak.data} isLoading={streak.isLoading} />
+        </section>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          <section className="lg:col-span-2" aria-labelledby="patterns-heading">
+            <h2 id="patterns-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400">
+              Insights
+            </h2>
+            <div className="space-y-3">
+              {patterns.isLoading && (
+                <>
+                  <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+                    <div className="h-4 w-20 rounded bg-surface-200 animate-pulse" />
+                    <div className="mt-3 h-4 w-3/4 rounded bg-surface-200 animate-pulse" />
+                  </div>
+                  <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+                    <div className="h-4 w-20 rounded bg-surface-200 animate-pulse" />
+                    <div className="mt-3 h-4 w-3/4 rounded bg-surface-200 animate-pulse" />
+                  </div>
+                </>
+              )}
+              {patterns.data?.map((pattern) => (
+                <PatternCard key={pattern.pattern_id} pattern={pattern} />
+              ))}
+              {!patterns.isLoading && patterns.data?.length === 0 && (
+                <p className="py-8 text-center text-sm text-ink-400">
+                  No patterns detected yet. Keep checking in — insights appear with more data.
+                </p>
+              )}
+            </div>
+          </section>
+
+          <aside aria-label="Dashboard sidebar" className="space-y-6">
+            <MoodSparkline data={checkInHistory.data} isLoading={isLoading} />
+
+            <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+              <p className="text-sm font-medium text-ink-900">Daily tip</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-600">
+                When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves —
+                most pass within 3–5 minutes.
+              </p>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </Layout>
   );
 }

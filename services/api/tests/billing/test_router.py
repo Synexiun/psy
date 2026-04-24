@@ -6,9 +6,12 @@ webhook acceptance, user isolation, and validation boundaries.
 
 from __future__ import annotations
 
+import json
 import uuid
+from unittest.mock import patch, MagicMock
 
 import pytest
+import stripe
 from fastapi.testclient import TestClient
 
 from discipline.app import create_app
@@ -283,70 +286,309 @@ class TestSubscriptionCancel:
 # =============================================================================
 
 
+def _make_stripe_event(event_type: str, obj: dict) -> stripe.Event:
+    """Build a minimal stripe.Event object for testing."""
+    raw = {
+        "id": "evt_test_123",
+        "object": "event",
+        "type": event_type,
+        "data": {"object": obj},
+        "livemode": False,
+        "created": 1700000000,
+        "api_version": "2024-04-10",
+        "pending_webhooks": 0,
+        "request": None,
+    }
+    return stripe.Event.construct_from(raw, stripe.api_key)
+
+
 class TestStripeWebhook:
+    """Stripe webhook endpoint tests.
+
+    ``stripe.Webhook.construct_event`` is mocked so tests do not need a
+    real signing secret.
+    """
+
+    def _post_stripe(
+        self,
+        client: TestClient,
+        event: stripe.Event,
+        sig: str = "t=1,v1=abc",
+    ):
+        raw = json.dumps({"id": event.id, "type": event.type}).encode()
+        with patch(
+            "stripe.Webhook.construct_event", return_value=event
+        ):
+            return client.post(
+                "/v1/webhooks/stripe",
+                content=raw,
+                headers={
+                    "content-type": "application/json",
+                    "stripe-signature": sig,
+                },
+            )
+
     def test_stripe_webhook_returns_202(self, client: TestClient) -> None:
-        response = client.post(
-            "/v1/webhooks/stripe",
-            json={"id": "evt_123", "type": "invoice.paid", "data": {}},
-        )
+        event = _make_stripe_event("invoice.paid", {"subscription": "sub_123"})
+        response = self._post_stripe(client, event)
         assert response.status_code == 202
 
     def test_stripe_webhook_returns_accepted(self, client: TestClient) -> None:
-        body = client.post(
-            "/v1/webhooks/stripe",
-            json={"id": "evt_123", "type": "invoice.paid", "data": {}},
-        ).json()
+        event = _make_stripe_event("invoice.paid", {"subscription": "sub_123"})
+        body = self._post_stripe(client, event).json()
         assert body["status"] == "accepted"
 
-    def test_stripe_webhook_missing_id_returns_422(self, client: TestClient) -> None:
+    def test_stripe_webhook_missing_signature_returns_400(
+        self, client: TestClient
+    ) -> None:
+        raw = json.dumps({"id": "evt_123", "type": "invoice.paid"}).encode()
         response = client.post(
             "/v1/webhooks/stripe",
-            json={"type": "invoice.paid"},
+            content=raw,
+            headers={"content-type": "application/json"},
         )
-        assert response.status_code == 422
+        assert response.status_code == 400
+
+    def test_stripe_webhook_invalid_signature_returns_400(
+        self, client: TestClient
+    ) -> None:
+        raw = json.dumps({"id": "evt_123", "type": "invoice.paid"}).encode()
+        with patch(
+            "stripe.Webhook.construct_event",
+            side_effect=stripe.SignatureVerificationError(
+                "Invalid signature", sig_header="bad"
+            ),
+        ):
+            response = client.post(
+                "/v1/webhooks/stripe",
+                content=raw,
+                headers={
+                    "content-type": "application/json",
+                    "stripe-signature": "t=1,v1=bad",
+                },
+            )
+        assert response.status_code == 400
+
+    def test_stripe_subscription_created_returns_202(
+        self, client: TestClient
+    ) -> None:
+        event = _make_stripe_event(
+            "customer.subscription.created",
+            {"id": "sub_new", "status": "active"},
+        )
+        assert self._post_stripe(client, event).status_code == 202
+
+    def test_stripe_subscription_updated_returns_202(
+        self, client: TestClient
+    ) -> None:
+        event = _make_stripe_event(
+            "customer.subscription.updated",
+            {"id": "sub_upd", "status": "active"},
+        )
+        assert self._post_stripe(client, event).status_code == 202
+
+    def test_stripe_subscription_deleted_returns_202(
+        self, client: TestClient
+    ) -> None:
+        event = _make_stripe_event(
+            "customer.subscription.deleted",
+            {"id": "sub_del"},
+        )
+        assert self._post_stripe(client, event).status_code == 202
+
+    def test_stripe_invoice_paid_returns_202(self, client: TestClient) -> None:
+        event = _make_stripe_event(
+            "invoice.paid", {"subscription": "sub_inv"}
+        )
+        assert self._post_stripe(client, event).status_code == 202
+
+    def test_stripe_invoice_payment_failed_returns_202(
+        self, client: TestClient
+    ) -> None:
+        event = _make_stripe_event(
+            "invoice.payment_failed", {"subscription": "sub_fail"}
+        )
+        assert self._post_stripe(client, event).status_code == 202
+
+    def test_stripe_unknown_event_type_returns_202(
+        self, client: TestClient
+    ) -> None:
+        event = _make_stripe_event("charge.succeeded", {})
+        assert self._post_stripe(client, event).status_code == 202
+
+
+def _make_apple_jws(payload: dict) -> str:
+    """Build a minimal JWS compact serialisation for Apple S2S tests."""
+    import base64
+
+    header = base64.urlsafe_b64encode(b'{"alg":"ES256"}').rstrip(b"=").decode()
+    body = (
+        base64.urlsafe_b64encode(json.dumps(payload).encode()).rstrip(b"=").decode()
+    )
+    sig = base64.urlsafe_b64encode(b"fakesig").rstrip(b"=").decode()
+    return f"{header}.{body}.{sig}"
 
 
 class TestAppleWebhook:
+    """Apple S2S webhook endpoint tests.
+
+    Uses a real JWS-shaped payload (base64url-encoded segments) so the
+    ``verify_jws_payload`` decode path is exercised end-to-end.
+    """
+
     def test_apple_webhook_returns_202(self, client: TestClient) -> None:
+        signed = _make_apple_jws({"notificationType": "SUBSCRIBED"})
         response = client.post(
             "/v1/webhooks/apple",
-            json={"notificationType": "SUBSCRIBED"},
+            json={"signedPayload": signed},
         )
         assert response.status_code == 202
 
     def test_apple_webhook_returns_accepted(self, client: TestClient) -> None:
+        signed = _make_apple_jws({"notificationType": "SUBSCRIBED"})
         body = client.post(
             "/v1/webhooks/apple",
-            json={"notificationType": "SUBSCRIBED"},
+            json={"signedPayload": signed},
         ).json()
         assert body["status"] == "accepted"
 
-    def test_apple_webhook_missing_type_returns_422(self, client: TestClient) -> None:
+    def test_apple_webhook_missing_signed_payload_returns_422(
+        self, client: TestClient
+    ) -> None:
+        response = client.post("/v1/webhooks/apple", json={})
+        assert response.status_code == 422
+
+    def test_apple_webhook_invalid_jws_returns_400(
+        self, client: TestClient
+    ) -> None:
         response = client.post(
             "/v1/webhooks/apple",
-            json={},
+            json={"signedPayload": "not.a.jws.with.too.many.parts.here"},
         )
-        assert response.status_code == 422
+        assert response.status_code == 400
+
+    def test_apple_did_renew_returns_202(self, client: TestClient) -> None:
+        signed = _make_apple_jws({"notificationType": "DID_RENEW"})
+        assert (
+            client.post("/v1/webhooks/apple", json={"signedPayload": signed}).status_code
+            == 202
+        )
+
+    def test_apple_expired_returns_202(self, client: TestClient) -> None:
+        signed = _make_apple_jws({"notificationType": "EXPIRED"})
+        assert (
+            client.post("/v1/webhooks/apple", json={"signedPayload": signed}).status_code
+            == 202
+        )
+
+    def test_apple_did_change_renewal_status_returns_202(
+        self, client: TestClient
+    ) -> None:
+        signed = _make_apple_jws(
+            {"notificationType": "DID_CHANGE_RENEWAL_STATUS", "subtype": "AUTO_RENEW_DISABLED"}
+        )
+        assert (
+            client.post("/v1/webhooks/apple", json={"signedPayload": signed}).status_code
+            == 202
+        )
+
+
+def _make_google_pubsub(notification: dict) -> dict:
+    """Build a Pub/Sub push envelope containing a base64-encoded notification."""
+    import base64
+
+    data = base64.b64encode(json.dumps(notification).encode()).decode()
+    return {
+        "message": {"data": data, "messageId": "msg_001"},
+        "subscription": "projects/test/subscriptions/play-billing",
+    }
 
 
 class TestGoogleWebhook:
+    """Google Play RTDN webhook endpoint tests."""
+
     def test_google_webhook_returns_202(self, client: TestClient) -> None:
-        response = client.post(
-            "/v1/webhooks/google",
-            json={"version": "1.0", "packageName": "com.disciplineos.app"},
+        body = _make_google_pubsub(
+            {
+                "version": "1.0",
+                "packageName": "com.disciplineos.app",
+                "subscriptionNotification": {
+                    "version": "1.0",
+                    "notificationType": 2,
+                    "purchaseToken": "tok_123",
+                    "subscriptionId": "discipline_monthly",
+                },
+            }
         )
+        response = client.post("/v1/webhooks/google", json=body)
         assert response.status_code == 202
 
     def test_google_webhook_returns_accepted(self, client: TestClient) -> None:
-        body = client.post(
-            "/v1/webhooks/google",
-            json={"version": "1.0", "packageName": "com.disciplineos.app"},
-        ).json()
-        assert body["status"] == "accepted"
+        body = _make_google_pubsub(
+            {
+                "version": "1.0",
+                "packageName": "com.disciplineos.app",
+                "subscriptionNotification": {
+                    "version": "1.0",
+                    "notificationType": 2,
+                    "purchaseToken": "tok_456",
+                    "subscriptionId": "discipline_monthly",
+                },
+            }
+        )
+        result = client.post("/v1/webhooks/google", json=body).json()
+        assert result["status"] == "accepted"
 
-    def test_google_webhook_missing_version_returns_422(self, client: TestClient) -> None:
+    def test_google_webhook_missing_message_returns_422(
+        self, client: TestClient
+    ) -> None:
         response = client.post(
             "/v1/webhooks/google",
-            json={"packageName": "com.disciplineos.app"},
+            json={"subscription": "projects/test/subscriptions/play"},
         )
         assert response.status_code == 422
+
+    def test_google_subscription_recovered_returns_202(
+        self, client: TestClient
+    ) -> None:
+        body = _make_google_pubsub(
+            {
+                "subscriptionNotification": {
+                    "version": "1.0",
+                    "notificationType": 1,
+                    "purchaseToken": "tok_recovery",
+                    "subscriptionId": "discipline_monthly",
+                }
+            }
+        )
+        assert client.post("/v1/webhooks/google", json=body).status_code == 202
+
+    def test_google_subscription_cancelled_returns_202(
+        self, client: TestClient
+    ) -> None:
+        body = _make_google_pubsub(
+            {
+                "subscriptionNotification": {
+                    "version": "1.0",
+                    "notificationType": 3,
+                    "purchaseToken": "tok_cancel",
+                    "subscriptionId": "discipline_monthly",
+                }
+            }
+        )
+        assert client.post("/v1/webhooks/google", json=body).status_code == 202
+
+    def test_google_subscription_expired_returns_202(
+        self, client: TestClient
+    ) -> None:
+        body = _make_google_pubsub(
+            {
+                "subscriptionNotification": {
+                    "version": "1.0",
+                    "notificationType": 13,
+                    "purchaseToken": "tok_expired",
+                    "subscriptionId": "discipline_monthly",
+                }
+            }
+        )
+        assert client.post("/v1/webhooks/google", json=body).status_code == 202

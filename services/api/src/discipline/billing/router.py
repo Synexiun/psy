@@ -16,7 +16,9 @@ Auth:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException
+import stripe
+
+from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from discipline.billing.service import SubscriptionService
@@ -103,33 +105,6 @@ class SubscriptionCancelResponse(BaseModel):
 # =============================================================================
 # Webhook schemas
 # =============================================================================
-
-
-class StripeWebhookBody(BaseModel):
-    """Stripe event envelope."""
-
-    model_config = {"extra": "allow"}
-
-    id: str = Field(..., min_length=1)
-    type: str = Field(..., min_length=1)
-    data: dict[str, object] = Field(default_factory=dict)
-
-
-class AppleS2SBody(BaseModel):
-    """App Store Server Notification envelope."""
-
-    model_config = {"extra": "allow"}
-
-    notificationType: str = Field(..., min_length=1)
-
-
-class GooglePlayBody(BaseModel):
-    """Google Play Developer Notification envelope."""
-
-    model_config = {"extra": "allow"}
-
-    version: str = Field(..., min_length=1)
-    packageName: str = Field(..., min_length=1)
 
 
 # =============================================================================
@@ -243,36 +218,91 @@ async def cancel_subscription(
 
 
 @router.post("/webhooks/stripe", status_code=202)
-async def stripe_webhook(payload: StripeWebhookBody) -> dict[str, str]:
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="stripe-signature"),
+) -> dict[str, str]:
     """Receive Stripe webhook events.
 
-    Stub: accepts the event shape.  Production verifies the Stripe
-    signature before processing.
+    Verifies the ``Stripe-Signature`` HMAC header before routing.
+    Returns 400 if the header is absent or the signature is invalid.
+
+    The request body is consumed as raw bytes so the HMAC is computed
+    over the exact wire bytes — JSON parsing must happen only after
+    verification.
     """
+    if stripe_signature is None:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    raw_body = await request.body()
     handler = get_stripe_webhook_handler()
-    await handler.handle(payload.model_dump())
+    try:
+        event = handler.construct_event(raw_body, stripe_signature)
+    except stripe.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid signature")
+
+    await handler.handle(event)
     return {"status": "accepted"}
+
+
+class AppleJWSBody(BaseModel):
+    """App Store Server Notification JWS envelope.
+
+    Apple sends a single ``signedPayload`` field containing a compact
+    JWS serialisation.
+    """
+
+    model_config = {"extra": "allow"}
+
+    signedPayload: str
 
 
 @router.post("/webhooks/apple", status_code=202)
-async def apple_webhook(payload: AppleS2SBody) -> dict[str, str]:
+async def apple_webhook(payload: AppleJWSBody) -> dict[str, str]:
     """Receive Apple App Store Server Notifications.
 
-    Stub: accepts the notification shape.  Production validates
-    the JWS signature before processing.
+    Decodes the JWS ``signedPayload`` before routing to the handler.
+    Signature chain validation is a TODO pending PKI integration.
     """
     handler = get_apple_webhook_handler()
-    await handler.handle(payload.model_dump())
+    try:
+        decoded = handler.verify_jws_payload(payload.signedPayload)
+    except (ValueError, Exception) as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid JWS payload: {exc}") from exc
+    await handler.handle(decoded)
     return {"status": "accepted"}
 
 
-@router.post("/webhooks/google", status_code=202)
-async def google_webhook(payload: GooglePlayBody) -> dict[str, str]:
-    """Receive Google Play Developer Notifications.
+class GooglePubSubMessage(BaseModel):
+    """Pub/Sub message envelope within a Google Play RTDN push."""
 
-    Stub: accepts the notification shape.  Production validates
-    the purchase token against the Google Play Developer API.
+    model_config = {"extra": "allow"}
+
+    data: str
+    messageId: str | None = None
+
+
+class GooglePlayRTDNBody(BaseModel):
+    """Google Play Real-time Developer Notification Pub/Sub envelope."""
+
+    model_config = {"extra": "allow"}
+
+    message: GooglePubSubMessage
+    subscription: str | None = None
+
+
+@router.post("/webhooks/google", status_code=202)
+async def google_webhook(payload: GooglePlayRTDNBody) -> dict[str, str]:
+    """Receive Google Play Developer Notifications via Pub/Sub push.
+
+    Decodes the base64 ``message.data`` field before routing.
     """
     handler = get_google_webhook_handler()
-    await handler.handle(payload.model_dump())
+    try:
+        notification = handler.decode_notification(payload.message.data)
+    except (ValueError, Exception) as exc:
+        raise HTTPException(
+            status_code=400, detail=f"Invalid Pub/Sub message data: {exc}"
+        ) from exc
+    await handler.handle(notification)
     return {"status": "accepted"}

@@ -1,0 +1,107 @@
+name: Security Audit
+
+on:
+  schedule:
+    # Every Sunday at 02:00 UTC
+    - cron: "0 2 * * 0"
+  pull_request:
+    paths:
+      - "**/package.json"
+      - "**/pyproject.toml"
+      - "pnpm-lock.yaml"
+  workflow_dispatch:
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9.12.0"
+
+jobs:
+  # ─── JavaScript / pnpm audit ─────────────────────────────────────────────────
+  audit-js:
+    name: JS Dependency Audit (pnpm)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node ${{ env.NODE_VERSION }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run pnpm audit (high + critical)
+        # pnpm audit exits non-zero when findings at or above the level are found.
+        # --audit-level=high catches both high and critical severities.
+        run: pnpm audit --audit-level=high
+
+  # ─── Python pip-audit ────────────────────────────────────────────────────────
+  audit-python:
+    name: Python Dependency Audit (pip-audit)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "services/api/pyproject.toml"
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python dependencies
+        working-directory: services/api
+        run: uv sync --extra dev
+
+      - name: Run pip-audit
+        uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          # Point pip-audit at the uv-managed virtual environment so it reads
+          # the resolved lock rather than the system Python.
+          virtual-environment: services/api/.venv
+          # Fail on any severity (pip-audit default); no --ignore-vulns here —
+          # suppression is a clinical-product risk and must be explicit + reviewed.
+          inputs: ""
+
+  # ─── Dependency Review (PRs only) ────────────────────────────────────────────
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    # This action is only meaningful on pull_request events; it diffs the
+    # dependency manifest between base and head. Skip on schedule / dispatch.
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Block on high and critical vulnerabilities introduced by the PR.
+          fail-on-severity: high
+          # Block on packages with licenses that are incompatible with a
+          # closed-source clinical product. Adjust list if legal team approves
+          # additional LGPL/GPL uses.
+          deny-licenses: GPL-2.0, GPL-3.0, LGPL-2.0, LGPL-2.1, LGPL-3.0, AGPL-3.0
+          # Warn (but don't block) on packages with no declared SPDX license —
+          # these need manual review before they land on main.
+          warn-only: false
+          comment-summary-in-pr: always

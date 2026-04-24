@@ -279,6 +279,85 @@ async def finalize_voice_session(
     )
 
 
+# =============================================================================
+# Journal entries alias routes
+#
+# The web-app calls GET /v1/journal/entries and POST /v1/journal/entries.
+# The canonical paths are GET /v1/journals and POST /v1/journals (above).
+# These alias handlers delegate to the same repository so both paths work
+# until the frontend is migrated to the canonical path.
+#
+# Route prefix note: these routes are on a router with no prefix so they
+# mount as /v1/journal/entries when included in the app.
+# =============================================================================
+
+
+@router.post("/journal/entries", response_model=JournalDetail, status_code=201)
+async def create_journal_entry(
+    payload: JournalCreate,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+) -> JournalDetail:
+    """Create a journal entry via the /journal/entries path.
+
+    Alias for ``POST /v1/journals`` — delegates to the same repository.
+    The canonical path is /v1/journals; this alias exists because the
+    web-app currently calls /v1/journal/entries.
+
+    # TODO: migrate frontend to POST /v1/journals and remove this alias.
+    """
+    user_id = _derive_user_id(x_user_id)
+    repo = get_journal_repository()
+    record = await repo.create(
+        user_id=user_id,
+        title=payload.title,
+        body_encrypted=_encrypt_body(payload.body),
+        mood_score=payload.mood_score,
+    )
+    return JournalDetail(
+        journal_id=record.journal_id,
+        user_id=record.user_id,
+        title=record.title,
+        body_encrypted=record.body_encrypted,
+        mood_score=record.mood_score,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+    )
+
+
+@router.get("/journal/entries", response_model=JournalList)
+async def list_journal_entries(
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    limit: int = 50,
+) -> JournalList:
+    """List journal entries via the /journal/entries path.
+
+    Alias for ``GET /v1/journals`` — delegates to the same repository.
+    The canonical path is /v1/journals; this alias exists because the
+    web-app currently calls /v1/journal/entries.
+
+    PHI note: journal bodies are stored encrypted; this endpoint reads
+    metadata only (preview, mood score, timestamps) — not the raw body.
+    An audit log entry should be emitted when real auth is wired, since
+    even preview text is behavioural PHI.
+
+    # TODO: migrate frontend to GET /v1/journals and remove this alias.
+    """
+    user_id = _derive_user_id(x_user_id)
+    repo = get_journal_repository()
+    records = await repo.list_by_user(user_id, limit=limit)
+    items = [
+        JournalItem(
+            journal_id=r.journal_id,
+            title=r.title,
+            body_preview=_preview_body(r.body_encrypted),
+            mood_score=r.mood_score,
+            created_at=r.created_at,
+        )
+        for r in records
+    ]
+    return JournalList(items=items, total=len(items))
+
+
 @router.get("/voice/sessions/{session_id}", response_model=VoiceSessionDetail)
 async def get_voice_session(
     session_id: str,

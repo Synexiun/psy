@@ -29,6 +29,8 @@ dependencies = [
     "anthropic >=0.39.0",
     "stripe >=11.0.0",
     "pgvector >=0.3.6",
+    "slowapi >=0.1.9",
+    "apscheduler >=3.10",
 ]
 
 [project.optional-dependencies]

@@ -38,6 +38,11 @@ from .enterprise import (
     build_org_engagement,
 )
 from .fhir_bundle import BundleType, assemble_bundle, assemble_bundle_from_resources
+from .fhir_export import (
+    AssessmentSession,
+    FhirExporter,
+    UrgeCheckInRecord,
+)
 from .fhir_observation import (
     LOINC_CODES,
     CssrsObservationSpec,
@@ -870,3 +875,254 @@ async def enterprise_engagement(
         "wellbeing_index": engagement.wellbeing_index,
         "k_anonymity_threshold": K_ANONYMITY_THRESHOLD,
     }
+
+
+# ---- User self-service FHIR export (HIPAA Right of Access) ------------------
+
+
+class PatientBundleRequest(BaseModel):
+    """Request payload for the user self-service FHIR patient bundle.
+
+    The caller supplies pre-fetched assessment sessions and recent check-in
+    records.  This keeps the router decoupled from the repository layer and
+    makes the endpoint trivially testable — the router's job is auth,
+    audit, and HTTP semantics; data fetching belongs to the caller.
+
+    ``actor_id`` MUST equal ``user_id`` — self-access only.  A clinician
+    exporting a patient bundle uses ``GET /reports/fhir/patients/{user_id}/bundle``
+    instead.
+
+    ``sessions`` maps to :class:`AssessmentSession` dataclasses; the
+    router converts from the wire dict-list.  Each session needs:
+    ``instrument``, ``total_score``, ``administered_at`` (ISO-8601 UTC
+    string), and optionally ``safety_item_positive``.
+
+    ``check_ins`` maps to :class:`UrgeCheckInRecord` dataclasses; each
+    needs ``intensity`` (0-10) and ``checked_in_at`` (ISO-8601 UTC string).
+    """
+
+    actor_id: str = Field(..., min_length=1, description="Session user id")
+    user_id: str = Field(
+        ..., min_length=1, description="Subject whose data is being exported"
+    )
+    sessions: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Psychometric assessment sessions. Each entry: instrument, "
+            "total_score, administered_at (ISO-8601 UTC), "
+            "safety_item_positive (optional bool)."
+        ),
+    )
+    check_ins: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description=(
+            "Urge check-in records (last 90 days). Each entry: "
+            "intensity (0-10), checked_in_at (ISO-8601 UTC)."
+        ),
+    )
+    bundle_id: str | None = Field(
+        default=None,
+        description="Optional caller-supplied UUID for audit cross-reference.",
+    )
+
+
+def _parse_assessment_sessions(
+    user_id: str,
+    raw: list[dict[str, Any]],
+) -> list[AssessmentSession]:
+    """Convert wire-format dicts to :class:`AssessmentSession` dataclasses.
+
+    ``administered_at`` is parsed as an ISO-8601 string; a naive datetime
+    (no ``+00:00`` / ``Z`` suffix) is treated as UTC rather than rejected
+    so callers that produce naive UTC strings don't get a surprise 422.
+    Raises :class:`ValueError` on any malformed entry.
+    """
+    sessions: list[AssessmentSession] = []
+    for i, entry in enumerate(raw):
+        try:
+            administered_at_raw = entry["administered_at"]
+            if isinstance(administered_at_raw, str):
+                dt = datetime.fromisoformat(
+                    administered_at_raw.replace("Z", "+00:00")
+                )
+            elif isinstance(administered_at_raw, datetime):
+                dt = administered_at_raw
+            else:
+                raise TypeError(
+                    f"administered_at must be a string or datetime, "
+                    f"got {type(administered_at_raw).__name__}"
+                )
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            sessions.append(
+                AssessmentSession(
+                    user_id=user_id,
+                    instrument=str(entry["instrument"]),
+                    total_score=int(entry["total_score"]),
+                    administered_at=dt,
+                    safety_item_positive=bool(
+                        entry.get("safety_item_positive", False)
+                    ),
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"sessions[{i}] is malformed: {exc}"
+            ) from exc
+    return sessions
+
+
+def _parse_check_ins(
+    user_id: str,
+    raw: list[dict[str, Any]],
+) -> list[UrgeCheckInRecord]:
+    """Convert wire-format dicts to :class:`UrgeCheckInRecord` dataclasses.
+
+    Same UTC-naive-tolerance as :func:`_parse_assessment_sessions`.
+    Raises :class:`ValueError` on any malformed entry.
+    """
+    check_ins: list[UrgeCheckInRecord] = []
+    for i, entry in enumerate(raw):
+        try:
+            checked_in_at_raw = entry["checked_in_at"]
+            if isinstance(checked_in_at_raw, str):
+                dt = datetime.fromisoformat(
+                    checked_in_at_raw.replace("Z", "+00:00")
+                )
+            elif isinstance(checked_in_at_raw, datetime):
+                dt = checked_in_at_raw
+            else:
+                raise TypeError(
+                    f"checked_in_at must be a string or datetime, "
+                    f"got {type(checked_in_at_raw).__name__}"
+                )
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UTC)
+            intensity = int(entry["intensity"])
+            if not (0 <= intensity <= 10):
+                raise ValueError(
+                    f"intensity {intensity} is outside the 0–10 range"
+                )
+            check_ins.append(
+                UrgeCheckInRecord(
+                    user_id=user_id,
+                    intensity=intensity,
+                    checked_in_at=dt,
+                )
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"check_ins[{i}] is malformed: {exc}"
+            ) from exc
+    return check_ins
+
+
+@router.post(
+    "/fhir/patient-bundle",
+    status_code=200,
+    summary="User self-service FHIR R4 patient bundle (PHI surface)",
+    dependencies=[Depends(mark_phi_boundary)],
+)
+async def get_fhir_patient_bundle_self(
+    payload: PatientBundleRequest,
+) -> dict[str, object]:
+    """Produce a FHIR R4 Collection Bundle for the authenticated user.
+
+    FHIR Bundle contents:
+    - 1 ``Patient`` resource (opaque ``user_id`` only — no PII).
+    - N ``Observation`` resources, one per completed psychometric session
+      whose instrument has a pinned LOINC code.
+    - M ``Observation`` resources for urge check-ins (last 90 days,
+      custom Discipline OS code system).
+
+    PHI surface — Rule #11 + Rule #6:
+    - Sets ``X-Phi-Boundary: 1`` so the log correlator can cross-
+      reference this response with the audit stream.
+    - Emits ``phi.access.attempt`` (before assembly) and
+      ``phi.access.ok`` / ``phi.access.error`` (after) to the audit
+      stream (HMAC-Merkle chained, 6-year retention).
+
+    Self-access only:
+    - ``actor_id`` must equal ``user_id``.  A clinician exporting a
+      patient bundle uses ``GET /reports/fhir/patients/{user_id}/bundle``
+      instead.  Mismatch yields 403 with an audit ``phi.access.error``
+      event.
+
+    Supports ``Accept: application/fhir+json`` — the response
+    ``Content-Type`` is ``application/fhir+json`` regardless of the
+    ``Accept`` header value (this is a FHIR-only endpoint).
+    """
+    if payload.actor_id != payload.user_id:
+        _audit.warning(
+            "phi.access.error",
+            actor_id=payload.actor_id,
+            subject_id=payload.user_id,
+            resource="fhir.patient.bundle.self",
+            error="actor_subject_mismatch",
+        )
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "auth.self_access_only",
+                "message": (
+                    "FHIR patient bundle is self-access only; "
+                    "clinicians should use GET /reports/fhir/patients/{user_id}/bundle"
+                ),
+            },
+        )
+
+    _audit.info(
+        "phi.access.attempt",
+        actor_id=payload.actor_id,
+        actor_role="user",
+        subject_id=payload.user_id,
+        resource="fhir.patient.bundle.self",
+        session_count=len(payload.sessions),
+        check_in_count=len(payload.check_ins),
+        correlation_id=payload.bundle_id,
+    )
+
+    try:
+        sessions = _parse_assessment_sessions(payload.user_id, payload.sessions)
+        check_ins = _parse_check_ins(payload.user_id, payload.check_ins)
+    except ValueError as exc:
+        _audit.warning(
+            "phi.access.error",
+            actor_id=payload.actor_id,
+            subject_id=payload.user_id,
+            resource="fhir.patient.bundle.self",
+            error="validation_error",
+            detail=str(exc),
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "validation.invalid_payload",
+                "message": str(exc),
+            },
+        ) from exc
+
+    exporter = FhirExporter(sessions=sessions, check_ins=check_ins)
+    bundle = exporter.export_patient_bundle(
+        payload.user_id,
+        bundle_id=payload.bundle_id,
+    )
+
+    bundle_identifier = bundle.get("identifier", {})
+    bundle_id_value = (
+        bundle_identifier.get("value")  # type: ignore[union-attr]
+        if isinstance(bundle_identifier, dict)
+        else None
+    )
+    _audit.info(
+        "phi.access.ok",
+        actor_id=payload.actor_id,
+        actor_role="user",
+        subject_id=payload.user_id,
+        resource="fhir.patient.bundle.self",
+        bundle_identifier=bundle_id_value,
+        observation_count=len(bundle.get("entry", [])),  # type: ignore[arg-type]
+        correlation_id=payload.bundle_id,
+    )
+
+    return bundle

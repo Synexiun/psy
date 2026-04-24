@@ -9,7 +9,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./errors": "./src/errors.ts",
-    "./schemas": "./src/schemas.ts"
+    "./schemas": "./src/schemas.ts",
+    "./schemas/domain": "./src/schemas/index.ts",
+    "./endpoints": "./src/endpoints/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

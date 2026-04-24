@@ -53,7 +53,30 @@ class SubscriptionRepository(Protocol):
     async def get_by_user(self, user_id: str) -> SubscriptionRecord | None:
         ...
 
+    async def get_by_provider_subscription_id(
+        self, provider_subscription_id: str
+    ) -> SubscriptionRecord | None:
+        ...
+
     async def update(self, record: SubscriptionRecord) -> SubscriptionRecord:
+        ...
+
+    async def update_status_by_provider_subscription_id(
+        self,
+        provider_subscription_id: str,
+        *,
+        status: str,
+        current_period_start: str | None = None,
+        current_period_end: str | None = None,
+    ) -> SubscriptionRecord | None:
+        ...
+
+    async def cancel_by_provider_subscription_id(
+        self,
+        provider_subscription_id: str,
+        *,
+        reason: str | None,
+    ) -> SubscriptionRecord | None:
         ...
 
     async def cancel(
@@ -109,9 +132,60 @@ class InMemorySubscriptionRepository:
     async def get_by_user(self, user_id: str) -> SubscriptionRecord | None:
         return self._subscriptions.get(user_id)
 
+    def _find_by_provider_id(self, provider_subscription_id: str) -> SubscriptionRecord | None:
+        for record in self._subscriptions.values():
+            if record.provider_subscription_id == provider_subscription_id:
+                return record
+        return None
+
+    async def get_by_provider_subscription_id(
+        self, provider_subscription_id: str
+    ) -> SubscriptionRecord | None:
+        return self._find_by_provider_id(provider_subscription_id)
+
     async def update(self, record: SubscriptionRecord) -> SubscriptionRecord:
         self._subscriptions[record.user_id] = record
         return record
+
+    async def update_status_by_provider_subscription_id(
+        self,
+        provider_subscription_id: str,
+        *,
+        status: str,
+        current_period_start: str | None = None,
+        current_period_end: str | None = None,
+    ) -> SubscriptionRecord | None:
+        record = self._find_by_provider_id(provider_subscription_id)
+        if record is None:
+            return None
+        now = datetime.now(UTC).isoformat()
+        updated = SubscriptionRecord(
+            subscription_id=record.subscription_id,
+            user_id=record.user_id,
+            status=status,
+            tier=record.tier,
+            provider=record.provider,
+            provider_subscription_id=record.provider_subscription_id,
+            current_period_start=current_period_start or record.current_period_start,
+            current_period_end=current_period_end or record.current_period_end,
+            canceled_at=record.canceled_at,
+            cancel_reason=record.cancel_reason,
+            created_at=record.created_at,
+            updated_at=now,
+        )
+        self._subscriptions[record.user_id] = updated
+        return updated
+
+    async def cancel_by_provider_subscription_id(
+        self,
+        provider_subscription_id: str,
+        *,
+        reason: str | None,
+    ) -> SubscriptionRecord | None:
+        record = self._find_by_provider_id(provider_subscription_id)
+        if record is None:
+            return None
+        return await self.cancel(record.user_id, reason=reason)
 
     async def cancel(
         self,
@@ -185,6 +259,61 @@ class SQLAlchemySubscriptionRepository:
         )
         sub = result.scalar_one_or_none()
         return _subscription_to_record(sub) if sub else None
+
+    async def get_by_provider_subscription_id(
+        self, provider_subscription_id: str
+    ) -> SubscriptionRecord | None:
+        result = await self._session.execute(
+            select(Subscription).where(
+                Subscription.provider_subscription_id == provider_subscription_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+        return _subscription_to_record(sub) if sub else None
+
+    async def update_status_by_provider_subscription_id(
+        self,
+        provider_subscription_id: str,
+        *,
+        status: str,
+        current_period_start: str | None = None,
+        current_period_end: str | None = None,
+    ) -> SubscriptionRecord | None:
+        result = await self._session.execute(
+            select(Subscription).where(
+                Subscription.provider_subscription_id == provider_subscription_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+        if sub is None:
+            return None
+        sub.status = status
+        if current_period_start is not None:
+            sub.current_period_start = datetime.fromisoformat(current_period_start)
+        if current_period_end is not None:
+            sub.current_period_end = datetime.fromisoformat(current_period_end)
+        await self._session.flush()
+        return _subscription_to_record(sub)
+
+    async def cancel_by_provider_subscription_id(
+        self,
+        provider_subscription_id: str,
+        *,
+        reason: str | None,
+    ) -> SubscriptionRecord | None:
+        result = await self._session.execute(
+            select(Subscription).where(
+                Subscription.provider_subscription_id == provider_subscription_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+        if sub is None:
+            return None
+        sub.status = "canceled"
+        sub.canceled_at = datetime.now(UTC)
+        sub.cancel_reason = reason
+        await self._session.flush()
+        return _subscription_to_record(sub)
 
     async def update(self, record: SubscriptionRecord) -> SubscriptionRecord:
         from uuid import UUID

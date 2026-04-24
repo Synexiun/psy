@@ -62,6 +62,9 @@ infra/**/terraform.tfvars
 infra/**/*.auto.tfvars
 infra/**/crash.log
 
+# --- Claude Code local overrides ---
+.claude/settings.local.json
+
 # --- Secrets / env ---
 .env
 .env.*

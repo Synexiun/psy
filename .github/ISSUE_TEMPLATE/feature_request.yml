@@ -1,0 +1,61 @@
+name: Feature Request
+description: Propose a new feature or enhancement for Discipline OS
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before submitting, check that this feature does not conflict with the product anti-patterns
+        documented in `Docs/bUSINESS/01_Product_Strategy.md` §3. Discipline OS is a clinical-grade
+        behavioral intervention platform, not a general habit tracker or journaling app.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What should be built, and why?
+    validations:
+      required: true
+  - type: textarea
+    id: user_story
+    attributes:
+      label: User story
+      description: "As a [user type], I want [capability] so that [outcome]."
+      placeholder: "As a user in an urge cycle, I want … so that …"
+    validations:
+      required: true
+  - type: textarea
+    id: clinical_considerations
+    attributes:
+      label: Clinical considerations
+      description: |
+        Does this feature touch any of the following? If yes, describe the clinical rationale or risk.
+        - Crisis path (T3/T4) or safety classifier
+        - Psychometric instruments (PHQ-9, GAD-7, AUDIT-C, C-SSRS, WHO-5)
+        - Relapse or resilience streak logic
+        - LLM-generated content shown to users
+        - PHI access or audit logging
+      placeholder: |
+        e.g. "This adds a new intervention tool variant. It includes a deterministic offline
+        fallback as required by the ToolRegistry spec."
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface(s)
+      multiple: true
+      options:
+        - Web app
+        - iOS mobile
+        - Android mobile
+        - Clinician portal
+        - Enterprise portal
+        - Crisis page
+        - API / backend
+        - Shared packages
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other approaches did you consider, and why was this one chosen?

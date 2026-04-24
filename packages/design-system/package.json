@@ -9,7 +9,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens": "./src/tokens.ts",
-    "./primitives/web": "./src/primitives/web.ts"
+    "./primitives/web": "./src/primitives/web.tsx",
+    "./primitives/web-utils": "./src/primitives/web.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

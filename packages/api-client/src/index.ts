@@ -17,6 +17,8 @@ import type { Locale } from './schemas';
 
 export * from './errors';
 export * from './schemas';
+export * from './schemas/index';
+export * from './endpoints/index';
 
 export interface TokenProvider {
   getAccessToken: () => Promise<string | null>;

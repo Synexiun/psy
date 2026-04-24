@@ -1,6 +1,8 @@
 import createNextIntlPlugin from 'next-intl/plugin';
+import bundleAnalyzer from '@next/bundle-analyzer';
 
 const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts');
+const withBundleAnalyzer = bundleAnalyzer({ enabled: process.env.ANALYZE === 'true' });
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -12,10 +14,13 @@ const nextConfig = {
     '@disciplineos/api-client',
     '@disciplineos/safety-directory',
   ],
-  experimental: {
-    typedRoutes: true,
-  },
+  typedRoutes: true,
   async headers() {
+    // Content-Security-Policy is intentionally absent here.
+    // It is set dynamically per-request by middleware.ts using a cryptographic
+    // nonce, which makes 'unsafe-inline' in script-src unnecessary.
+    // A static CSP here would lack the nonce and would be overridden by the
+    // middleware header anyway — keeping it would only create confusion.
     return [
       {
         source: '/(.*)',
@@ -25,15 +30,10 @@ const nextConfig = {
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'Permissions-Policy', value: 'camera=(), microphone=(self), geolocation=()' },
           { key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' },
-          {
-            key: 'Content-Security-Policy',
-            value:
-              "default-src 'self'; script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.clerk.accounts.dev https://api.disciplineos.com; frame-src https://challenges.cloudflare.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
-          },
         ],
       },
     ];
   },
 };
 
-export default withNextIntl(nextConfig);
+export default withBundleAnalyzer(withNextIntl(nextConfig));

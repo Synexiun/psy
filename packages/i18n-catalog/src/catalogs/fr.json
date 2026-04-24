@@ -41,11 +41,13 @@
   },
   "nav": {
     "home": "Accueil",
+    "checkIn": "Check-in",
     "assessments": "Évaluations",
     "journal": "Journal",
     "patterns": "Tendances",
     "tools": "Outils",
     "settings": "Paramètres",
+    "crisis": "Get Help",
     "help": "Aide",
     "signIn": "Se connecter",
     "signOut": "Se déconnecter"
@@ -133,5 +135,206 @@
     "moderate": "Modérée",
     "moderatelySevere": "Modérément sévère",
     "severe": "Sévère"
+  },
+  "journal": {
+    "title": "__NEEDS_REVIEW__: Journal",
+    "subtitle": "__NEEDS_REVIEW__: Your private space to reflect.",
+    "newEntry": "__NEEDS_REVIEW__: New entry",
+    "voiceBadge": "__NEEDS_REVIEW__: Voice",
+    "emptyHeadline": "__NEEDS_REVIEW__: Your journal awaits",
+    "emptyBody": "__NEEDS_REVIEW__: Your entries are private and only visible to you. Start writing to track your journey.",
+    "wordCount": "__NEEDS_REVIEW__: words",
+    "entriesHeading": "__NEEDS_REVIEW__: Your entries",
+    "entry": {
+      "dateLabel": "__NEEDS_REVIEW__: Written on"
+    }
+  },
+  "checkIn": {
+    "title": "__NEEDS_REVIEW__: Check In",
+    "pageSubtitle": "__NEEDS_REVIEW__: How are you feeling right now?",
+    "urgencyLabel": "__NEEDS_REVIEW__: Urge intensity right now",
+    "urgencyMin": "__NEEDS_REVIEW__: None",
+    "urgencyMax": "__NEEDS_REVIEW__: Overwhelming",
+    "triggersLabel": "__NEEDS_REVIEW__: What's triggering this?",
+    "notesLabel": "__NEEDS_REVIEW__: Brief notes (optional)",
+    "notesPlaceholder": "__NEEDS_REVIEW__: What's on your mind?",
+    "submit": "__NEEDS_REVIEW__: Record Check-In",
+    "compassionHeadline": "__NEEDS_REVIEW__: You showed up. That matters.",
+    "compassionBody": "__NEEDS_REVIEW__: Recording how you feel is the first step. Would you like to try a coping tool?",
+    "copingPrompt": "__NEEDS_REVIEW__: Consider using a coping tool while you wait for the urge to pass.",
+    "openTool": "__NEEDS_REVIEW__: Open a coping tool",
+    "logAnother": "__NEEDS_REVIEW__: Log another check-in",
+    "needHelp": "__NEEDS_REVIEW__: Need immediate help?",
+    "triggers": {
+      "stress": "__NEEDS_REVIEW__: Stress",
+      "boredom": "__NEEDS_REVIEW__: Boredom",
+      "socialPressure": "__NEEDS_REVIEW__: Social pressure",
+      "loneliness": "__NEEDS_REVIEW__: Loneliness",
+      "anger": "__NEEDS_REVIEW__: Anger",
+      "anxiety": "__NEEDS_REVIEW__: Anxiety",
+      "celebration": "__NEEDS_REVIEW__: Celebration",
+      "fatigue": "__NEEDS_REVIEW__: Fatigue"
+    }
+  },
+  "tools": {
+    "title": "__NEEDS_REVIEW__: Coping Tools",
+    "subtitle": "__NEEDS_REVIEW__: Evidence-based techniques for managing urges.",
+    "startHereLabel": "__NEEDS_REVIEW__: Start here",
+    "featuredDescription": "__NEEDS_REVIEW__: A great first tool if you're new or unsure where to begin.",
+    "sectionAll": "__NEEDS_REVIEW__: All tools",
+    "minutesSuffix": "__NEEDS_REVIEW__: min",
+    "categories": {
+      "breathing": "__NEEDS_REVIEW__: Breathing",
+      "grounding": "__NEEDS_REVIEW__: Grounding",
+      "body": "__NEEDS_REVIEW__: Body",
+      "mindfulness": "__NEEDS_REVIEW__: Mindfulness"
+    },
+    "items": {
+      "boxBreathing": {
+        "name": "__NEEDS_REVIEW__: Box Breathing",
+        "description": "__NEEDS_REVIEW__: A simple breathing pattern that calms the nervous system in minutes.",
+        "duration": "4"
+      },
+      "grounding54321": {
+        "name": "__NEEDS_REVIEW__: 5-4-3-2-1 Grounding",
+        "description": "__NEEDS_REVIEW__: Anchor yourself to the present moment using your five senses.",
+        "duration": "5"
+      },
+      "pmr": {
+        "name": "__NEEDS_REVIEW__: Progressive Muscle Relaxation",
+        "description": "__NEEDS_REVIEW__: Systematically release tension held in your body.",
+        "duration": "10"
+      },
+      "coldWater": {
+        "name": "__NEEDS_REVIEW__: Cold Water Reset",
+        "description": "__NEEDS_REVIEW__: Splashing cold water activates the dive reflex to slow your heart rate.",
+        "duration": "2"
+      },
+      "urgeSurfing": {
+        "name": "__NEEDS_REVIEW__: Urge Surfing",
+        "description": "__NEEDS_REVIEW__: Observe the urge like a wave — it rises, peaks, and passes.",
+        "duration": "6"
+      },
+      "stopTechnique": {
+        "name": "__NEEDS_REVIEW__: STOP Technique",
+        "description": "__NEEDS_REVIEW__: Stop, Take a breath, Observe, Proceed mindfully.",
+        "duration": "3"
+      },
+      "compassionMeditation": {
+        "name": "__NEEDS_REVIEW__: Compassion Meditation",
+        "description": "__NEEDS_REVIEW__: Direct kindness toward yourself during a difficult moment.",
+        "duration": "8"
+      },
+      "delayDistract": {
+        "name": "__NEEDS_REVIEW__: Delay & Distract",
+        "description": "__NEEDS_REVIEW__: Commit to waiting 10 minutes — urges nearly always pass.",
+        "duration": "5"
+      }
+    }
+  },
+  "assessments": {
+    "title": "__NEEDS_REVIEW__: Assessments",
+    "subtitle": "__NEEDS_REVIEW__: Validated questionnaires to track your mental health over time.",
+    "takeAssessment": "__NEEDS_REVIEW__: Take assessment",
+    "lastTaken": "__NEEDS_REVIEW__: Last taken",
+    "lastCompleted": "__NEEDS_REVIEW__: Last completed",
+    "score": "__NEEDS_REVIEW__: Score",
+    "notYetTaken": "__NEEDS_REVIEW__: Not yet taken",
+    "disclaimer": "__NEEDS_REVIEW__: Scores are for self-monitoring only and not a diagnosis. Consult a healthcare professional.",
+    "instruments": {
+      "phq9": {
+        "name": "PHQ-9",
+        "fullName": "__NEEDS_REVIEW__: Patient Health Questionnaire – 9"
+      },
+      "gad7": {
+        "name": "GAD-7",
+        "fullName": "__NEEDS_REVIEW__: Generalized Anxiety Disorder – 7"
+      },
+      "auditC": {
+        "name": "AUDIT-C",
+        "fullName": "__NEEDS_REVIEW__: Alcohol Use Disorders Identification Test – Consumption"
+      },
+      "pss10": {
+        "name": "PSS-10",
+        "fullName": "__NEEDS_REVIEW__: Perceived Stress Scale – 10"
+      },
+      "who5": {
+        "name": "WHO-5",
+        "fullName": "__NEEDS_REVIEW__: World Health Organization Well-Being Index – 5"
+      }
+    },
+    "session": {
+      "questionOf": "__NEEDS_REVIEW__: Question {current} of {total}",
+      "previous": "__NEEDS_REVIEW__: Previous",
+      "next": "__NEEDS_REVIEW__: Next",
+      "submit": "__NEEDS_REVIEW__: Submit assessment",
+      "backToAssessments": "__NEEDS_REVIEW__: Back to assessments",
+      "estimatedTime": "__NEEDS_REVIEW__: About {minutes} min",
+      "thankYou": "__NEEDS_REVIEW__: Thank you for completing this assessment.",
+      "yourScore": "__NEEDS_REVIEW__: Score: {score}/{max}",
+      "severityLabel": "__NEEDS_REVIEW__: Severity",
+      "viewHistory": "__NEEDS_REVIEW__: View full history",
+      "safetyMessage": "__NEEDS_REVIEW__: You mentioned thoughts of self-harm. You don't have to face this alone.",
+      "crisisLink": "__NEEDS_REVIEW__: See crisis resources",
+      "clinicalDisclaimer": "__NEEDS_REVIEW__: This assessment is not a substitute for professional clinical evaluation.",
+      "submitting": "__NEEDS_REVIEW__: Submitting…",
+      "submitError": "__NEEDS_REVIEW__: Something went wrong. Please try again.",
+      "answerRequired": "__NEEDS_REVIEW__: Please select an answer before continuing.",
+      "descriptions": {
+        "phq-9": "__NEEDS_REVIEW__: Measures how often you have been bothered by depressive symptoms over the past two weeks.",
+        "gad-7": "__NEEDS_REVIEW__: Measures how often you have been bothered by anxiety symptoms over the past two weeks.",
+        "who-5": "__NEEDS_REVIEW__: Measures your general wellbeing over the past two weeks.",
+        "audit-c": "__NEEDS_REVIEW__: A brief screen for hazardous or harmful alcohol consumption.",
+        "pss-10": "__NEEDS_REVIEW__: Measures the degree to which situations in your life are perceived as stressful over the past month."
+      },
+      "estimatedMinutes": {
+        "phq-9": "2–3",
+        "gad-7": "2–3",
+        "who-5": "2",
+        "audit-c": "1–2",
+        "pss-10": "3–5"
+      }
+    }
+  },
+  "settings": {
+    "title": "__NEEDS_REVIEW__: Settings",
+    "sections": {
+      "account": {
+        "title": "__NEEDS_REVIEW__: Account",
+        "displayName": "__NEEDS_REVIEW__: Display name",
+        "email": "__NEEDS_REVIEW__: Email",
+        "emailReadOnly": "__NEEDS_REVIEW__: Email is managed by your sign-in provider",
+        "manageAccount": "__NEEDS_REVIEW__: Manage account"
+      },
+      "notifications": {
+        "title": "__NEEDS_REVIEW__: Notifications",
+        "pushNotifications": "__NEEDS_REVIEW__: Push notifications",
+        "pushDescription": "__NEEDS_REVIEW__: Get notified when patterns are detected and during high-risk windows",
+        "weeklyInsights": "__NEEDS_REVIEW__: Weekly insights email",
+        "emailDescription": "__NEEDS_REVIEW__: Weekly summary of your progress"
+      },
+      "privacy": {
+        "title": "__NEEDS_REVIEW__: Privacy",
+        "downloadData": "__NEEDS_REVIEW__: Download my data",
+        "downloadDescription": "__NEEDS_REVIEW__: Export your check-ins, journal, and assessment history as JSON",
+        "deleteAccount": "__NEEDS_REVIEW__: Delete account",
+        "deleteDescription": "__NEEDS_REVIEW__: Permanently delete your account and all associated data. This cannot be undone.",
+        "deleteDialogTitle": "__NEEDS_REVIEW__: Delete account",
+        "deleteDialogBody": "__NEEDS_REVIEW__: This will permanently delete your account, all check-ins, journal entries, assessment results, and usage history. This action cannot be undone.",
+        "deleteDialogConfirmPlaceholder": "__NEEDS_REVIEW__: Type DELETE to confirm",
+        "deleteDialogConfirmKeyword": "__NEEDS_REVIEW__: DELETE",
+        "deleteConfirmLabel": "__NEEDS_REVIEW__: Type DELETE to confirm",
+        "deleteConfirmButton": "__NEEDS_REVIEW__: Permanently delete my account",
+        "deleteWarning": "__NEEDS_REVIEW__: This action cannot be undone. All your data will be permanently deleted.",
+        "downloadErrorGeneric": "__NEEDS_REVIEW__: Something went wrong. Please try again.",
+        "deleteErrorGeneric": "__NEEDS_REVIEW__: Something went wrong. Please try again or contact support."
+      },
+      "about": {
+        "title": "__NEEDS_REVIEW__: About",
+        "version": "__NEEDS_REVIEW__: Version",
+        "privacyPolicy": "__NEEDS_REVIEW__: Privacy policy",
+        "terms": "__NEEDS_REVIEW__: Terms of service"
+      }
+    }
   }
 }

@@ -1,0 +1,52 @@
+'use client';
+
+import type { CheckInHistory } from '@/lib/api';
+import { Sparkline, Skeleton } from './primitives';
+
+interface MoodSparklineProps {
+  data?: CheckInHistory | undefined;
+  isLoading: boolean;
+}
+
+const MOOD_STUB = [3, 4, 3, 5, 4, 6, 5, 7, 6, 8, 7, 6, 8, 9, 8, 7, 8, 9, 8, 7];
+
+export function MoodSparkline({ data, isLoading }: MoodSparklineProps) {
+  if (isLoading) {
+    return (
+      <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+        <Skeleton variant="text" height="1rem" width="40%" />
+        <Skeleton variant="rect" height="40px" className="mt-3" />
+      </div>
+    );
+  }
+
+  // Use real intensities when data is present; fall back to MOOD_STUB for
+  // stub mode or when the backend has returned an empty history.
+  const intensities =
+    data && data.items.length > 0 ? data.items.map((item) => item.intensity) : MOOD_STUB;
+
+  return (
+    <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+      <div className="flex items-center justify-between">
+        <p className="text-sm font-medium text-ink-900">Mood trend</p>
+        <span className="text-xs text-ink-500">Last {intensities.length} check-ins</span>
+      </div>
+      <div className="mt-4 flex items-end gap-4">
+        <Sparkline
+          data={intensities}
+          width={240}
+          height={48}
+          color="var(--color-brand-500)"
+          strokeWidth={2}
+          ariaLabel={`Mood trend over last ${intensities.length} check-ins`}
+        />
+        <div className="mb-1 text-right">
+          <p className="text-2xl font-semibold text-ink-900 tabular-nums">
+            {intensities[intensities.length - 1]}
+          </p>
+          <p className="text-xs text-ink-400">/ 10</p>
+        </div>
+      </div>
+    </div>
+  );
+}

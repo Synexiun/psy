@@ -40,11 +40,13 @@
   },
   "nav": {
     "home": "Home",
+    "checkIn": "Check-in",
     "assessments": "Assessments",
     "journal": "Journal",
     "patterns": "Patterns",
     "tools": "Tools",
     "settings": "Settings",
+    "crisis": "Get Help",
     "help": "Help",
     "signIn": "Sign in",
     "signOut": "Sign out"
@@ -132,5 +134,206 @@
     "moderate": "Moderate",
     "moderatelySevere": "Moderately severe",
     "severe": "Severe"
+  },
+  "journal": {
+    "title": "Journal",
+    "subtitle": "Your private space to reflect.",
+    "newEntry": "New entry",
+    "voiceBadge": "Voice",
+    "emptyHeadline": "Your journal awaits",
+    "emptyBody": "Your entries are private and only visible to you. Start writing to track your journey.",
+    "wordCount": "words",
+    "entriesHeading": "Your entries",
+    "entry": {
+      "dateLabel": "Written on"
+    }
+  },
+  "checkIn": {
+    "title": "Check In",
+    "pageSubtitle": "How are you feeling right now?",
+    "urgencyLabel": "Urge intensity right now",
+    "urgencyMin": "None",
+    "urgencyMax": "Overwhelming",
+    "triggersLabel": "What's triggering this?",
+    "notesLabel": "Brief notes (optional)",
+    "notesPlaceholder": "What's on your mind?",
+    "submit": "Record Check-In",
+    "compassionHeadline": "You showed up. That matters.",
+    "compassionBody": "Recording how you feel is the first step. Would you like to try a coping tool?",
+    "copingPrompt": "Consider using a coping tool while you wait for the urge to pass.",
+    "openTool": "Open a coping tool",
+    "logAnother": "Log another check-in",
+    "needHelp": "Need immediate help?",
+    "triggers": {
+      "stress": "Stress",
+      "boredom": "Boredom",
+      "socialPressure": "Social pressure",
+      "loneliness": "Loneliness",
+      "anger": "Anger",
+      "anxiety": "Anxiety",
+      "celebration": "Celebration",
+      "fatigue": "Fatigue"
+    }
+  },
+  "tools": {
+    "title": "Coping Tools",
+    "subtitle": "Evidence-based techniques for managing urges.",
+    "startHereLabel": "Start here",
+    "featuredDescription": "A great first tool if you're new or unsure where to begin.",
+    "sectionAll": "All tools",
+    "minutesSuffix": "min",
+    "categories": {
+      "breathing": "Breathing",
+      "grounding": "Grounding",
+      "body": "Body",
+      "mindfulness": "Mindfulness"
+    },
+    "items": {
+      "boxBreathing": {
+        "name": "Box Breathing",
+        "description": "A simple breathing pattern that calms the nervous system in minutes.",
+        "duration": "4"
+      },
+      "grounding54321": {
+        "name": "5-4-3-2-1 Grounding",
+        "description": "Anchor yourself to the present moment using your five senses.",
+        "duration": "5"
+      },
+      "pmr": {
+        "name": "Progressive Muscle Relaxation",
+        "description": "Systematically release tension held in your body.",
+        "duration": "10"
+      },
+      "coldWater": {
+        "name": "Cold Water Reset",
+        "description": "Splashing cold water activates the dive reflex to slow your heart rate.",
+        "duration": "2"
+      },
+      "urgeSurfing": {
+        "name": "Urge Surfing",
+        "description": "Observe the urge like a wave — it rises, peaks, and passes.",
+        "duration": "6"
+      },
+      "stopTechnique": {
+        "name": "STOP Technique",
+        "description": "Stop, Take a breath, Observe, Proceed mindfully.",
+        "duration": "3"
+      },
+      "compassionMeditation": {
+        "name": "Compassion Meditation",
+        "description": "Direct kindness toward yourself during a difficult moment.",
+        "duration": "8"
+      },
+      "delayDistract": {
+        "name": "Delay & Distract",
+        "description": "Commit to waiting 10 minutes — urges nearly always pass.",
+        "duration": "5"
+      }
+    }
+  },
+  "assessments": {
+    "title": "Assessments",
+    "subtitle": "Validated questionnaires to track your mental health over time.",
+    "takeAssessment": "Take assessment",
+    "lastTaken": "Last taken",
+    "lastCompleted": "Last completed",
+    "score": "Score",
+    "notYetTaken": "Not yet taken",
+    "disclaimer": "Scores are for self-monitoring only and not a diagnosis. Consult a healthcare professional.",
+    "instruments": {
+      "phq9": {
+        "name": "PHQ-9",
+        "fullName": "Patient Health Questionnaire – 9"
+      },
+      "gad7": {
+        "name": "GAD-7",
+        "fullName": "Generalized Anxiety Disorder – 7"
+      },
+      "auditC": {
+        "name": "AUDIT-C",
+        "fullName": "Alcohol Use Disorders Identification Test – Consumption"
+      },
+      "pss10": {
+        "name": "PSS-10",
+        "fullName": "Perceived Stress Scale – 10"
+      },
+      "who5": {
+        "name": "WHO-5",
+        "fullName": "World Health Organization Well-Being Index – 5"
+      }
+    },
+    "session": {
+      "questionOf": "Question {current} of {total}",
+      "previous": "Previous",
+      "next": "Next",
+      "submit": "Submit assessment",
+      "backToAssessments": "Back to assessments",
+      "estimatedTime": "About {minutes} min",
+      "thankYou": "Thank you for completing this assessment.",
+      "yourScore": "Score: {score}/{max}",
+      "severityLabel": "Severity",
+      "viewHistory": "View full history",
+      "safetyMessage": "You mentioned thoughts of self-harm. You don't have to face this alone.",
+      "crisisLink": "See crisis resources",
+      "clinicalDisclaimer": "This assessment is not a substitute for professional clinical evaluation.",
+      "submitting": "Submitting…",
+      "submitError": "Something went wrong. Please try again.",
+      "answerRequired": "Please select an answer before continuing.",
+      "descriptions": {
+        "phq-9": "Measures how often you have been bothered by depressive symptoms over the past two weeks.",
+        "gad-7": "Measures how often you have been bothered by anxiety symptoms over the past two weeks.",
+        "who-5": "Measures your general wellbeing over the past two weeks.",
+        "audit-c": "A brief screen for hazardous or harmful alcohol consumption.",
+        "pss-10": "Measures the degree to which situations in your life are perceived as stressful over the past month."
+      },
+      "estimatedMinutes": {
+        "phq-9": "2–3",
+        "gad-7": "2–3",
+        "who-5": "2",
+        "audit-c": "1–2",
+        "pss-10": "3–5"
+      }
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "sections": {
+      "account": {
+        "title": "Account",
+        "displayName": "Display name",
+        "email": "Email",
+        "emailReadOnly": "Email is managed by your sign-in provider",
+        "manageAccount": "Manage account"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "pushNotifications": "Push notifications",
+        "pushDescription": "Get notified when patterns are detected and during high-risk windows",
+        "weeklyInsights": "Weekly insights email",
+        "emailDescription": "Weekly summary of your progress"
+      },
+      "privacy": {
+        "title": "Privacy",
+        "downloadData": "Download my data",
+        "downloadDescription": "Export your check-ins, journal, and assessment history as JSON",
+        "deleteAccount": "Delete account",
+        "deleteDescription": "Permanently delete your account and all associated data. This cannot be undone.",
+        "deleteDialogTitle": "Delete account",
+        "deleteDialogBody": "This will permanently delete your account, all check-ins, journal entries, assessment results, and usage history. This action cannot be undone.",
+        "deleteDialogConfirmPlaceholder": "Type DELETE to confirm",
+        "deleteDialogConfirmKeyword": "DELETE",
+        "deleteConfirmLabel": "Type DELETE to confirm",
+        "deleteConfirmButton": "Permanently delete my account",
+        "deleteWarning": "This action cannot be undone. All your data will be permanently deleted.",
+        "downloadErrorGeneric": "Something went wrong. Please try again.",
+        "deleteErrorGeneric": "Something went wrong. Please try again or contact support."
+      },
+      "about": {
+        "title": "About",
+        "version": "Version",
+        "privacyPolicy": "Privacy policy",
+        "terms": "Terms of service"
+      }
+    }
   }
 }

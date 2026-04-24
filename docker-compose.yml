@@ -1,59 +1,124 @@
+# Discipline OS — local development stack
+#
+# Matches production service versions (see Docs/Technicals/01_Tech_Stack.md §3):
+#   PostgreSQL 16 + TimescaleDB, Redis 7, LocalStack (S3/SQS/SSM/SecretsManager)
+#
+# Usage:
+#   docker compose up -d        # start all services
+#   docker compose down         # stop and remove containers (volumes preserved)
+#   docker compose down -v      # stop and remove containers + volumes (destructive)
+
 services:
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 16 + TimescaleDB
+  # Primary OLTP store; TimescaleDB extension enabled for time-series hypertables
+  # ---------------------------------------------------------------------------
   postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: discipline
-      POSTGRES_PASSWORD: discipline
-      POSTGRES_DB: discipline
+    image: timescale/timescaledb:latest-pg16
+    container_name: discipline_postgres
+    restart: unless-stopped
     ports:
       - "5432:5432"
+    environment:
+      POSTGRES_DB: discipline_dev
+      POSTGRES_USER: discipline
+      POSTGRES_PASSWORD: devpassword
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - discipline_net
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "discipline"]
+      test: ["CMD-SHELL", "pg_isready -U discipline -d discipline_dev"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 20s
 
-  timescale:
-    image: timescale/timescaledb:2.17.0-pg16
-    environment:
-      POSTGRES_USER: discipline
-      POSTGRES_PASSWORD: discipline
-      POSTGRES_DB: discipline_ts
-    ports:
-      - "5433:5432"
-    volumes:
-      - ts_data:/var/lib/postgresql/data
-
+  # ---------------------------------------------------------------------------
+  # Redis 7
+  # Cache, Celery broker, and session-key store (sid_active:{sid})
+  # AOF-less, periodic RDB snapshot every 60s if >=1 key changed
+  # ---------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes
+    container_name: discipline_redis
+    restart: unless-stopped
+    command: redis-server --save 60 1 --loglevel warning
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      - discipline_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
+  # ---------------------------------------------------------------------------
+  # LocalStack 3.4
+  # AWS service emulation for local dev — S3 (voice blobs, exports), SQS (worker
+  # queues), SSM Parameter Store, and Secrets Manager
+  # ---------------------------------------------------------------------------
   localstack:
-    image: localstack/localstack:3.8
-    environment:
-      SERVICES: s3,kms,sqs
-      DEBUG: 0
+    image: localstack/localstack:3.4
+    container_name: discipline_localstack
+    restart: unless-stopped
     ports:
       - "4566:4566"
+      - "4510-4559:4510-4559"
+    environment:
+      SERVICES: s3,sqs,ssm,secretsmanager
+      DEBUG: "0"
+      DEFAULT_REGION: us-east-1
+      PERSISTENCE: "1"
     volumes:
-      - ls_data:/var/lib/localstack
+      - localstack_data:/var/lib/localstack
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - discipline_net
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "curl -s http://localhost:4566/_localstack/health | grep -q '\"s3\": \"available\"'"
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.111.0
-    command: ["--config=/etc/otelcol/config.yaml"]
+  # ---------------------------------------------------------------------------
+  # MailHog v1.0.1 (dev only)
+  # Captures outbound SMTP — Clerk email verification, Postmark mocks, etc.
+  # Web UI: http://localhost:8025   SMTP: localhost:1025
+  # ---------------------------------------------------------------------------
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: discipline_mailhog
+    restart: unless-stopped
     ports:
-      - "4318:4318"
-    volumes:
-      - ./infra/otel/config.yaml:/etc/otelcol/config.yaml:ro
+      - "1025:1025"
+      - "8025:8025"
+    networks:
+      - discipline_net
 
+# -----------------------------------------------------------------------------
+# Networks
+# -----------------------------------------------------------------------------
+networks:
+  discipline_net:
+    driver: bridge
+    name: discipline_net
+
+# -----------------------------------------------------------------------------
+# Named volumes  (persist across `docker compose down`; wiped by `down -v`)
+# -----------------------------------------------------------------------------
 volumes:
-  pg_data:
-  ts_data:
+  postgres_data:
+    name: discipline_postgres_data
   redis_data:
-  ls_data:
+    name: discipline_redis_data
+  localstack_data:
+    name: discipline_localstack_data

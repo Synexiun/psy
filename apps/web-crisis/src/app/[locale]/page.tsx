@@ -8,6 +8,55 @@ export function generateStaticParams() {
 
 import React from 'react';
 
+/**
+ * Inline coping tool content for the crisis surface.
+ *
+ * These strings are intentionally NOT sourced from the i18n-catalog — this surface
+ * must function with zero runtime dependencies. Tools are shown in English for all
+ * locales until clinical translator review is complete for ar/fa.
+ *
+ * TODO: clinical translator review needed for ar/fa before localising these strings.
+ * When ready, move into locale.ts COPY dict under the same locale-review gate.
+ */
+interface CopingTool {
+  name: string;
+  duration: string;
+  steps: string[];
+}
+
+const TOOLS: ReadonlyArray<CopingTool> = Object.freeze([
+  {
+    name: 'Box Breathing',
+    duration: '2 min',
+    steps: [
+      'Breathe in for 4 counts.',
+      'Hold for 4 counts.',
+      'Breathe out for 4 counts.',
+      'Hold for 4 counts.',
+      'Repeat 4 times.',
+    ],
+  },
+  {
+    name: '5-4-3-2-1 Grounding',
+    duration: '3 min',
+    steps: [
+      'Name 5 things you can see.',
+      'Name 4 things you can touch.',
+      'Name 3 things you can hear.',
+      'Name 2 things you can smell.',
+      'Name 1 thing you can taste.',
+    ],
+  },
+  {
+    name: 'Cold Water',
+    duration: '1 min',
+    steps: [
+      'Splash cold water on your face, or hold ice cubes in your hands.',
+      'This activates your body\'s natural calming response.',
+    ],
+  },
+]);
+
 export default async function CrisisLocalePage({
   params,
 }: {
@@ -43,6 +92,7 @@ function CrisisIndex({ locale }: { locale: CrisisLocale }) {
             <a
               href={`tel:${sanitizeTel(entry.emergency.number)}`}
               className="mt-2 flex min-h-[56px] items-center justify-center rounded-xl bg-crisis-500 px-6 text-lg font-medium text-white hover:bg-crisis-600"
+              aria-label={`${copy.callEmergency} ${entry.emergency.label} ${entry.emergency.number}`}
               data-analytics-event="crisis_call_emergency"
               data-country={entry.country}
             >
@@ -93,6 +143,55 @@ function CrisisIndex({ locale }: { locale: CrisisLocale }) {
         ))}
       </ul>
 
+      {/* ── Coping tools divider ── */}
+      <hr className="my-10 border-[hsl(220,14%,90%)]" />
+
+      {/* ── Coping tools section ── */}
+      <section aria-labelledby="coping-tools-heading">
+        <h2
+          id="coping-tools-heading"
+          className="text-lg font-semibold text-[hsl(222,47%,11%)]"
+        >
+          {copy.orTry}
+        </h2>
+        <p className="mt-1 text-sm text-[hsl(215,16%,47%)]">
+          While you wait for help to connect.
+        </p>
+
+        <ul className="mt-4 space-y-3">
+          {TOOLS.map((tool) => (
+            <li key={tool.name}>
+              {/*
+               * <details>/<summary> gives JS-free expand/collapse in all
+               * modern browsers and degrades gracefully (shows all content)
+               * when JS is disabled or the UA does not support it.
+               */}
+              <details className="rounded-xl border border-[hsl(220,14%,90%)] bg-white">
+                <summary className="flex cursor-pointer select-none items-center justify-between rounded-xl px-5 py-4 font-medium hover:bg-[hsl(220,14%,97%)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-crisis-500">
+                  <span>{tool.name}</span>
+                  <span className="text-xs font-normal text-[hsl(215,16%,47%)]">
+                    {tool.duration}
+                  </span>
+                </summary>
+                <ol className="space-y-1 px-5 pb-5 pt-2 text-sm leading-relaxed text-[hsl(222,47%,11%)]">
+                  {tool.steps.map((step, i) => (
+                    <li key={i} className="flex gap-2">
+                      <span
+                        className="clinical-number mt-0.5 shrink-0 text-xs font-medium text-[hsl(215,16%,47%)]"
+                        aria-hidden="true"
+                      >
+                        {i + 1}.
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <hr className="my-10 border-[hsl(220,14%,90%)]" />
 
       <p className="text-sm text-[hsl(215,16%,47%)]">
@@ -102,7 +201,11 @@ function CrisisIndex({ locale }: { locale: CrisisLocale }) {
       </p>
 
       <footer className="mt-10 text-xs text-[hsl(215,16%,47%)]">
-        Last verified {mostRecentVerification(visible)}.
+        Last verified{' '}
+        <time dateTime={mostRecentVerification(visible)}>
+          {mostRecentVerification(visible)}
+        </time>
+        .
       </footer>
     </main>
   );

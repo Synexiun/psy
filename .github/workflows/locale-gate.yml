@@ -1,0 +1,201 @@
+name: Locale & Safety Gates
+
+on:
+  pull_request:
+    paths:
+      - "packages/i18n-catalog/**"
+      - "packages/safety-directory/**"
+
+concurrency:
+  group: locale-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  locale-gates:
+    name: Locale & Safety Directory Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run locale and safety-directory gate checks
+        run: |
+          python - <<'PYEOF'
+          import json
+          import sys
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          errors = []
+          warnings = []
+
+          # ── 1. i18n catalog checks ──────────────────────────────────────────
+          catalog_dir = Path("packages/i18n-catalog/src/catalogs")
+
+          # en.json must exist and have _meta.status == "source"
+          en_path = catalog_dir / "en.json"
+          if not en_path.exists():
+              errors.append(f"MISSING: {en_path} — English catalog is the source of truth and must exist")
+          else:
+              try:
+                  en_catalog = json.loads(en_path.read_text(encoding="utf-8"))
+                  en_meta = en_catalog.get("_meta", {})
+                  en_status = en_meta.get("status")
+                  if en_status != "source":
+                      errors.append(
+                          f"INVALID: {en_path} — _meta.status must be 'source', got {en_status!r}"
+                      )
+                  else:
+                      print(f"  OK  en.json  _meta.status = 'source'")
+              except json.JSONDecodeError as exc:
+                  errors.append(f"PARSE ERROR: {en_path} — {exc}")
+
+          # Non-en catalogs: check parity — every top-level key in en must be present
+          # and note if any locale is still draft (warn, don't block — draft locales
+          # are expected before native-review sign-off per CLAUDE.md)
+          for locale in ("fr", "ar", "fa"):
+              locale_path = catalog_dir / f"{locale}.json"
+              if not locale_path.exists():
+                  errors.append(
+                      f"MISSING: {locale_path} — parallel catalog required "
+                      f"(may have _meta.status: 'draft') whenever en.json changes"
+                  )
+                  continue
+              try:
+                  locale_catalog = json.loads(locale_path.read_text(encoding="utf-8"))
+              except json.JSONDecodeError as exc:
+                  errors.append(f"PARSE ERROR: {locale_path} — {exc}")
+                  continue
+
+              locale_meta = locale_catalog.get("_meta", {})
+              locale_status = locale_meta.get("status", "unknown")
+              print(f"  OK  {locale}.json  _meta.status = {locale_status!r}")
+
+              # Key-parity check: every top-level non-_meta key in en must exist in locale
+              if 'en_catalog' in dir():
+                  en_keys = {k for k in en_catalog if k != "_meta"}
+                  locale_keys = {k for k in locale_catalog if k != "_meta"}
+                  missing = en_keys - locale_keys
+                  if missing:
+                      # Missing keys in a locale catalog are an error:
+                      # untranslated keys must be present (even as empty / copy of en)
+                      # so the render layer can fall back correctly.
+                      errors.append(
+                          f"KEY PARITY: {locale_path} is missing "
+                          f"{len(missing)} top-level key(s) that exist in en.json: "
+                          + ", ".join(sorted(missing)[:10])
+                          + (" ..." if len(missing) > 10 else "")
+                      )
+
+          # ── 2. Safety-directory checks ───────────────────────────────────────
+          hotlines_path = Path("packages/safety-directory/src/hotlines.json")
+          mirror_path = Path("services/api/data/safety/hotlines.json")
+
+          if not hotlines_path.exists():
+              errors.append(f"MISSING: {hotlines_path}")
+          else:
+              try:
+                  hotlines_raw = hotlines_path.read_text(encoding="utf-8")
+                  hotlines = json.loads(hotlines_raw)
+              except json.JSONDecodeError as exc:
+                  errors.append(f"PARSE ERROR: {hotlines_path} — {exc}")
+                  hotlines = None
+
+              if hotlines is not None:
+                  review_window_days = hotlines.get("reviewWindowDays", 90)
+                  cutoff = datetime.now(tz=timezone.utc) - timedelta(days=review_window_days)
+
+                  entries = hotlines.get("entries", [])
+                  if not entries:
+                      # Some schemas use a top-level dict keyed by region/country
+                      # Try iterating values if entries key absent
+                      entries_raw = [
+                          v for k, v in hotlines.items()
+                          if k not in ("reviewWindowDays", "_meta", "version")
+                          and isinstance(v, (dict, list))
+                      ]
+                      # Flatten one level
+                      for item in entries_raw:
+                          if isinstance(item, list):
+                              entries.extend(item)
+                          elif isinstance(item, dict):
+                              entries.append(item)
+
+                  stale = []
+                  for entry in entries:
+                      verified_at_str = entry.get("verifiedAt")
+                      if not verified_at_str:
+                          label = entry.get("name") or entry.get("id") or repr(entry)
+                          errors.append(
+                              f"MISSING verifiedAt: hotlines entry {label!r} has no verifiedAt field"
+                          )
+                          continue
+                      try:
+                          # Accept ISO-8601 with or without timezone
+                          verified_at = datetime.fromisoformat(
+                              verified_at_str.replace("Z", "+00:00")
+                          )
+                          if verified_at.tzinfo is None:
+                              verified_at = verified_at.replace(tzinfo=timezone.utc)
+                      except ValueError:
+                          errors.append(
+                              f"INVALID DATE: verifiedAt={verified_at_str!r} cannot be parsed"
+                          )
+                          continue
+
+                      if verified_at < cutoff:
+                          label = entry.get("name") or entry.get("id") or repr(entry)
+                          stale.append((label, verified_at_str))
+
+                  if stale:
+                      stale_list = "\n".join(
+                          f"    {name}  (verifiedAt: {ts})" for name, ts in stale[:20]
+                      )
+                      errors.append(
+                          f"STALE HOTLINES: {len(stale)} hotline entry/entries have not been "
+                          f"verified within the {review_window_days}-day review window. "
+                          f"Update verifiedAt or remove the entry before merging:\n{stale_list}"
+                          + ("\n    ... (truncated)" if len(stale) > 20 else "")
+                      )
+                  else:
+                      print(f"  OK  hotlines.json — all {len(entries)} entries verified within "
+                            f"{review_window_days} days")
+
+                  # ── 3. Mirror parity check ────────────────────────────────────
+                  if not mirror_path.exists():
+                      errors.append(
+                          f"MIRROR MISSING: {mirror_path} must be a byte-for-byte copy of "
+                          f"{hotlines_path}. Update both in the same PR."
+                      )
+                  else:
+                      mirror_raw = mirror_path.read_text(encoding="utf-8")
+                      if hotlines_raw != mirror_raw:
+                          errors.append(
+                              f"MIRROR PARITY FAIL: {hotlines_path} and {mirror_path} differ. "
+                              f"These must be byte-for-byte identical — update both in the same PR."
+                          )
+                      else:
+                          print(f"  OK  mirror parity — hotlines.json matches services/api mirror")
+
+          # ── 4. Report ─────────────────────────────────────────────────────────
+          print()
+          if warnings:
+              print("Warnings:")
+              for w in warnings:
+                  print(f"  WARN  {w}")
+              print()
+
+          if errors:
+              print(f"FAILED — {len(errors)} error(s):")
+              for e in errors:
+                  print(f"  ERROR  {e}")
+              sys.exit(1)
+          else:
+              print("All locale and safety-directory gate checks passed.")
+          PYEOF

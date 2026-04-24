@@ -1,8 +1,9 @@
 import type { Metadata } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
-import { setRequestLocale } from 'next-intl/server';
+import { getMessages, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { Inter, IBM_Plex_Sans_Arabic, Vazirmatn } from 'next/font/google';
+import { headers } from 'next/headers';
 import { ClerkProvider } from '@clerk/nextjs';
 import { isRtl, type Locale } from '@disciplineos/i18n-catalog';
 import { routing } from '@/i18n/routing';
@@ -27,14 +28,24 @@ const vazirmatn = Vazirmatn({
   variable: '--font-vazirmatn',
 });
 
-export const metadata: Metadata = {
-  title: {
-    default: 'Discipline OS',
-    template: '%s · Discipline OS',
-  },
-  description: 'Evidence-based coping tools and pattern insights.',
-  robots: { index: false, follow: false },
-};
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  return {
+    alternates: {
+      canonical: `https://app.disciplineos.com/${locale}`,
+      languages: {
+        en: 'https://app.disciplineos.com/en',
+        fr: 'https://app.disciplineos.com/fr',
+        ar: 'https://app.disciplineos.com/ar',
+        fa: 'https://app.disciplineos.com/fa',
+      },
+    },
+  };
+}
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -53,7 +64,13 @@ export default async function LocaleLayout({
 
   const dir = isRtl(locale as Locale) ? 'rtl' : 'ltr';
 
+  const messages = await getMessages();
   const clerkKey = process.env['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'];
+
+  // Read the per-request nonce injected by middleware.ts so ClerkProvider can
+  // stamp it onto any inline scripts it emits, satisfying the nonce-based CSP.
+  const headersList = await headers();
+  const nonce = headersList.get('x-nonce') ?? '';
   const shell = (
     <html
       lang={locale}
@@ -61,7 +78,9 @@ export default async function LocaleLayout({
       className={`${inter.variable} ${plexArabic.variable} ${vazirmatn.variable}`}
     >
       <body className="min-h-screen bg-white text-[hsl(222,47%,11%)] antialiased">
-        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+        <NextIntlClientProvider messages={messages}>
+          {children}
+        </NextIntlClientProvider>
       </body>
     </html>
   );
@@ -70,5 +89,9 @@ export default async function LocaleLayout({
     return shell;
   }
 
-  return <ClerkProvider publishableKey={clerkKey}>{shell}</ClerkProvider>;
+  return (
+    <ClerkProvider publishableKey={clerkKey} nonce={nonce}>
+      {shell}
+    </ClerkProvider>
+  );
 }

@@ -42,6 +42,8 @@ export const getEnglishCatalog = (): Catalog => en as Catalog;
  * (or any comma-separated list of BCP 47 tags with optional q-weights).
  * Falls back to DEFAULT_LOCALE when no supported match is found.
  */
+export * from './formatters';
+
 export const negotiateLocale = (acceptLanguage: string | null | undefined): Locale => {
   if (!acceptLanguage) return DEFAULT_LOCALE;
   const candidates = acceptLanguage

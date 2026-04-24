@@ -23,6 +23,37 @@ body {
   color: var(--color-ink);
 }
 
+/*
+ * RTL font overrides.
+ * On the crisis surface, dir/lang are set on the locale wrapper <div>
+ * (not on <html>), so selectors target [dir="rtl"] and [lang="fa"] directly.
+ * Vazirmatn is loaded via a <link> CDN tag injected in [locale]/layout.tsx
+ * only when isRtl(locale) is true, so font-family here is a safe no-op for en/fr.
+ */
+[dir="rtl"] {
+  font-family: 'Vazirmatn', system-ui, sans-serif;
+  text-align: right;
+}
+
+[lang="fa"] {
+  /* Persian requires Vazirmatn specifically — not an Arabic-first font */
+  font-family: 'Vazirmatn', system-ui, sans-serif;
+}
+
+/* Flip chevrons and directional arrows in RTL contexts */
+[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}
+
+/*
+ * Clinical numbers must stay LTR even in RTL contexts.
+ * Apply .clinical-number to every PHQ-9/GAD-7 score node.
+ */
+.clinical-number {
+  direction: ltr;
+  display: inline-block;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

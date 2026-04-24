@@ -6,6 +6,7 @@ import { Inter, IBM_Plex_Sans_Arabic, Vazirmatn } from 'next/font/google';
 import { ClerkProvider } from '@clerk/nextjs';
 import { isRtl, type Locale } from '@disciplineos/i18n-catalog';
 import { routing } from '@/i18n/routing';
+import { EnterpriseNav } from '@/components/EnterpriseNav';
 import '../globals.css';
 
 const inter = Inter({
@@ -60,8 +61,11 @@ export default async function LocaleLayout({
       dir={dir}
       className={`${inter.variable} ${plexArabic.variable} ${vazirmatn.variable}`}
     >
-      <body className="min-h-screen bg-white text-[hsl(222,47%,11%)] antialiased">
-        <NextIntlClientProvider>{children}</NextIntlClientProvider>
+      <body className="min-h-screen bg-[hsl(220,14%,98%)] text-[hsl(222,47%,11%)] antialiased">
+        <NextIntlClientProvider>
+          <EnterpriseNav />
+          <div>{children}</div>
+        </NextIntlClientProvider>
       </body>
     </html>
   );

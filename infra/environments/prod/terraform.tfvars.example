@@ -1,0 +1,23 @@
+# Copy to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored; this example file is committed.
+# Never put secrets here — secrets come from SSM Parameter Store.
+
+environment        = "prod"
+aws_region         = "us-east-1"
+vpc_cidr           = "10.0.0.0/16"
+availability_zones = ["us-east-1a", "us-east-1b", "us-east-1c"]
+
+db_name     = "discipline"
+db_username = "discipline_admin"
+
+api_image_uri = "123456789012.dkr.ecr.us-east-1.amazonaws.com/discipline-api:latest"
+
+acm_certificate_arn             = "arn:aws:acm:us-east-1:123456789012:certificate/REPLACE-ME"
+cloudfront_origin_verify_secret = "REPLACE-ME-with-random-secret"
+
+# SSM secrets that must be pre-created before first terraform apply:
+#   /prod/disciplineos/db/password           (SecureString)
+#   /prod/disciplineos/clerk/secret-key      (SecureString)
+#   /prod/disciplineos/anthropic/api-key     (SecureString)
+#   /prod/disciplineos/stripe/secret-key     (SecureString)
+#   /prod/disciplineos/audit/chain-secret    (SecureString)

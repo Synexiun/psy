@@ -1,12 +1,15 @@
-"""Tests for the ``/health`` endpoint.
+"""Tests for the liveness probe (``/health``).
 
-Covers the basic shape and the enhanced connectivity checks.
+The ``/health`` endpoint is the ECS ALB liveness probe.  It must always
+return 200 if the process is alive — it does NOT check dependencies.
+Dependency checks live on ``/ready`` (readiness probe); see
+``tests/shared/test_health.py`` for the full readiness test suite.
 """
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -19,57 +22,42 @@ def client() -> TestClient:
     return TestClient(create_app())
 
 
-def _mock_healthy_deps() -> Any:
-    """Return patch decorators for redis + postgres health."""
-    def _decorator(fn: Any) -> Any:
-        @patch("discipline.app.get_redis_client")
-        @patch("discipline.app._get_engine")
-        @pytest.mark.usefixtures("client")
-        def _wrapped(mock_get_engine: Any, mock_get_redis: Any, *args: Any, **kwargs: Any) -> Any:
-            mock_get_redis.return_value = MagicMock()
-            mock_conn = AsyncMock()
-            mock_conn.execute.return_value.scalar.return_value = 1
-            mock_engine = MagicMock()
-            mock_engine.connect.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-            mock_engine.connect.return_value.__aexit__ = AsyncMock(return_value=False)
-            mock_get_engine.return_value = mock_engine
-            return fn(*args, **kwargs)
-        return _wrapped
-    return _decorator
-
-
 class TestHealth:
     def test_returns_200(self, client: TestClient) -> None:
-        # Without mocking, Redis/Postgres are unavailable → 503.
-        # This test verifies the endpoint responds without crashing.
+        # Liveness probe must always return 200 regardless of dependency state.
         resp = client.get("/health")
-        assert resp.status_code in (200, 503)
+        assert resp.status_code == 200
 
     def test_response_has_status(self, client: TestClient) -> None:
         body = client.get("/health").json()
         assert "status" in body
+
+    def test_response_status_is_ok(self, client: TestClient) -> None:
+        body = client.get("/health").json()
+        assert body["status"] == "ok"
 
     def test_response_has_version(self, client: TestClient) -> None:
         body = client.get("/health").json()
         assert "version" in body
         assert body["version"] == "0.0.0"
 
-    def test_response_has_checks(self, client: TestClient) -> None:
+    def test_response_has_uptime_seconds(self, client: TestClient) -> None:
         body = client.get("/health").json()
-        assert "checks" in body
-        assert isinstance(body["checks"], dict)
+        assert "uptime_seconds" in body
+        assert isinstance(body["uptime_seconds"], int | float)
 
-    @patch("discipline.app.get_redis_client")
-    def test_degraded_when_redis_fails(
-        self, mock_get_redis: Any, client: TestClient
+    def test_liveness_unaffected_by_redis_failure(
+        self, client: TestClient
     ) -> None:
-        mock_client = MagicMock()
-        mock_client.ping.side_effect = RuntimeError("redis down")
-        mock_get_redis.return_value = mock_client
+        """Liveness must be 200 even when Redis is unreachable.
 
-        resp = client.get("/health")
-        assert resp.status_code == 503
-        body = resp.json()
-        assert body["status"] == "degraded"
-        assert "redis" in body["checks"]
-        assert "error" in body["checks"]["redis"]
+        The ALB must not restart a task just because Redis is temporarily
+        down — that is the readiness probe's job on ``/ready``.
+        """
+        with patch("discipline.app.get_redis_client") as mock_get_redis:
+            mock_client: Any = MagicMock()
+            mock_client.ping.side_effect = RuntimeError("redis down")
+            mock_get_redis.return_value = mock_client
+            resp = client.get("/health")
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "ok"

@@ -1,0 +1,31 @@
+Sprint 111 — Frontend dashboard UI, i18n hardening, and E2E test suite (55/55 pass)
+
+Dashboard (apps/web-app):
+- Composed dashboard page with StreakWidget, StateIndicator, MoodSparkline, PatternCard, QuickActions
+- Added useDashboardData hooks (useStreak, usePatterns, useStateEstimate) with stub fallbacks for dev/E2E
+- Fixed MISSING_MESSAGE runtime errors: NextIntlClientProvider now receives explicit `messages` prop in [locale]/layout.tsx
+- Fixed Next.js 15 async params: DashboardPage awaits params via React.use()
+- Fixed next.config.mjs warning: moved typedRoutes out of experimental block
+- Added ARIA attributes: StateIndicator (role="img", aria-label), aside landmarks (aria-label)
+- Fixed WCAG AA color-contrast violations:
+  * Darkened ink-500 from 47% to 46% lightness
+  * Shifted crisis buttons to bg-crisis-600 (was 500) for 4.5:1 white-text contrast
+  * Replaced text-ink-300 with text-ink-500 on small text elements
+  * PatternCard metadata tags now use bg-surface-100 + text-ink-700
+- Fixed E2E quick-action selector scoping to avoid sidebar nav collision
+- Added React Query initialData to dashboard hooks so widgets render immediately in E2E (no loading spinners)
+
+E2E tests (apps/web-app/tests/e2e):
+- dashboard.spec.ts — 40 tests across 4 locales (en/fr/ar/fa) + axe scan
+- crisis.spec.ts — 15 tests across 4 locales + axe scan
+- Total: 55 Playwright tests, all passing
+
+Design system:
+- Updated Button primitive crisis variant to bg-crisis-600 for accessibility compliance
+
+Build / typecheck:
+- pnpm build — clean
+- pnpm typecheck — clean
+- packages/design-system unit tests — 8/8 passing
+
+Co-Authored-By: Kimi Code CLI <noreply@moonshot.cn>

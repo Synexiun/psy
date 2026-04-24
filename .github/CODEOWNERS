@@ -1,0 +1,31 @@
+# Discipline OS CODEOWNERS
+# Format: <pattern> <owner> [<owner2>...]
+#
+# Clinical-grade product: all changes require at least one review.
+# Paths marked CLINICAL require clinical QA sign-off before merge.
+
+# Global fallback — all files
+*                                   @Synexiun
+
+# Clinical-adjacent code — requires clinical QA review
+apps/web-app/src/app/**/check-in/   @Synexiun
+apps/web-app/src/app/**/assessments/ @Synexiun
+apps/web-crisis/                    @Synexiun
+services/api/src/discipline/psychometric/ @Synexiun
+services/api/src/discipline/clinical/     @Synexiun
+packages/safety-directory/          @Synexiun
+shared-rules/                       @Synexiun
+
+# Security-sensitive paths
+apps/web-app/src/middleware.ts       @Synexiun
+apps/web-*/src/middleware.ts        @Synexiun
+services/api/src/discipline/auth/   @Synexiun
+services/api/src/discipline/shared/logging/ @Synexiun
+infra/                              @Synexiun
+.github/workflows/                  @Synexiun
+
+# i18n catalog — changes require locale review queue update
+packages/i18n-catalog/              @Synexiun
+
+# Design system — changes affect all web surfaces
+packages/design-system/             @Synexiun
