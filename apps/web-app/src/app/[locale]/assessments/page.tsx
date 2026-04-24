@@ -1,10 +1,11 @@
 'use client';
 
-import { use } from 'react';
+import { use, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
 import { Button, Card, ProgressRing } from '@/components/primitives';
+import { useAssessmentSessions } from '@/hooks/useDashboardData';
 
 // ---------------------------------------------------------------------------
 // Clinical instruments — named exactly as validated. Do NOT paraphrase.
@@ -22,11 +23,11 @@ interface AssessmentInstrument {
   maxScore: number;
   /** Ring colour token */
   color: string;
-  /** Stub: last completed date or null */
+  /** Last completed date or null — populated from API */
   lastDate: string | null;
-  /** Stub: last score or null — rendered as Latin digits */
+  /** Last score or null — rendered as Latin digits */
   lastScore: number | null;
-  /** Stub: severity label matching validated bands */
+  /** Severity label matching validated bands */
   lastSeverity: string | null;
 }
 
@@ -41,18 +42,15 @@ const INSTRUMENT_CATALOG_KEY: Record<string, InstrumentCatalogKey> = {
   who5: 'who5',
 };
 
-// Stub data — real data fetched from /v1/assessments once the psychometric module is wired.
-// name/fullName fields are kept for aria-labels; rendered labels come from i18n catalog.
-const INSTRUMENTS: AssessmentInstrument[] = [
+// Static instrument metadata — never paraphrase these names (validated instruments).
+// Dynamic data (score, date, severity) is merged from useAssessmentSessions at render time.
+const INSTRUMENT_METADATA: Omit<AssessmentInstrument, 'lastDate' | 'lastScore' | 'lastSeverity'>[] = [
   {
     id: 'phq9',
     name: 'PHQ-9',
     fullName: 'Patient Health Questionnaire-9',
     maxScore: 27,
     color: 'var(--color-calm-500)',
-    lastDate: '2026-04-10',
-    lastScore: 8,
-    lastSeverity: 'Mild',
   },
   {
     id: 'gad7',
@@ -60,9 +58,6 @@ const INSTRUMENTS: AssessmentInstrument[] = [
     fullName: 'Generalized Anxiety Disorder-7',
     maxScore: 21,
     color: 'var(--color-brand-500)',
-    lastDate: '2026-04-10',
-    lastScore: 11,
-    lastSeverity: 'Moderate',
   },
   {
     id: 'audit-c',
@@ -70,9 +65,6 @@ const INSTRUMENTS: AssessmentInstrument[] = [
     fullName: 'Alcohol Use Disorders Identification Test-C',
     maxScore: 12,
     color: 'var(--color-amber-500, #f59e0b)',
-    lastDate: '2026-03-28',
-    lastScore: 3,
-    lastSeverity: 'Low risk',
   },
   {
     id: 'pss10',
@@ -80,9 +72,6 @@ const INSTRUMENTS: AssessmentInstrument[] = [
     fullName: 'Perceived Stress Scale-10',
     maxScore: 40,
     color: 'var(--color-crisis-500)',
-    lastDate: null,
-    lastScore: null,
-    lastSeverity: null,
   },
   {
     id: 'who5',
@@ -90,9 +79,6 @@ const INSTRUMENTS: AssessmentInstrument[] = [
     fullName: 'World Health Organization Well-Being Index (5-item)',
     maxScore: 100,
     color: 'var(--color-calm-500)',
-    lastDate: '2026-04-15',
-    lastScore: 64,
-    lastSeverity: 'Good',
   },
 ];
 
@@ -212,6 +198,33 @@ function AssessmentCard({
 
 function AssessmentsInner({ locale }: { locale: string }) {
   const t = useTranslations();
+  const { data: sessions } = useAssessmentSessions();
+
+  // Merge latest session data into static instrument metadata.
+  const instruments: AssessmentInstrument[] = useMemo(() => {
+    const latestByInstrument = new Map<string, { score: number; severity: string; date: string }>();
+    if (sessions) {
+      for (const session of sessions) {
+        const existing = latestByInstrument.get(session.instrument);
+        if (!existing || session.completed_at > existing.date) {
+          latestByInstrument.set(session.instrument, {
+            score: session.score,
+            severity: session.severity,
+            date: session.completed_at,
+          });
+        }
+      }
+    }
+    return INSTRUMENT_METADATA.map((meta) => {
+      const latest = latestByInstrument.get(meta.id);
+      return {
+        ...meta,
+        lastDate: latest?.date?.slice(0, 10) ?? null,
+        lastScore: latest?.score ?? null,
+        lastSeverity: latest?.severity ?? null,
+      };
+    });
+  }, [sessions]);
 
   return (
     <Layout locale={locale}>
@@ -230,7 +243,7 @@ function AssessmentsInner({ locale }: { locale: string }) {
             Available assessments
           </h2>
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {INSTRUMENTS.map((instrument) => (
+            {instruments.map((instrument) => (
               <AssessmentCard
                 key={instrument.id}
                 instrument={instrument}

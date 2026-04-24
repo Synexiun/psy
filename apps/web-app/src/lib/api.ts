@@ -257,6 +257,38 @@ export async function requestDataExport(token: string): Promise<ExportResponse> 
   });
 }
 
+// ---------------------------------------------------------------------------
+// Assessment API
+// ---------------------------------------------------------------------------
+
+/** Mirrors `AssessmentSessionHistoryItem` in the psychometric router */
+export interface AssessmentSessionHistoryItem {
+  session_id: string;
+  instrument: string;
+  score: number;
+  severity: string;
+  safety_flag: boolean;
+  completed_at: string;
+}
+
+/**
+ * GET /v1/assessments/sessions?limit={limit}
+ * Returns the most recent completed assessment sessions for the authenticated user.
+ */
+export async function getAssessmentSessions(
+  token: string,
+  limit = 50,
+): Promise<AssessmentSessionHistoryItem[]> {
+  return apiFetch<AssessmentSessionHistoryItem[]>(
+    `/v1/assessments/sessions?limit=${limit}`,
+    token,
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Privacy API (continued)
+// ---------------------------------------------------------------------------
+
 /**
  * POST /v1/privacy/delete-account
  * Schedules account deletion for the authenticated user.

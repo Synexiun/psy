@@ -9,11 +9,13 @@ import {
   getStateEstimate,
   getJournalEntries,
   getCheckInHistory,
+  getAssessmentSessions,
   type StreakState,
   type Pattern,
   type StateEstimate,
   type JournalList,
   type CheckInHistory,
+  type AssessmentSessionHistoryItem,
 } from '@/lib/api';
 
 // ---------------------------------------------------------------------------
@@ -45,6 +47,11 @@ export type PatternData = Pattern;
  * Includes the `created_at` field returned by the real API.
  */
 export type StateEstimateData = StateEstimate;
+
+/**
+ * Assessment session history item. Mirrors `AssessmentSessionHistoryItem` from the backend.
+ */
+export type AssessmentSessionData = AssessmentSessionHistoryItem;
 
 // ---------------------------------------------------------------------------
 // Stub data (dev / test / E2E environments)
@@ -264,6 +271,55 @@ export function useCheckInHistory(): UseQueryResult<CheckInHistoryData> {
       return getCheckInHistory(token);
     },
     initialData: stubMode ? CHECK_IN_HISTORY_STUB : undefined,
+    staleTime: 30_000,
+    retry: 2,
+  });
+}
+
+const ASSESSMENT_SESSIONS_STUB: AssessmentSessionData[] = [
+  {
+    session_id: 'as-stub-phq9',
+    instrument: 'phq9',
+    score: 8,
+    severity: 'Mild',
+    safety_flag: false,
+    completed_at: '2026-04-10T09:00:00Z',
+  },
+  {
+    session_id: 'as-stub-gad7',
+    instrument: 'gad7',
+    score: 6,
+    severity: 'Mild',
+    safety_flag: false,
+    completed_at: '2026-04-10T09:05:00Z',
+  },
+  {
+    session_id: 'as-stub-who5',
+    instrument: 'who5',
+    score: 14,
+    severity: 'Low wellbeing',
+    safety_flag: false,
+    completed_at: '2026-04-10T09:10:00Z',
+  },
+];
+
+/**
+ * Most recent completed assessment sessions for the current user.
+ * Query key is scoped to the Clerk userId.
+ */
+export function useAssessmentSessions(): UseQueryResult<AssessmentSessionData[]> {
+  const { userId, getToken } = useAuth();
+  const stubMode = useStubs();
+
+  return useQuery<AssessmentSessionData[]>({
+    queryKey: ['assessment-sessions', userId],
+    queryFn: async (): Promise<AssessmentSessionData[]> => {
+      if (stubMode) return ASSESSMENT_SESSIONS_STUB;
+      const token = await getToken();
+      if (token === null) return ASSESSMENT_SESSIONS_STUB;
+      return getAssessmentSessions(token);
+    },
+    initialData: stubMode ? ASSESSMENT_SESSIONS_STUB : undefined,
     staleTime: 30_000,
     retry: 2,
   });
