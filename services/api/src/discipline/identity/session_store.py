@@ -44,19 +44,22 @@ class SessionStore:
         """Revoke a session immediately."""
         self._client.delete(f"{_PREFIX_ACTIVE}:{sid}")
 
-    def store_refresh(self, refresh_token: str, sid: str, family_id: str) -> None:
-        """Store a refresh token mapping to its session and family.
+    def store_refresh(
+        self, refresh_token: str, sid: str, family_id: str, user_id: str = ""
+    ) -> None:
+        """Store a refresh token mapping to its session, family, and user.
 
         ``family_id`` links all refresh tokens issued from the same
         original login.  Reuse of an already-rotated token triggers
-        family kill.
+        family kill.  ``user_id`` is stored so the refresh endpoint can
+        look up user context without a separate DB round-trip.
         """
         key = f"{_PREFIX_REFRESH}:{refresh_token}"
-        value = f"{sid}:{family_id}"
+        value = f"{sid}:{family_id}:{user_id}"
         self._client.setex(key, _REFRESH_TTL_SECONDS, value)
 
-    def consume_refresh(self, refresh_token: str) -> tuple[str, str] | None:
-        """Consume a refresh token and return (sid, family_id).
+    def consume_refresh(self, refresh_token: str) -> tuple[str, str, str] | None:
+        """Consume a refresh token and return (sid, family_id, user_id).
 
         Returns None if the token doesn't exist or has already been
         consumed.  The caller must verify the session is still active.
@@ -71,8 +74,11 @@ class SessionStore:
         if deleted == 0:
             # Token was already consumed — signal compromise.
             return None
-        sid, family_id = raw.decode("utf-8").split(":", 1)
-        return sid, family_id
+        parts = raw.decode("utf-8").split(":", 2)
+        sid = parts[0]
+        family_id = parts[1]
+        user_id = parts[2] if len(parts) > 2 else ""
+        return sid, family_id, user_id
 
     def kill_family(self, family_id: str) -> int:
         """Kill all sessions belonging to a family.

@@ -32,6 +32,9 @@ class UserRecord:
 class UserRepository(Protocol):
     """Protocol for user storage backends."""
 
+    async def get_by_id(self, user_id: str) -> UserRecord | None:
+        ...
+
     async def get_by_external_id(self, external_id: str) -> UserRecord | None:
         ...
 
@@ -55,7 +58,11 @@ class InMemoryUserRepository:
     """Thread-safe in-memory store for tests and local dev."""
 
     def __init__(self) -> None:
-        self._users: dict[str, UserRecord] = {}
+        self._users: dict[str, UserRecord] = {}  # keyed by external_id
+        self._users_by_id: dict[str, UserRecord] = {}  # keyed by user_id
+
+    async def get_by_id(self, user_id: str) -> UserRecord | None:
+        return self._users_by_id.get(user_id)
 
     async def get_by_external_id(self, external_id: str) -> UserRecord | None:
         return self._users.get(external_id)
@@ -77,10 +84,12 @@ class InMemoryUserRepository:
             timezone=timezone,
         )
         self._users[external_id] = record
+        self._users_by_id[record.user_id] = record
         return record
 
     def reset(self) -> None:
         self._users.clear()
+        self._users_by_id.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +102,15 @@ class SqlUserRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def get_by_id(self, user_id: str) -> UserRecord | None:
+        result = await self._session.execute(
+            select(User).where(User.id == user_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            return None
+        return _user_to_record(row)
 
     async def get_by_external_id(self, external_id: str) -> UserRecord | None:
         result = await self._session.execute(

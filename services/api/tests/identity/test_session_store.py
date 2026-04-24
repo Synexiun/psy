@@ -42,26 +42,26 @@ class TestRevoke:
 
 class TestStoreRefresh:
     def test_sets_refresh_token(self, store: SessionStore) -> None:
-        store.store_refresh("rt_01", "sess_01", "family_01")
+        store.store_refresh("rt_01", "sess_01", "family_01", "user_01")
         store._client.setex.assert_called_once()
         call_args = store._client.setex.call_args
         assert call_args.args[0] == "refresh:rt_01"
-        assert call_args.args[2] == "sess_01:family_01"
+        assert call_args.args[2] == "sess_01:family_01:user_01"
 
 
 class TestConsumeRefresh:
     def test_returns_sid_and_family(self, store: SessionStore) -> None:
-        store._client.get.return_value = b"sess_01:family_01"
+        store._client.get.return_value = b"sess_01:family_01:user_01"
         store._client.delete.return_value = 1
         result = store.consume_refresh("rt_01")
-        assert result == ("sess_01", "family_01")
+        assert result == ("sess_01", "family_01", "user_01")
 
     def test_returns_none_on_missing_token(self, store: SessionStore) -> None:
         store._client.get.return_value = None
         assert store.consume_refresh("rt_01") is None
 
     def test_returns_none_on_replay(self, store: SessionStore) -> None:
-        store._client.get.return_value = b"sess_01:family_01"
+        store._client.get.return_value = b"sess_01:family_01:user_01"
         store._client.delete.return_value = 0  # already consumed
         assert store.consume_refresh("rt_01") is None
 
