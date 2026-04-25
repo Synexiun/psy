@@ -31,6 +31,7 @@ import {
   useStateEstimate,
   useJournalEntries,
   useCheckInHistory,
+  useAssessmentSessions,
 } from '@/hooks/useDashboardData';
 
 // ---------------------------------------------------------------------------
@@ -561,5 +562,87 @@ describe('useStreak — API response shape', () => {
     const response = await (globalThis.fetch as ReturnType<typeof vi.fn>)('/v1/streak');
     const data = await response.json();
     expect(data.resilience_days).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// useAssessmentSessions — stub mode
+// ---------------------------------------------------------------------------
+
+describe('useAssessmentSessions (stub mode)', () => {
+  it('returns data immediately when stubs are active', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+  });
+
+  it('isLoading is false after data loads', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+  });
+
+  it('stub returns an array of sessions', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+
+    expect(Array.isArray(result.current.data)).toBe(true);
+    expect((result.current.data ?? []).length).toBeGreaterThan(0);
+  });
+
+  it('each stub session has session_id', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+
+    for (const session of result.current.data ?? []) {
+      expect(session).toHaveProperty('session_id');
+      expect(typeof session.session_id).toBe('string');
+    }
+  });
+
+  it('each stub session has instrument, score, severity', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+
+    for (const session of result.current.data ?? []) {
+      expect(session).toHaveProperty('instrument');
+      expect(session).toHaveProperty('score');
+      expect(session).toHaveProperty('severity');
+    }
+  });
+
+  it('stub includes phq9 session', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+
+    const phq9 = (result.current.data ?? []).find(s => s.instrument === 'phq9');
+    expect(phq9).toBeDefined();
+  });
+
+  it('stub includes gad7 session', async () => {
+    const { result } = renderHook(() => useAssessmentSessions(), { wrapper: makeWrapper() });
+
+    await waitFor(() => {
+      expect(result.current.data).toBeDefined();
+    });
+
+    const gad7 = (result.current.data ?? []).find(s => s.instrument === 'gad7');
+    expect(gad7).toBeDefined();
   });
 });
