@@ -14,10 +14,11 @@ The crisis resources endpoint (GET /v1/crisis/resources) must be:
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Header
+from fastapi import APIRouter, Header, HTTPException
 
 from discipline.shared.i18n import negotiate_locale
 
+from .help import get_article
 from .safety_directory import resolve
 
 router = APIRouter(prefix="/content", tags=["content"])
@@ -51,9 +52,21 @@ async def safety_directory(
 
 
 @router.get("/help/{slug}")
-async def help_article(slug: str) -> dict[str, str]:
-    """Stub."""
-    return {"status": "not_implemented", "slug": slug}
+async def help_article(
+    slug: str,
+    accept_language: str | None = Header(default=None, alias="Accept-Language"),
+) -> dict[str, object]:
+    locale = negotiate_locale(None, accept_language)
+    article = await get_article(slug, locale)
+    if article is None:
+        raise HTTPException(status_code=404, detail="help_article_not_found")
+    return {
+        "slug": article.slug,
+        "title": article.title,
+        "body_md": article.body_md,
+        "locale": article.locale,
+        "updated_at": article.updated_at,
+    }
 
 
 # =============================================================================

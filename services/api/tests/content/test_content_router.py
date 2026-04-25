@@ -2,7 +2,7 @@
 
 Covers:
 - GET /v1/content/safety-directory/{country} — locale-negotiated crisis directory
-- GET /v1/content/help/{slug} — help article stub
+- GET /v1/content/help/{slug} — help article loader (reads Docs/Help/ at import time)
 
 The pure safety-directory module is tested exhaustively in test_safety_directory.py.
 These tests verify the wiring between the HTTP layer, locale negotiation, and the
@@ -174,28 +174,83 @@ class TestSafetyDirectoryEndpoint:
 class TestHelpArticleEndpoint:
     _BASE_URL = "/v1/content/help"
 
-    def test_any_slug_returns_200(self, client: TestClient) -> None:
-        response = client.get(f"{self._BASE_URL}/getting-started")
+    # Known slugs derived from Docs/Help/ filenames (NN_slug.md pattern)
+    _KNOWN_SLUG = "getting_started"
+
+    def test_known_slug_returns_200(self, client: TestClient) -> None:
+        response = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}")
         assert response.status_code == 200
 
-    def test_response_has_status_field(self, client: TestClient) -> None:
-        body = client.get(f"{self._BASE_URL}/getting-started").json()
-        assert "status" in body
+    def test_unknown_slug_returns_404(self, client: TestClient) -> None:
+        response = client.get(f"{self._BASE_URL}/completely-unknown-slug-xyz")
+        assert response.status_code == 404
 
-    def test_status_is_not_implemented(self, client: TestClient) -> None:
-        """Stub contract: the field value is 'not_implemented' until the
-        help-article repository is wired."""
-        body = client.get(f"{self._BASE_URL}/any-slug").json()
-        assert body["status"] == "not_implemented"
+    def test_404_detail_is_article_not_found(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/no-such-slug").json()
+        assert body["detail"] == "help_article_not_found"
+
+    def test_response_has_slug_field(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert "slug" in body
+
+    def test_response_has_title_field(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert "title" in body
+        assert isinstance(body["title"], str)
+        assert len(body["title"]) > 0
+
+    def test_response_has_body_md_field(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert "body_md" in body
+        assert isinstance(body["body_md"], str)
+
+    def test_response_has_locale_field(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert "locale" in body
+
+    def test_response_has_updated_at_field(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert "updated_at" in body
 
     def test_slug_echoed_in_response(self, client: TestClient) -> None:
-        """The slug is echoed so the client knows which article was requested
-        (useful for logging when the stub is replaced with a real loader)."""
-        slug = "relapse-compassion-guide"
-        body = client.get(f"{self._BASE_URL}/{slug}").json()
-        assert body["slug"] == slug
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert body["slug"] == self._KNOWN_SLUG
 
-    def test_different_slugs_each_return_200(self, client: TestClient) -> None:
-        for slug in ("onboarding", "urge-surfing", "support"):
+    def test_en_locale_by_default(self, client: TestClient) -> None:
+        """No Accept-Language → negotiate_locale → 'en'."""
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert body["locale"] == "en"
+
+    def test_non_en_locale_falls_back_to_en_body(self, client: TestClient) -> None:
+        """CLAUDE.md no-MT rule: fr request returns English body with fr locale stamp."""
+        body_en = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        body_fr = client.get(
+            f"{self._BASE_URL}/{self._KNOWN_SLUG}",
+            headers={"Accept-Language": "fr"},
+        ).json()
+        assert body_fr["body_md"] == body_en["body_md"]
+        assert body_fr["locale"] == "fr"
+
+    def test_all_known_slugs_return_200(self, client: TestClient) -> None:
+        """Every file in Docs/Help/ must resolve via the endpoint."""
+        from discipline.content.help import article_slugs
+
+        for slug in article_slugs():
             resp = client.get(f"{self._BASE_URL}/{slug}")
             assert resp.status_code == 200, f"slug={slug!r} returned {resp.status_code}"
+
+    def test_updated_at_is_iso_date(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        import re
+        assert re.match(r"^\d{4}-\d{2}-\d{2}$", body["updated_at"]), (
+            f"updated_at {body['updated_at']!r} is not YYYY-MM-DD"
+        )
+
+    def test_title_is_non_empty_string(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert isinstance(body["title"], str)
+        assert body["title"].strip() != ""
+
+    def test_body_md_contains_markdown(self, client: TestClient) -> None:
+        body = client.get(f"{self._BASE_URL}/{self._KNOWN_SLUG}").json()
+        assert "#" in body["body_md"]
