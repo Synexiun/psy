@@ -94,7 +94,86 @@ class TestExchangeClerkToken:
         assert exc_info.value.code == "auth.exchange_malformed"
 
     @pytest.mark.asyncio
-    async def test_locale_fallback(self, make_clerk_token: Any) -> None:
+    async def test_locale_propagated(self, make_clerk_token: Any) -> None:
         token = make_clerk_token(sub="clerk_user_01", locale="fr")
         session = await exchange_clerk_token(token)
         assert session.access_token
+
+    @pytest.mark.asyncio
+    async def test_email_fallback_claim(self) -> None:
+        """Payload with 'email' (not 'email_address') must still be accepted."""
+        import os
+
+        secret = os.environ.get(
+            "SERVER_SESSION_SECRET", "dev-only-session-secret-do-not-use-in-prod"
+        )
+        now = int(time.time())
+        raw = jose_jwt.encode(
+            {"sub": "clerk_u_email_fallback", "email": "alt@example.com", "iat": now, "exp": now + 3600},
+            secret,
+            algorithm="HS256",
+        )
+        session = await exchange_clerk_token("test_clerk_" + raw)
+        assert session.access_token
+
+    @pytest.mark.asyncio
+    async def test_missing_locale_defaults_to_en(self) -> None:
+        """Token with no 'locale' claim must produce a session (locale defaults to en)."""
+        import os
+
+        secret = os.environ.get(
+            "SERVER_SESSION_SECRET", "dev-only-session-secret-do-not-use-in-prod"
+        )
+        now = int(time.time())
+        raw = jose_jwt.encode(
+            {"sub": "clerk_u_noloc", "email_address": "x@x.com", "iat": now, "exp": now + 3600},
+            secret,
+            algorithm="HS256",
+        )
+        session = await exchange_clerk_token("test_clerk_" + raw)
+        assert session.access_token
+
+    @pytest.mark.asyncio
+    async def test_new_user_created_on_first_exchange(self, make_clerk_token: Any) -> None:
+        token = make_clerk_token(sub="brand_new_user_xyz")
+        session = await exchange_clerk_token(token)
+        assert session.access_token
+        assert session.refresh_token
+
+
+class TestExchangeError:
+    def test_code_stored(self) -> None:
+        from discipline.identity.auth_exchange import ExchangeError
+
+        err = ExchangeError("auth.some_code", "Some message")
+        assert err.code == "auth.some_code"
+
+    def test_message_stored(self) -> None:
+        from discipline.identity.auth_exchange import ExchangeError
+
+        err = ExchangeError("code", "msg")
+        assert err.message == "msg"
+
+    def test_as_detail_returns_dict(self) -> None:
+        from discipline.identity.auth_exchange import ExchangeError
+
+        err = ExchangeError("auth.code", "detail msg")
+        detail = err.as_detail()
+        assert isinstance(detail, dict)
+
+    def test_as_detail_code_key(self) -> None:
+        from discipline.identity.auth_exchange import ExchangeError
+
+        detail = ExchangeError("auth.c", "m").as_detail()
+        assert detail["code"] == "auth.c"
+
+    def test_as_detail_message_key(self) -> None:
+        from discipline.identity.auth_exchange import ExchangeError
+
+        detail = ExchangeError("code", "my message").as_detail()
+        assert detail["message"] == "my message"
+
+    def test_is_exception(self) -> None:
+        from discipline.identity.auth_exchange import ExchangeError
+
+        assert isinstance(ExchangeError("c", "m"), Exception)
