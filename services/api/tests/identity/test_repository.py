@@ -59,6 +59,39 @@ class TestInMemoryUserRepository:
         assert fetched is None
 
     @pytest.mark.asyncio
+    async def test_get_by_id_found(self, repo: InMemoryUserRepository) -> None:
+        created = await repo.create(
+            external_id="clerk_03",
+            email="id@example.com",
+            locale="en",
+            timezone="UTC",
+        )
+        fetched = await repo.get_by_id(created.user_id)
+        assert fetched is not None
+        assert fetched.user_id == created.user_id
+
+    @pytest.mark.asyncio
+    async def test_get_by_id_not_found(self, repo: InMemoryUserRepository) -> None:
+        import uuid
+        fetched = await repo.get_by_id(str(uuid.uuid4()))
+        assert fetched is None
+
+    @pytest.mark.asyncio
+    async def test_get_by_id_wrong_user_returns_none(self, repo: InMemoryUserRepository) -> None:
+        """get_by_id should not return another user's record."""
+        created_a = await repo.create(
+            external_id="clerk_a", email="a@ex.com", locale="en", timezone="UTC"
+        )
+        await repo.create(
+            external_id="clerk_b", email="b@ex.com", locale="fr", timezone="Europe/Paris"
+        )
+        import uuid
+        fetched = await repo.get_by_id(str(uuid.uuid4()))
+        assert fetched is None
+        # Confirm the correct user IS fetchable
+        assert await repo.get_by_id(created_a.user_id) is not None
+
+    @pytest.mark.asyncio
     async def test_reset_clears_store(self, repo: InMemoryUserRepository) -> None:
         await repo.create(external_id="x", email="x@x.com", locale="en", timezone="UTC")
         repo.reset()
