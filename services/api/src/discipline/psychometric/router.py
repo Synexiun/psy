@@ -1665,6 +1665,9 @@ router = APIRouter(prefix="/assessments", tags=["psychometric"])
 # This module (``psychometric``) is on the allow-list because PHQ-9 item 9 and
 # C-SSRS items 4/5/6 are themselves safety-routing inputs.
 _safety = get_stream_logger(LogStream.SAFETY)
+# Audit stream — 6-year tamper-evident retention (CLAUDE.md Rule #6).
+# Assessment sessions that read/write PHI must emit to the audit stream.
+_audit = get_stream_logger(LogStream.AUDIT)
 
 
 Instrument = Literal[
@@ -7159,6 +7162,25 @@ def _stub_band(instrument: str, score: int) -> str:
     return "scored"
 
 
+def _normalize_instrument_name(raw: str) -> str:
+    """Normalise web-app instrument names to the canonical scorer keys.
+
+    The web app sends hyphenated names ("phq-9", "gad-7", "who-5",
+    "audit-c") while the scoring engine uses underscore/digit names
+    ("phq9", "gad7", "who5", "audit_c").  This mapping is the single
+    source-of-truth for the translation so client typos don't silently
+    fall through to stub_band.
+    """
+    return {
+        "phq-9": "phq9",
+        "gad-7": "gad7",
+        "who-5": "who5",
+        "audit-c": "audit_c",
+        "pss-10": "pss10",
+        "dast-10": "dast10",
+    }.get(raw.lower().strip(), raw.lower().strip())
+
+
 @router.post(
     "/sessions",
     response_model=AssessmentSessionResponse,
@@ -7177,42 +7199,61 @@ async def create_assessment_session(
     shape without the idempotency requirement so the one-question-at-a-
     time UI can submit without managing idempotency keys.
 
-    Safety routing:
-    - PHQ-9 item 9 (1-based) > 0 → ``safety_flag=True``.
-      The summary screen is responsible for rendering the crisis card.
-    - All other instruments: ``safety_flag=False``.
-
-    # TODO: implement real scoring + PHI-emitting audit log
-    #   1. Delegate to ``_dispatch(AssessmentRequest(...))`` for proper
-    #      multi-instrument scoring (avoids duplicating scoring logic).
-    #   2. Persist the session via AssessmentSessionRepository.
-    #   3. Emit an audit log entry (PHI boundary — user responses are PHI).
-    #   4. For PHQ-9 item-9 fire, emit a safety-stream event via
-    #      ``_emit_t3_safety_event``.
+    Delegates to ``_dispatch`` for clinically-validated scoring, then:
+    - Persists the record via ``_persist_record`` (same store as the
+      main assessment endpoint, so GET /v1/assessments/sessions returns
+      records from both paths).
+    - Emits an AUDIT log entry (PHI boundary — user responses are PHI).
+    - Emits a safety-stream T3 event if ``result.requires_t3`` is True.
     """
-    _ = x_user_id  # will be used by auth + audit in real impl
+    user_id = x_user_id or "test_user_001"
+    canonical = _normalize_instrument_name(body.instrument)
 
-    # Stub scoring: sum all response values
-    score = sum(
-        int(r.get("value", 0))
-        for r in body.responses
-        if isinstance(r.get("value"), (int, float))
+    # Extract item values in item order; default missing values to 0.
+    items_sorted = sorted(
+        body.responses,
+        key=lambda r: int(r.get("item", 0)),
+    )
+    items = [int(r.get("value", 0)) for r in items_sorted]
+
+    # Build an AssessmentRequest compatible with the scoring dispatcher.
+    try:
+        req = AssessmentRequest(
+            instrument=canonical,  # type: ignore[arg-type]
+            items=items,
+            user_id=user_id,
+        )
+        result = _dispatch(req)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "validation.invalid_payload", "message": str(exc)},
+        ) from exc
+
+    # Persist so GET /v1/assessments/sessions returns this record.
+    _persist_record(req, result)
+
+    # Audit log — PHI boundary (assessment scores are clinical PHI).
+    _audit.info(
+        "assessment_session.created",
+        assessment_id=result.assessment_id,
+        user_id=user_id,
+        instrument=result.instrument,
+        action="session_submit",
     )
 
-    # PHQ-9 safety item check (item 9, 1-based)
-    safety_flag = False
-    if body.instrument.lower().strip() == "phq-9":
-        safety_flag = any(
-            r.get("item") == 9 and int(r.get("value", 0)) > 0
-            for r in body.responses
-        )
+    # Safety stream for T3 fires (same policy as the main endpoint).
+    if result.requires_t3:
+        _emit_t3_safety_event(result, user_id=user_id)
 
     return AssessmentSessionResponse(
-        session_id=str(_uuid.uuid4()),
-        instrument=body.instrument,
-        score=score,
-        severity=_stub_band(body.instrument, score),
-        safety_flag=safety_flag,
+        session_id=result.assessment_id,
+        instrument=result.instrument,
+        score=result.total,
+        severity=result.severity,
+        safety_flag=result.requires_t3,
         completed_at=_datetime.now(tz=_tz.utc).isoformat(),
     )
 
