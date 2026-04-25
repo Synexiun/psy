@@ -18,6 +18,8 @@
  * - REPORT_TYPES static list (ReportsList.tsx): exactly 3 types, all have k-suppression notes
  * - WEEKLY_ENGAGEMENT: 6 weekly data points, pct values 0–100
  * - TOP_TOOLS: 5 tools, pct values sum to 100
+ * - STUB_METRICS: aggregate org-level metrics (not k-suppressed — org-level totals)
+ * - DEPARTMENTS: 5 dept rows, Legal row (3 members) has null suppressed cells (k < 5)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -208,5 +210,125 @@ describe('TOP_TOOLS', () => {
     for (const tool of TOP_TOOLS) {
       expect(tool.name.length).toBeGreaterThan(0);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// STUB_METRICS (inline from page.tsx)
+// ---------------------------------------------------------------------------
+
+const STUB_METRICS = {
+  activeMembers7d: 847,
+  toolsUsed7d: 2341,
+  avgUrgeHandledPct: 73,
+  wellbeingIndex: 6.8,
+};
+
+describe('STUB_METRICS', () => {
+  it('activeMembers7d is a positive integer', () => {
+    expect(Number.isInteger(STUB_METRICS.activeMembers7d)).toBe(true);
+    expect(STUB_METRICS.activeMembers7d).toBeGreaterThan(0);
+  });
+
+  it('toolsUsed7d is a positive integer', () => {
+    expect(Number.isInteger(STUB_METRICS.toolsUsed7d)).toBe(true);
+    expect(STUB_METRICS.toolsUsed7d).toBeGreaterThan(0);
+  });
+
+  it('avgUrgeHandledPct is in [0, 100]', () => {
+    expect(STUB_METRICS.avgUrgeHandledPct).toBeGreaterThanOrEqual(0);
+    expect(STUB_METRICS.avgUrgeHandledPct).toBeLessThanOrEqual(100);
+  });
+
+  it('wellbeingIndex is in [0, 10] (WHO-5 display range after ×4 scaling)', () => {
+    expect(STUB_METRICS.wellbeingIndex).toBeGreaterThanOrEqual(0);
+    expect(STUB_METRICS.wellbeingIndex).toBeLessThanOrEqual(10);
+  });
+
+  it('toolsUsed7d exceeds activeMembers7d (multiple tools per active member)', () => {
+    expect(STUB_METRICS.toolsUsed7d).toBeGreaterThan(STUB_METRICS.activeMembers7d);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DEPARTMENTS (inline from page.tsx) — k-anonymity suppression in table data
+// ---------------------------------------------------------------------------
+
+interface DeptRow {
+  name: string;
+  members: number;
+  active7d: number | null;
+  wellbeingIndex: number | null;
+}
+
+const DEPARTMENTS: DeptRow[] = [
+  { name: 'Engineering', members: 234, active7d: 189, wellbeingIndex: 6.9 },
+  { name: 'Operations', members: 156, active7d: 121, wellbeingIndex: 6.6 },
+  { name: 'Sales', members: 98, active7d: 74, wellbeingIndex: 7.1 },
+  { name: 'HR', members: 45, active7d: 38, wellbeingIndex: 7.4 },
+  { name: 'Legal', members: 3, active7d: null, wellbeingIndex: null },
+];
+
+describe('DEPARTMENTS', () => {
+  it('has exactly 5 department rows', () => {
+    expect(DEPARTMENTS).toHaveLength(5);
+  });
+
+  it('all department names are non-empty', () => {
+    for (const dept of DEPARTMENTS) {
+      expect(dept.name.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('all member counts are positive integers', () => {
+    for (const dept of DEPARTMENTS) {
+      expect(Number.isInteger(dept.members)).toBe(true);
+      expect(dept.members).toBeGreaterThan(0);
+    }
+  });
+
+  it('departments with members ≥ 5 have non-null active7d (no false suppression)', () => {
+    const aboveK = DEPARTMENTS.filter((d) => d.members >= 5);
+    for (const dept of aboveK) {
+      expect(dept.active7d).not.toBeNull();
+    }
+  });
+
+  it('departments with members ≥ 5 have non-null wellbeingIndex', () => {
+    const aboveK = DEPARTMENTS.filter((d) => d.members >= 5);
+    for (const dept of aboveK) {
+      expect(dept.wellbeingIndex).not.toBeNull();
+    }
+  });
+
+  it('Legal department (3 members) has null active7d (k < 5 suppression)', () => {
+    const legal = DEPARTMENTS.find((d) => d.name === 'Legal');
+    expect(legal).toBeDefined();
+    expect(legal?.members).toBe(3);
+    expect(legal?.active7d).toBeNull();
+  });
+
+  it('Legal department has null wellbeingIndex (k < 5 suppression)', () => {
+    const legal = DEPARTMENTS.find((d) => d.name === 'Legal');
+    expect(legal?.wellbeingIndex).toBeNull();
+  });
+
+  it('exactly 1 department has null cells (only Legal is below k threshold)', () => {
+    const suppressed = DEPARTMENTS.filter((d) => d.active7d === null);
+    expect(suppressed).toHaveLength(1);
+    expect(suppressed[0]?.name).toBe('Legal');
+  });
+
+  it('wellbeingIndex values for non-suppressed depts are in [0, 10]', () => {
+    const nonSuppressed = DEPARTMENTS.filter((d) => d.wellbeingIndex !== null);
+    for (const dept of nonSuppressed) {
+      expect(dept.wellbeingIndex!).toBeGreaterThanOrEqual(0);
+      expect(dept.wellbeingIndex!).toBeLessThanOrEqual(10);
+    }
+  });
+
+  it('department names are unique', () => {
+    const names = DEPARTMENTS.map((d) => d.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });
