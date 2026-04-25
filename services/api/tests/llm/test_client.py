@@ -158,3 +158,136 @@ class TestBudgets:
         err = LLMBudgetExceededError("u_01", 10)
         assert "u_01" in str(err)
         assert "10" in str(err)
+
+
+# ---------------------------------------------------------------------------
+# Redis budget counter
+# ---------------------------------------------------------------------------
+
+
+class TestRedisBudgetCounter:
+    def _make_mock_redis(self, count: int = 1) -> MagicMock:
+        """Return a mock Redis client where INCR always returns *count*."""
+        mock_redis = MagicMock()
+        mock_redis.incr.return_value = count
+        mock_redis.expire.return_value = True
+        mock_redis.decr.return_value = count - 1
+        return mock_redis
+
+    def test_first_request_sets_expire(self) -> None:
+        """First INCR (count=1) must call EXPIRE to establish the TTL."""
+        mock_redis = self._make_mock_redis(count=1)
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            client._check_budget("u_01", "free")
+
+        mock_redis.expire.assert_called_once()
+
+    def test_subsequent_requests_do_not_reset_expire(self) -> None:
+        """INCR count > 1 must NOT call EXPIRE (would reset TTL)."""
+        mock_redis = self._make_mock_redis(count=2)
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            client._check_budget("u_01", "free")
+
+        mock_redis.expire.assert_not_called()
+
+    def test_within_budget_does_not_raise(self) -> None:
+        """Count at or below limit must not raise."""
+        mock_redis = self._make_mock_redis(count=10)  # free tier limit = 10
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            client._check_budget("u_01", "free")  # should not raise
+
+    def test_exceed_budget_raises(self) -> None:
+        """Count above free tier limit must raise LLMBudgetExceededError."""
+        mock_redis = self._make_mock_redis(count=11)  # free tier limit = 10
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            with pytest.raises(LLMBudgetExceededError) as exc_info:
+                client._check_budget("u_01", "free")
+
+        assert exc_info.value.limit == 10
+        assert exc_info.value.user_id == "u_01"
+
+    def test_exceed_budget_decrements_counter(self) -> None:
+        """On budget exceeded, DECR is called to keep counter accurate."""
+        mock_redis = self._make_mock_redis(count=11)
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            with pytest.raises(LLMBudgetExceededError):
+                client._check_budget("u_01", "free")
+
+        mock_redis.decr.assert_called_once()
+
+    def test_plus_tier_higher_limit(self) -> None:
+        """Plus tier allows up to 40 requests; count=40 should not raise."""
+        mock_redis = self._make_mock_redis(count=40)  # plus tier limit = 40
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            client._check_budget("u_01", "plus")  # should not raise
+
+    def test_plus_tier_exceeded(self) -> None:
+        """Plus tier at count=41 must raise."""
+        mock_redis = self._make_mock_redis(count=41)
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            with pytest.raises(LLMBudgetExceededError) as exc_info:
+                client._check_budget("u_01", "plus")
+
+        assert exc_info.value.limit == 40
+
+    def test_redis_unavailable_degrades_gracefully(self) -> None:
+        """Redis connection error must NOT raise — request is allowed through."""
+        import redis as redis_lib
+
+        client = _make_client()
+
+        with patch(
+            "discipline.shared.redis_client.get_redis_client",
+            side_effect=redis_lib.RedisError("connection refused"),
+        ):
+            client._check_budget("u_01", "free")  # should not raise
+
+    def test_redis_key_includes_user_id(self) -> None:
+        """The Redis key must include the user_id for per-user scoping."""
+        mock_redis = self._make_mock_redis(count=1)
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            client._check_budget("user_abc", "free")
+
+        incr_key = mock_redis.incr.call_args.args[0]
+        assert "user_abc" in incr_key
+
+    def test_redis_key_includes_date(self) -> None:
+        """The Redis key must include today's date for daily windowing."""
+        from datetime import UTC, datetime
+
+        mock_redis = self._make_mock_redis(count=1)
+        client = _make_client()
+        today = datetime.now(UTC).strftime("%Y-%m-%d")
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            client._check_budget("u_01", "free")
+
+        incr_key = mock_redis.incr.call_args.args[0]
+        assert today in incr_key
+
+    def test_unknown_tier_falls_back_to_free_limit(self) -> None:
+        """Unknown tier string must use the 'free' limit (10) as safety default."""
+        mock_redis = self._make_mock_redis(count=11)  # above free = 10
+        client = _make_client()
+
+        with patch("discipline.shared.redis_client.get_redis_client", return_value=mock_redis):
+            with pytest.raises(LLMBudgetExceededError) as exc_info:
+                client._check_budget("u_01", "unknown_tier")
+
+        assert exc_info.value.limit == 10

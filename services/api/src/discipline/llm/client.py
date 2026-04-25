@@ -6,13 +6,23 @@ quotas are enforced.  No direct Anthropic SDK calls from route handlers.
 
 from __future__ import annotations
 
+import structlog
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 import anthropic
+import redis
 
 from discipline.config import get_settings
 from discipline.llm.safety_filter import SafetyFilter
+
+logger = structlog.get_logger(__name__)
+
+# Redis key pattern: llm:budget:{user_id}:{YYYY-MM-DD}
+# TTL is set to 25 hours so the key always expires before the next day's window,
+# even accounting for timezone drift between client and server clocks.
+_BUDGET_KEY_TTL_SECONDS = 25 * 3600
 
 
 @dataclass(frozen=True, slots=True)
@@ -175,16 +185,43 @@ class LLMClient:
     # ------------------------------------------------------------------
 
     def _check_budget(self, user_id: str, tier: str) -> None:
-        """Placeholder budget check.
+        """Enforce per-user daily LLM request budget via Redis INCR.
 
-        Production: Redis ``INCR`` on ``llm:budget:{user_id}:{date}`` with
-        TTL until midnight; raise :class:`LLMBudgetExceededError` when
-        count > limit for tier.
+        Uses atomic INCR + EXPIRE so the counter is consistent under concurrent
+        requests.  EXPIRE is only set on the first increment (count == 1) to
+        avoid resetting the TTL on every request.
+
+        Degrades gracefully when Redis is unavailable — logs a warning and
+        allows the request through so an infrastructure outage does not block
+        clinical functionality (the SafetyFilter gate remains the hard boundary).
         """
         limit = self.BUDGETS.get(tier, self.BUDGETS["free"])
-        # TODO: wire to Redis counter (see 05_Backend_Services §3.12).
-        # For now, always allow — the SafetyFilter gate is the hard boundary.
-        _ = (user_id, limit)
+        date_key = datetime.now(UTC).strftime("%Y-%m-%d")
+        redis_key = f"llm:budget:{user_id}:{date_key}"
+
+        try:
+            from discipline.shared.redis_client import get_redis_client
+
+            client = get_redis_client()
+            count = client.incr(redis_key)
+            if count == 1:
+                # First request today — set TTL so the key auto-expires.
+                client.expire(redis_key, _BUDGET_KEY_TTL_SECONDS)
+
+            if count > limit:
+                # Decrement so the count reflects actual successful requests,
+                # not attempts — makes monitoring dashboards easier to read.
+                client.decr(redis_key)
+                raise LLMBudgetExceededError(user_id, limit)
+
+        except LLMBudgetExceededError:
+            raise
+        except redis.RedisError:
+            logger.warning(
+                "llm.budget_check.redis_unavailable",
+                user_id=user_id,
+                tier=tier,
+            )
 
 
 __all__ = [
