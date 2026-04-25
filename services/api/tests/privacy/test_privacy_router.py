@@ -379,3 +379,161 @@ class TestRunPendingHardDeletes:
         assert result == []
         # No flush needed when nothing to delete.
         mock_db.flush.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Clerk session revocation unit tests
+# ---------------------------------------------------------------------------
+
+
+class TestRevokeClerkSessions:
+    """Unit tests for _revoke_clerk_sessions — the best-effort Clerk Ban call.
+
+    Tests exercise the helper directly (async) and via the delete endpoint
+    (sync TestClient) to verify graceful degradation.
+    """
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_clerk_secret(self) -> None:
+        """Returns False without making HTTP calls when CLERK_SECRET_KEY is absent."""
+        import os
+
+        from discipline.privacy.router import _revoke_clerk_sessions
+
+        env = {k: v for k, v in os.environ.items() if k != "CLERK_SECRET_KEY"}
+        with patch.dict("os.environ", env, clear=True):
+            result = await _revoke_clerk_sessions("user_123")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_skips_when_secret_has_wrong_prefix(self) -> None:
+        """Returns False when CLERK_SECRET_KEY doesn't start with 'sk_'."""
+        from discipline.privacy.router import _revoke_clerk_sessions
+
+        with patch.dict("os.environ", {"CLERK_SECRET_KEY": "bad_key_value"}):
+            result = await _revoke_clerk_sessions("user_123")
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_200(self) -> None:
+        """Returns True when Clerk API responds 200."""
+        from unittest.mock import AsyncMock
+
+        import httpx
+
+        from discipline.privacy.router import _revoke_clerk_sessions
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch.dict("os.environ", {"CLERK_SECRET_KEY": "sk_test_abc"}):
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                result = await _revoke_clerk_sessions("user_clerk_001")
+
+        assert result is True
+        mock_client.post.assert_called_once_with("/v1/users/user_clerk_001/ban")
+
+    @pytest.mark.asyncio
+    async def test_returns_true_on_204(self) -> None:
+        """Returns True when Clerk API responds 204 No Content."""
+        from unittest.mock import AsyncMock
+
+        from discipline.privacy.router import _revoke_clerk_sessions
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 204
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch.dict("os.environ", {"CLERK_SECRET_KEY": "sk_live_xyz"}):
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                result = await _revoke_clerk_sessions("user_clerk_002")
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_non_success_status(self) -> None:
+        """Returns False and logs warning when Clerk returns 4xx/5xx."""
+        from unittest.mock import AsyncMock
+
+        from discipline.privacy.router import _revoke_clerk_sessions
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 404
+        mock_resp.text = "User not found"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch.dict("os.environ", {"CLERK_SECRET_KEY": "sk_test_abc"}):
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                result = await _revoke_clerk_sessions("user_gone")
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_on_httpx_exception(self) -> None:
+        """Returns False and does not re-raise when httpx raises an exception."""
+        import httpx
+
+        from discipline.privacy.router import _revoke_clerk_sessions
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = MagicMock(side_effect=httpx.ConnectError("timeout"))
+
+        with patch.dict("os.environ", {"CLERK_SECRET_KEY": "sk_test_abc"}):
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                result = await _revoke_clerk_sessions("user_unreachable")
+
+        assert result is False
+
+    def test_delete_endpoint_succeeds_when_clerk_revocation_fails(
+        self, client: TestClient
+    ) -> None:
+        """Account deletion returns 202 even if Clerk session revocation fails."""
+        from unittest.mock import AsyncMock
+
+        async def _failing_revoke(clerk_user_id: str) -> bool:
+            return False
+
+        with patch(
+            "discipline.privacy.router._revoke_clerk_sessions",
+            side_effect=_failing_revoke,
+        ):
+            response = client.post(_URL_DELETE, headers=_FULL_HEADERS)
+
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "queued"
+        assert "deletion_scheduled_at" in body
+
+    def test_delete_endpoint_passes_user_id_to_clerk_revocation(
+        self, client: TestClient
+    ) -> None:
+        """The Clerk revocation call receives the authenticated user_id, not a default."""
+        from unittest.mock import AsyncMock
+
+        captured: list[str] = []
+
+        async def _capture_revoke(clerk_user_id: str) -> bool:
+            captured.append(clerk_user_id)
+            return True
+
+        with patch(
+            "discipline.privacy.router._revoke_clerk_sessions",
+            side_effect=_capture_revoke,
+        ):
+            client.post(_URL_DELETE, headers=_FULL_HEADERS)
+
+        assert len(captured) == 1
+        assert captured[0] == "user_privacy_001"

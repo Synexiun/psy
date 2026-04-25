@@ -28,6 +28,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi import status as http_status
 
@@ -43,6 +44,7 @@ from discipline.shared.http import mark_phi_boundary
 from discipline.shared.logging import LogStream, get_stream_logger
 
 router = APIRouter(tags=["privacy"])
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -75,6 +77,63 @@ def _require_step_up(x_step_up_token: str | None) -> None:
             status_code=http_status.HTTP_403_FORBIDDEN,
             detail="step_up_required",
         )
+
+
+async def _revoke_clerk_sessions(clerk_user_id: str) -> bool:
+    """Revoke all active Clerk sessions for *clerk_user_id*.
+
+    Called after account deletion is committed so the user cannot continue
+    using existing JWTs.  Uses the Clerk Backend API:
+    ``POST /v1/users/{userId}/ban`` — immediately invalidates all sessions.
+
+    Design choices:
+    - Uses httpx.AsyncClient so the call is non-blocking in the async path.
+    - Gracefully degrades (logs + returns False) when CLERK_SECRET_KEY is
+      absent (dev/test) or when Clerk returns an error.  The deletion itself
+      is committed regardless — Clerk session expiry is a best-effort hardening
+      measure, not a hard gate.
+    - Times out after 5 seconds; Clerk sessions expire naturally on the next
+      JWT validation even if this call fails.
+    - Uses the discipline.shared.http egress client once that ships; for now
+      uses httpx directly since the egress client is a future milestone.
+    """
+    try:
+        import os
+
+        import httpx
+
+        clerk_secret = os.environ.get("CLERK_SECRET_KEY", "")
+        if not clerk_secret or not clerk_secret.startswith("sk_"):
+            logger.debug(
+                "clerk.session_revoke.skipped",
+                reason="CLERK_SECRET_KEY not configured",
+                user_id=clerk_user_id,
+            )
+            return False
+
+        async with httpx.AsyncClient(
+            base_url="https://api.clerk.com",
+            headers={"Authorization": f"Bearer {clerk_secret}"},
+            timeout=5.0,
+        ) as http:
+            resp = await http.post(f"/v1/users/{clerk_user_id}/ban")
+            if resp.status_code in (200, 201, 204):
+                logger.info(
+                    "clerk.session_revoke.success",
+                    user_id=clerk_user_id,
+                    status=resp.status_code,
+                )
+                return True
+            logger.warning(
+                "clerk.session_revoke.failed",
+                user_id=clerk_user_id,
+                status=resp.status_code,
+                body=resp.text[:200],
+            )
+            return False
+    except Exception:
+        logger.exception("clerk.session_revoke.error", user_id=clerk_user_id)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -221,11 +280,9 @@ async def delete_account(
     # ------------------------------------------------------------------
     purge_at = await service.schedule_deletion(user_id=user_id, db=None)  # type: ignore[arg-type]
 
-    # TODO (next sprint): revoke Clerk sessions via egress client.
-    # Example:
-    #   from discipline.shared.http import get_egress_client
-    #   client = get_egress_client()
-    #   await client.delete(f"https://api.clerk.com/v1/users/{clerk_sub}/sessions")
+    # Revoke Clerk sessions — best-effort; deletion proceeds regardless.
+    # In dev/test (no CLERK_SECRET_KEY), this returns False and skips.
+    await _revoke_clerk_sessions(user_id)
 
     return DeleteAccountResponse(
         status="queued",
