@@ -26,8 +26,10 @@ from datetime import UTC, datetime, timezone, timedelta
 import pytest
 
 from discipline.reports.user_export import (
+    ARCHIVE_SCHEMA_VERSION,
     NonUtcTimestampError,
     UserExportPayload,
+    _assemble_archive_dict,
     _ensure_utc,
     _is_empty_payload,
     _iso_utc,
@@ -219,3 +221,63 @@ class TestIsEmptyPayloadNonEmpty:
     def test_consents_populated_is_not_empty(self) -> None:
         payload = _empty_payload(consents=[{"type": "data_processing"}])
         assert _is_empty_payload(payload) is False
+
+
+# ---------------------------------------------------------------------------
+# _assemble_archive_dict — versioned archive structure
+# ---------------------------------------------------------------------------
+
+
+class TestAssembleArchiveDict:
+    def _dict(self, **overrides: object) -> dict:
+        return _assemble_archive_dict(_empty_payload(**overrides))
+
+    def test_includes_archive_schema_version(self) -> None:
+        d = self._dict()
+        assert d["archive_schema_version"] == ARCHIVE_SCHEMA_VERSION
+
+    def test_schema_version_is_semver_string(self) -> None:
+        parts = self._dict()["archive_schema_version"].split(".")
+        assert len(parts) == 3
+        assert all(p.isdigit() for p in parts)
+
+    def test_user_id_propagated(self) -> None:
+        assert self._dict()["user_id"] == "user_abc"
+
+    def test_locale_propagated(self) -> None:
+        assert self._dict()["locale"] == "en"
+
+    def test_requested_at_has_z_suffix(self) -> None:
+        assert self._dict()["requested_at"].endswith("Z")
+
+    def test_generated_at_has_z_suffix(self) -> None:
+        assert self._dict()["generated_at"].endswith("Z")
+
+    def test_sections_key_present(self) -> None:
+        sections = self._dict()["sections"]
+        for key in (
+            "profile",
+            "psychometric_scores",
+            "intervention_events",
+            "resilience_streak",
+            "safety_events",
+            "consents",
+        ):
+            assert key in sections
+
+    def test_section_counts_present(self) -> None:
+        assert "section_counts" in self._dict()
+
+    def test_section_counts_reflect_list_lengths(self) -> None:
+        p = _empty_payload(
+            psychometric_scores=[{"instrument": "phq9"}, {"instrument": "gad7"}],
+            consents=[{"type": "research"}],
+        )
+        d = _assemble_archive_dict(p)
+        assert d["section_counts"]["psychometric_scores"] == 2
+        assert d["section_counts"]["consents"] == 1
+
+    def test_section_counts_zero_when_empty(self) -> None:
+        d = self._dict()
+        assert d["section_counts"]["psychometric_scores"] == 0
+        assert d["section_counts"]["safety_events"] == 0
