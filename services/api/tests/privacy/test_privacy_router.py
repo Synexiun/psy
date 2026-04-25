@@ -1,18 +1,19 @@
 """Privacy router tests — DSAR export and account deletion.
 
 Covers:
-1. POST /v1/privacy/export → 200, response has ``data.profile`` key
-2. POST /v1/privacy/export → response contains ``check_ins`` array
+1. POST /v1/privacy/export → 202 with status="queued" and download_url=null
+2. POST /v1/privacy/export → export_id is a valid UUID
 3. POST /v1/privacy/delete-account → 202, response has ``deletion_scheduled_at``
 4. Export emits an entry on the audit log stream
 5. Delete emits an entry on the audit log stream
 6. Export without step-up token → 403
 7. Delete without step-up token → 403
 8. Export response sets X-Phi-Boundary header
-9. Export response includes all required top-level data keys
-10. Delete response status is "queued"
-11. Delete ``deletion_scheduled_at`` is a valid ISO-8601 timestamp ~30 days out
-12. Export user_id in response matches the authenticated user
+9. Delete response status is "queued"
+10. Delete ``deletion_scheduled_at`` is a valid ISO-8601 timestamp ~30 days out
+11. Export user_id in response matches the authenticated user
+12. GET /v1/privacy/export/{export_id} → 200 with job status
+13. GET /v1/privacy/export/{unknown_id} → 404
 """
 
 from __future__ import annotations
@@ -53,24 +54,28 @@ def client() -> TestClient:
 
 
 # ---------------------------------------------------------------------------
-# 1. Export → 200 with data.profile
+# 1. Export → 202 Accepted with queued status
 # ---------------------------------------------------------------------------
+
+_URL_EXPORT_STATUS = "/v1/privacy/export"  # GET /{export_id} appended per test
 
 
 class TestExportBasic:
-    def test_export_returns_200(self, client: TestClient) -> None:
+    def test_export_returns_202(self, client: TestClient) -> None:
         response = client.post(_URL_EXPORT, headers=_FULL_HEADERS)
-        assert response.status_code == 200, response.text
+        assert response.status_code == 202, response.text
 
-    def test_export_response_has_profile_key(self, client: TestClient) -> None:
+    def test_export_status_is_queued(self, client: TestClient) -> None:
         body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
-        assert "data" in body
-        assert "profile" in body["data"]
+        assert body["status"] == "queued"
+
+    def test_export_download_url_is_null(self, client: TestClient) -> None:
+        body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
+        assert body["download_url"] is None
 
     def test_export_response_has_export_id(self, client: TestClient) -> None:
         body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
         assert "export_id" in body
-        # export_id must be a valid UUID
         uuid.UUID(body["export_id"])
 
     def test_export_response_has_requested_at(self, client: TestClient) -> None:
@@ -82,33 +87,67 @@ class TestExportBasic:
         body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
         assert body["user_id"] == "user_privacy_001"
 
+    def test_export_response_has_no_inline_data(self, client: TestClient) -> None:
+        """202 queued response must NOT include the export data inline — it will
+        be in a presigned S3 URL once the worker runs."""
+        body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
+        assert "data" not in body
+
 
 # ---------------------------------------------------------------------------
-# 2. Export → check_ins array present
+# 2. Export poll endpoint (GET /v1/privacy/export/{export_id})
 # ---------------------------------------------------------------------------
 
 
-class TestExportCheckIns:
-    def test_export_contains_check_ins_array(self, client: TestClient) -> None:
-        body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
-        assert "check_ins" in body["data"]
-        assert isinstance(body["data"]["check_ins"], list)
+class TestExportPollEndpoint:
+    def test_poll_returns_200_for_known_export_id(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        response = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_FULL_HEADERS)
+        assert response.status_code == 200, response.text
 
-    def test_export_data_has_all_required_keys(self, client: TestClient) -> None:
-        """All domain keys defined in ExportData must be present in the response."""
-        body = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()
-        required_keys = {
-            "profile",
-            "check_ins",
-            "journal_entries",
-            "assessment_sessions",
-            "streak",
-            "patterns",
-            "consents",
-        }
-        assert required_keys <= set(body["data"].keys()), (
-            f"Missing keys: {required_keys - set(body['data'].keys())}"
+    def test_poll_returns_404_for_unknown_id(self, client: TestClient) -> None:
+        response = client.get(
+            f"{_URL_EXPORT_STATUS}/00000000-0000-0000-0000-000000000000",
+            headers=_FULL_HEADERS,
         )
+        assert response.status_code == 404
+
+    def test_poll_404_detail_is_export_not_found(self, client: TestClient) -> None:
+        response = client.get(
+            f"{_URL_EXPORT_STATUS}/00000000-0000-0000-0000-000000000000",
+            headers=_FULL_HEADERS,
+        )
+        assert response.json()["detail"] == "export_not_found"
+
+    def test_poll_status_matches_initial_queued(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        body = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_FULL_HEADERS).json()
+        assert body["status"] == "queued"
+
+    def test_poll_download_url_is_null_when_queued(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        body = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_FULL_HEADERS).json()
+        assert body["download_url"] is None
+
+    def test_poll_export_id_matches(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        body = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_FULL_HEADERS).json()
+        assert body["export_id"] == export_id
+
+    def test_poll_user_id_matches(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        body = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_FULL_HEADERS).json()
+        assert body["user_id"] == "user_privacy_001"
+
+    def test_poll_sets_phi_boundary_header(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        response = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_FULL_HEADERS)
+        assert response.headers.get("x-phi-boundary") == "1"
+
+    def test_poll_without_step_up_returns_403(self, client: TestClient) -> None:
+        export_id = client.post(_URL_EXPORT, headers=_FULL_HEADERS).json()["export_id"]
+        response = client.get(f"{_URL_EXPORT_STATUS}/{export_id}", headers=_USER_HEADER)
+        assert response.status_code == 403
 
 
 # ---------------------------------------------------------------------------
@@ -159,7 +198,7 @@ class TestExportAuditLog:
             mock_get_logger.return_value = mock_audit_logger
 
             response = client.post(_URL_EXPORT, headers=_FULL_HEADERS)
-            assert response.status_code == 200
+            assert response.status_code == 202
 
             # get_stream_logger must have been called with LogStream.AUDIT
             mock_get_logger.assert_called_once_with(LogStream.AUDIT)

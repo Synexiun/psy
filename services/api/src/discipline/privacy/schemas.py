@@ -2,6 +2,7 @@
 
 Request/response contracts for:
 - DSAR data export  (``POST /v1/privacy/export``)
+- DSAR export status poll  (``GET /v1/privacy/export/{export_id}``)
 - Account deletion  (``POST /v1/privacy/delete-account``)
 """
 
@@ -33,14 +34,13 @@ class ExportRequest(BaseModel):
 
 
 class ExportData(BaseModel):
-    """The nested ``data`` block inside an :class:`ExportResponse`.
+    """The nested ``data`` block used by the export worker when writing to S3.
 
     Each field maps to one logical data domain.  All fields are always
-    present (empty list / None when the user has no data in that domain);
-    this lets clients iterate without defensive None checks.
+    present (empty list / None when the user has no data in that domain).
 
-    PHI note: this object is the payload of a PHI response — never log
-    its contents; only log that an export was requested (see router).
+    PHI note: never log the contents of this object; only log that an
+    export was requested (see router).
     """
 
     profile: dict[str, Any] = Field(default_factory=dict)
@@ -52,18 +52,41 @@ class ExportData(BaseModel):
     consents: list[dict[str, Any]] = Field(default_factory=list)
 
 
-class ExportResponse(BaseModel):
-    """DSAR export response.
+ExportStatus = Literal["queued", "processing", "ready", "failed"]
 
-    Returned synchronously today.  When the async-queue path ships this
-    schema stays identical — the ``data`` field will be an empty dict
-    and a ``download_url`` field will be added with the presigned S3 URL.
+
+class ExportQueuedResponse(BaseModel):
+    """202 Accepted response for async DSAR export (POST /v1/privacy/export).
+
+    The export is enqueued; the client polls
+    ``GET /v1/privacy/export/{export_id}`` until ``status == "ready"``
+    and then downloads the presigned ``download_url``.
     """
 
-    export_id: str = Field(description="UUID for this export request, for audit correlation.")
+    export_id: str = Field(description="UUID for this export job, for audit correlation and polling.")
+    status: Literal["queued"] = "queued"
     requested_at: str = Field(description="ISO-8601 UTC timestamp of when the export was initiated.")
     user_id: str = Field(description="The Clerk user ID whose data is being exported.")
-    data: ExportData
+    download_url: None = Field(default=None, description="Always null at enqueue time.")
+
+
+class ExportStatusResponse(BaseModel):
+    """Response for GET /v1/privacy/export/{export_id} — export job status poll.
+
+    ``download_url`` is populated (presigned S3 URL, TTL 15 min) once
+    ``status`` transitions to ``"ready"``.  Clients should treat a
+    ``"failed"`` status as terminal and re-POST to start a fresh job.
+    """
+
+    export_id: str
+    status: ExportStatus
+    requested_at: str
+    user_id: str
+    download_url: str | None = None
+
+
+# Kept for internal use by the export worker (builds the S3 payload).
+ExportResponse = ExportStatusResponse
 
 
 # =============================================================================

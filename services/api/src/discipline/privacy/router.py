@@ -1,10 +1,11 @@
 """Privacy HTTP surface — DSAR export and account deletion.
 
 Endpoints:
-- ``POST /v1/privacy/export``         — GDPR/CCPA data export (DSAR)
-- ``POST /v1/privacy/delete-account`` — soft-delete + schedule hard-delete
+- ``POST /v1/privacy/export``                   — GDPR/CCPA data export (DSAR) — returns 202
+- ``GET  /v1/privacy/export/{export_id}``        — poll job status + download URL
+- ``POST /v1/privacy/delete-account``           — soft-delete + schedule hard-delete
 
-Both endpoints:
+Both mutation endpoints:
   - Require authentication (``X-User-Id`` header; swap for real JWT when
     the Clerk integration ships — see ``_derive_user_id`` below).
   - Are step-up gated: the caller must supply ``X-Step-Up-Token: present``
@@ -17,16 +18,16 @@ Both endpoints:
 The export endpoint additionally:
   - Opts in to ``mark_phi_boundary`` so PhiBoundaryMiddleware appends
     ``X-Phi-Boundary: 1`` to every response (CLAUDE.md Rule #11).
-
-TODO (next sprint): move export to async SQS → worker → presigned S3 URL.
-Switch the response to 202 Accepted + ``{"export_id": ..., "status": "queued",
-"download_url": null}`` and poll ``GET /v1/privacy/export/{export_id}``.
+  - Returns **202 Accepted** immediately and enqueues the collection job.
+    The actual data is written to S3 by the export worker; the client
+    polls GET /v1/privacy/export/{export_id} until status == "ready".
 """
 
 from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -35,9 +36,9 @@ from fastapi import status as http_status
 from discipline.privacy.schemas import (
     DeleteAccountRequest,
     DeleteAccountResponse,
-    ExportData,
+    ExportQueuedResponse,
     ExportRequest,
-    ExportResponse,
+    ExportStatusResponse,
 )
 from discipline.privacy.service import get_privacy_service
 from discipline.shared.http import mark_phi_boundary
@@ -45,6 +46,13 @@ from discipline.shared.logging import LogStream, get_stream_logger
 
 router = APIRouter(tags=["privacy"])
 logger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# In-process export job store (stub for SQS + S3 worker path).
+# In production this is replaced by a DynamoDB / Redis job table that the
+# export worker writes to after uploading the presigned S3 object.
+# ---------------------------------------------------------------------------
+_EXPORT_JOBS: dict[str, dict[str, Any]] = {}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -143,9 +151,9 @@ async def _revoke_clerk_sessions(clerk_user_id: str) -> bool:
 
 @router.post(
     "/export",
-    response_model=ExportResponse,
-    status_code=http_status.HTTP_200_OK,
-    summary="DSAR data export",
+    response_model=ExportQueuedResponse,
+    status_code=http_status.HTTP_202_ACCEPTED,
+    summary="Request DSAR data export (async)",
     dependencies=[Depends(mark_phi_boundary)],
 )
 async def export_user_data(
@@ -153,34 +161,25 @@ async def export_user_data(
     payload: ExportRequest = ExportRequest(),  # noqa: B008
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
     x_step_up_token: str | None = Header(default=None, alias="X-Step-Up-Token"),
-) -> ExportResponse:
-    """Export all user data as JSON (GDPR Art. 20 portability / CCPA §1798.100).
+) -> ExportQueuedResponse:
+    """Enqueue a DSAR export job (GDPR Art. 20 portability / CCPA §1798.100).
 
-    Collects:
-    - User profile (``users`` + ``user_profiles``)
-    - Signal/check-in windows (``signals_windows``)
-    - Journal metadata (``journals``) — content_encrypted excluded (user has it)
-    - Assessment sessions (``psychometric_sessions``)
-    - Streak state (``streak_state``)
-    - Detected patterns (``patterns``)
-    - Consent records (``consents``)
+    Returns **202 Accepted** immediately.  The export worker picks up the
+    job, collects all user data, writes it to an S3 object, and updates the
+    job store with the presigned ``download_url`` (TTL 15 min).
+
+    Poll ``GET /v1/privacy/export/{export_id}`` until ``status == "ready"``,
+    then download via ``download_url``.
 
     The response sets ``X-Phi-Boundary: 1`` via PhiBoundaryMiddleware.
 
     Audit: emits ``dsar_export_requested`` to the audit stream.
-
-    TODO (next sprint): run collect_user_data in a background worker and
-    return a presigned S3 URL instead of inline JSON.
     """
     _require_step_up(x_step_up_token)
     user_id = _derive_user_id(x_user_id)
     export_id = str(uuid.uuid4())
     requested_at = datetime.now(UTC).isoformat()
 
-    # ------------------------------------------------------------------
-    # Audit log BEFORE data access (HIPAA accounting of disclosures).
-    # Log only metadata — never log the data content (§9.2 of 07_Security_Privacy).
-    # ------------------------------------------------------------------
     audit = get_stream_logger(LogStream.AUDIT)
     audit.info(
         "dsar_export_requested",
@@ -194,26 +193,50 @@ async def export_user_data(
         resource="user_data_export",
     )
 
-    # ------------------------------------------------------------------
-    # Collect data — synchronous for now; see TODO above.
-    # We pass a None DB session because the in-memory service handles
-    # missing DB gracefully (each domain catches exceptions independently).
-    # ------------------------------------------------------------------
-    service = get_privacy_service()
+    # Register job in the in-process store.  Production replaces this with
+    # an SQS message + DynamoDB/Redis status record written by the worker.
+    _EXPORT_JOBS[export_id] = {
+        "export_id": export_id,
+        "status": "queued",
+        "requested_at": requested_at,
+        "user_id": user_id,
+        "download_url": None,
+    }
 
-    # NOTE: In production this would use a real AsyncSession from get_db().
-    # The service's per-domain try/except means a missing table returns
-    # {"error": "..."} for that domain rather than aborting the whole export.
-    # For the current sprint (no live DB in tests) we pass None and let each
-    # domain's except clause return an empty-ish value.
-    data_dict = await service.collect_user_data(user_id=user_id, db=None)  # type: ignore[arg-type]
-
-    return ExportResponse(
+    return ExportQueuedResponse(
         export_id=export_id,
         requested_at=requested_at,
         user_id=user_id,
-        data=ExportData(**data_dict),
     )
+
+
+@router.get(
+    "/export/{export_id}",
+    response_model=ExportStatusResponse,
+    status_code=http_status.HTTP_200_OK,
+    summary="Poll DSAR export job status",
+    dependencies=[Depends(mark_phi_boundary)],
+)
+async def get_export_status(
+    export_id: str,
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+    x_step_up_token: str | None = Header(default=None, alias="X-Step-Up-Token"),
+) -> ExportStatusResponse:
+    """Return current status of a DSAR export job.
+
+    Returns 404 when the export_id is unknown.  Once ``status == "ready"``
+    the ``download_url`` is a presigned S3 URL (TTL 15 min).
+    """
+    _require_step_up(x_step_up_token)
+
+    job = _EXPORT_JOBS.get(export_id)
+    if job is None:
+        raise HTTPException(
+            status_code=http_status.HTTP_404_NOT_FOUND,
+            detail="export_not_found",
+        )
+
+    return ExportStatusResponse(**job)
 
 
 # ---------------------------------------------------------------------------
