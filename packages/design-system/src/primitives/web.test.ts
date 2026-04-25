@@ -23,6 +23,19 @@ describe('buildButtonClasses', () => {
     expect(classes).toContain('bg-[hsl(173,58%,39%)]');
     expect(classes).toContain('h-12');
   });
+
+  it('returns ghost variant', () => {
+    const classes = buildButtonClasses('ghost', 'md');
+    expect(classes).toContain('bg-transparent');
+    expect(classes).toContain('text-[hsl(222,47%,11%)]');
+  });
+
+  it('returns sm size', () => {
+    const classes = buildButtonClasses('primary', 'sm');
+    expect(classes).toContain('h-8');
+    expect(classes).toContain('px-3');
+    expect(classes).toContain('text-sm');
+  });
 });
 
 describe('buildInputClasses', () => {
