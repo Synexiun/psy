@@ -8,24 +8,59 @@ This endpoint is the web-app counterpart to the mobile signal pipeline.
 On mobile, biometric windows flow through ``POST /v1/signals/windows``;
 on web the user submits a self-reported intensity reading here instead.
 
-The state update path (urge model re-estimation) is stubbed below.
-Real implementation: ingest → SignalWindowRepository (source="manual_checkin")
-→ trigger async state-estimate recomputation via the worker queue.
+Signal processing pipeline (implemented):
+  1. Write a SignalWindowRecord (source="manual_checkin") via SignalWindowRepository.
+  2. Compute a deterministic state estimate from intensity band (no LLM — Rule 1).
+  3. Write a StateEstimateRecord via StateEstimateRepository.
+  4. For intensity >= 8, emit a safety-stream "check_in.high_intensity" event.
 
 All endpoints are authenticated (Clerk session → server JWT).
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import NamedTuple
 
+import structlog
 from fastapi import APIRouter, Header, Query
 from pydantic import BaseModel, Field
 
+from discipline.shared.logging import LogStream, get_stream_logger
+from discipline.signal.repository import (
+    get_signal_window_repository,
+    get_state_estimate_repository,
+)
+
 router = APIRouter(tags=["check_in"])
+logger = structlog.get_logger(__name__)
+
+# ---------------------------------------------------------------------------
+# Intensity → state label mapping (deterministic, no LLM).
+#
+# Bands are calibrated to the 0–10 self-report scale used in the SUDS
+# (Subjective Units of Distress Scale) and mirror the five state labels
+# accepted by StateEstimateCreate:
+#   stable / rising_urge / peak_urge / post_urge / baseline
+#
+# 0–3  → stable        (no significant urge)
+# 4–6  → rising_urge   (moderate, intervention eligible at next load)
+# 7–10 → peak_urge     (high — safety log at >=8, intervention recommended)
+# ---------------------------------------------------------------------------
+
+_STATE_MODEL_VERSION = "check-in-intensity-v1"
+
+
+def _intensity_to_state(intensity: int) -> str:
+    if intensity <= 3:
+        return "stable"
+    if intensity <= 6:
+        return "rising_urge"
+    return "peak_urge"
 
 
 # =============================================================================
@@ -147,29 +182,21 @@ async def submit_check_in(
     """Accept a self-reported urge check-in from the web app.
 
     The check-in is treated as a ``manual_checkin`` signal window and
-    queued for state-estimate recomputation.  High-intensity readings
-    (≥ 7) are eligible to surface intervention recommendations on the
-    next dashboard load.
+    immediately processed into a deterministic state estimate.
+    High-intensity readings (>= 8) emit a safety-stream event.
 
-    No PHI is stored — intensity + trigger tags are treated as
-    behavioural signals, not personally identifiable health data.
+    No PHI is stored — intensity + trigger tags are behavioural signals,
+    not personally identifiable health data.
 
-    Safety note: this endpoint never routes to the LLM and never
-    blocks on an LLM response.  If intensity >= 8 the response
-    includes a crisis shortcut URI for the caller to surface.
-
-    # TODO: implement signal processing pipeline
-    #   1. Write a SignalWindowRecord (source="manual_checkin") via
-    #      SignalWindowRepository.
-    #   2. Enqueue a state-estimate job for the user.
-    #   3. For intensity >= 8, log a safety-stream "check_in.high_intensity"
-    #      event (not T3 — that still requires C-SSRS / PHQ-9 item 9).
+    Safety note: this endpoint never routes to the LLM and never blocks
+    on an LLM response (CLAUDE.md Rule 1).
     """
     user_id = _derive_user_id(x_user_id)
     session_id = str(uuid.uuid4())
     now = datetime.now(tz=timezone.utc).isoformat()
     checked_in_at = body.checked_in_at or now
 
+    # 1. Persist the in-memory record for history queries.
     add_check_in(
         user_id=user_id,
         session_id=session_id,
@@ -178,10 +205,66 @@ async def submit_check_in(
         checked_in_at=checked_in_at,
     )
 
+    # 2. Write a SignalWindowRecord (source="manual_checkin").
+    samples_payload: dict[str, object] = {
+        "intensity": body.intensity,
+        "trigger_tags": body.trigger_tags,
+        "session_id": session_id,
+    }
+    samples_hash = hashlib.sha256(
+        json.dumps(samples_payload, sort_keys=True).encode()
+    ).hexdigest()[:32]
+
+    signal_repo = get_signal_window_repository()
+    state_updated = False
+    try:
+        await signal_repo.create(
+            user_id=user_id,
+            window_start=checked_in_at,
+            window_end=checked_in_at,
+            source="manual_checkin",
+            samples_hash=samples_hash,
+            samples_json=samples_payload,
+        )
+
+        # 3. Compute deterministic state estimate and persist it.
+        state_label = _intensity_to_state(body.intensity)
+        # Confidence is proportional to how far the intensity is from the
+        # band boundary — a simple heuristic, not a trained model.
+        confidence = 0.70 + 0.03 * min(body.intensity, 10)
+
+        state_repo = get_state_estimate_repository()
+        await state_repo.create(
+            user_id=user_id,
+            state_label=state_label,
+            confidence=round(confidence, 2),
+            model_version=_STATE_MODEL_VERSION,
+            inferred_at=now,
+            features_json={"intensity": body.intensity, "trigger_count": len(body.trigger_tags)},
+        )
+        state_updated = True
+    except Exception:
+        logger.exception("check_in.signal_pipeline_error", user_id=user_id)
+
+    # 4. Safety-stream event for high-intensity readings (>= 8).
+    # Not T3 — T3 still requires C-SSRS item 4/5/6 or PHQ-9 item 9.
+    if body.intensity >= 8:
+        try:
+            safety_log = get_stream_logger(LogStream.SAFETY)
+            safety_log.warning(
+                "check_in.high_intensity",
+                user_id=user_id,
+                intensity=body.intensity,
+                trigger_tags=body.trigger_tags,
+                checked_in_at=checked_in_at,
+            )
+        except Exception:
+            logger.exception("check_in.safety_log_error", user_id=user_id)
+
     return CheckInResponse(
         session_id=session_id,
         received_at=now,
-        state_updated=True,
+        state_updated=state_updated,
     )
 
 

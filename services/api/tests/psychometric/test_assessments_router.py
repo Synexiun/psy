@@ -21,20 +21,20 @@ import pytest
 from fastapi.testclient import TestClient
 
 from discipline.app import create_app
+from discipline.shared.middleware.rate_limit import limiter
 
 # ---- Fixtures --------------------------------------------------------------
 
 
 @pytest.fixture(autouse=True)
 def _reset_psychometric_stores() -> Any:
-    """Clear the module-level idempotency store and assessment
-    repository before and after each test.
+    """Clear the module-level idempotency store, assessment repository,
+    and rate-limiter buckets before and after each test.
 
-    Test isolation must match the production model where each request
-    is a fresh operation.  The idempotency cache exists for retry-
-    within-a-single-client (not cross-test fixture reuse), and the
-    assessment repository would otherwise accumulate records across
-    tests and blow up history-endpoint assertions about timeline size.
+    The rate-limiter reset is critical when running the full psychometric
+    suite: without it the 60-req/min global default fires partway through
+    classes like TestCssrsRouting, returning 429 instead of 201/422 and
+    causing cascading assertion failures.
     """
     from discipline.psychometric.repository import (
         get_assessment_repository,
@@ -43,9 +43,11 @@ def _reset_psychometric_stores() -> Any:
 
     get_idempotency_store().clear()
     get_assessment_repository().clear()
+    limiter._storage.reset()
     yield
     get_idempotency_store().clear()
     get_assessment_repository().clear()
+    limiter._storage.reset()
 
 
 @pytest.fixture
