@@ -277,6 +277,114 @@ describe('buildButtonClasses', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Spinner geometry (inline from web.tsx)
+// px map: sm=16, md=24, lg=32 — strokeWidth is hardcoded 3.
+// Quarter-arc: dash = 25% of circumference, gap = remainder.
+// These values drive the SVG strokeDasharray that animates the loading arc.
+// ---------------------------------------------------------------------------
+
+type SpinnerSize = 'sm' | 'md' | 'lg';
+
+function spinnerGeometry(size: SpinnerSize): {
+  dim: number;
+  radius: number;
+  circumference: number;
+  dash: number;
+  gap: number;
+} {
+  const px: Record<SpinnerSize, number> = { sm: 16, md: 24, lg: 32 };
+  const dim = px[size];
+  const radius = (dim - 6) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const dash = circumference * 0.25;
+  const gap = circumference - dash;
+  return { dim, radius, circumference, dash, gap };
+}
+
+describe('Spinner — radius per size (strokeWidth=3, 1.5px inset per side)', () => {
+  it('sm (16px): radius = (16 - 6) / 2 = 5', () => {
+    expect(spinnerGeometry('sm').radius).toBe(5);
+  });
+
+  it('md (24px): radius = (24 - 6) / 2 = 9', () => {
+    expect(spinnerGeometry('md').radius).toBe(9);
+  });
+
+  it('lg (32px): radius = (32 - 6) / 2 = 13', () => {
+    expect(spinnerGeometry('lg').radius).toBe(13);
+  });
+});
+
+describe('Spinner — circumference = 2π × radius', () => {
+  it('sm circumference ≈ 31.416', () => {
+    expect(spinnerGeometry('sm').circumference).toBeCloseTo(2 * Math.PI * 5, 3);
+  });
+
+  it('md circumference ≈ 56.549', () => {
+    expect(spinnerGeometry('md').circumference).toBeCloseTo(2 * Math.PI * 9, 3);
+  });
+
+  it('lg circumference ≈ 81.681', () => {
+    expect(spinnerGeometry('lg').circumference).toBeCloseTo(2 * Math.PI * 13, 3);
+  });
+});
+
+describe('Spinner — quarter-arc dash (25% of circumference)', () => {
+  it('dash + gap equals circumference for sm', () => {
+    const { circumference, dash, gap } = spinnerGeometry('sm');
+    expect(dash + gap).toBeCloseTo(circumference, 10);
+  });
+
+  it('dash + gap equals circumference for md', () => {
+    const { circumference, dash, gap } = spinnerGeometry('md');
+    expect(dash + gap).toBeCloseTo(circumference, 10);
+  });
+
+  it('dash + gap equals circumference for lg', () => {
+    const { circumference, dash, gap } = spinnerGeometry('lg');
+    expect(dash + gap).toBeCloseTo(circumference, 10);
+  });
+
+  it('dash is exactly 25% of circumference (quarter arc)', () => {
+    for (const size of ['sm', 'md', 'lg'] as SpinnerSize[]) {
+      const { circumference, dash } = spinnerGeometry(size);
+      expect(dash / circumference).toBeCloseTo(0.25, 10);
+    }
+  });
+
+  it('gap is exactly 75% of circumference (three-quarter gap)', () => {
+    for (const size of ['sm', 'md', 'lg'] as SpinnerSize[]) {
+      const { circumference, gap } = spinnerGeometry(size);
+      expect(gap / circumference).toBeCloseTo(0.75, 10);
+    }
+  });
+});
+
+describe('Spinner — size ordering', () => {
+  it('radius increases from sm to md to lg', () => {
+    expect(spinnerGeometry('sm').radius).toBeLessThan(spinnerGeometry('md').radius);
+    expect(spinnerGeometry('md').radius).toBeLessThan(spinnerGeometry('lg').radius);
+  });
+
+  it('circumference increases from sm to md to lg', () => {
+    expect(spinnerGeometry('sm').circumference).toBeLessThan(
+      spinnerGeometry('md').circumference,
+    );
+    expect(spinnerGeometry('md').circumference).toBeLessThan(
+      spinnerGeometry('lg').circumference,
+    );
+  });
+
+  it('dim values are 16 / 24 / 32', () => {
+    expect(spinnerGeometry('sm').dim).toBe(16);
+    expect(spinnerGeometry('md').dim).toBe(24);
+    expect(spinnerGeometry('lg').dim).toBe(32);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
 describe('buildInputClasses', () => {
   it('returns base classes by default', () => {
     const classes = buildInputClasses();
