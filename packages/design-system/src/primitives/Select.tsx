@@ -76,6 +76,12 @@ export function Select({
     );
   }
 
+  if (process.env.NODE_ENV !== 'production' && options !== undefined && groups !== undefined) {
+    console.warn(
+      '[Select] Both `options` and `groups` were provided. They are mutually exclusive — pass only one. `options` will render before `groups`.',
+    );
+  }
+
   // exactOptionalPropertyTypes: only spread props when defined so Radix does
   // not receive the key set to undefined.
   const optionalRootProps = {
