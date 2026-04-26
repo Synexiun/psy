@@ -21,6 +21,7 @@
 import * as React from 'react';
 import { useId, useRef } from 'react';
 import * as RadixCheckbox from '@radix-ui/react-checkbox';
+import type { CheckedState as RadixCheckedState } from '@radix-ui/react-checkbox';
 
 export interface CheckboxOption {
   value: string;
@@ -68,7 +69,7 @@ export function CheckboxGroup({
     console.warn('[CheckboxGroup] Component is changing between controlled and uncontrolled mode.');
   }
 
-  const handleCheckedChange = (optionValue: string, checked: RadixCheckbox.CheckedState) => {
+  const handleCheckedChange = (optionValue: string, checked: RadixCheckedState) => {
     if (checked === 'indeterminate') return;
     const next = checked
       ? [...checkedValues, optionValue]
