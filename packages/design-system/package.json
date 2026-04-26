@@ -10,7 +10,8 @@
     ".": "./src/index.ts",
     "./tokens": "./src/tokens.ts",
     "./primitives/web": "./src/primitives/web.tsx",
-    "./primitives/web-utils": "./src/primitives/web.ts"
+    "./primitives/web-utils": "./src/primitives/web.ts",
+    "./primitives/Button": "./src/primitives/Button.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
