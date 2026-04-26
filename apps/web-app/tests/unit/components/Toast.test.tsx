@@ -170,14 +170,57 @@ describe('useToast — dismiss() removes message', () => {
     expect(dismissBtn).toBeDefined();
     fireEvent.click(dismissBtn!);
 
+    // In jsdom, CSS animations don't fire animationend, so Radix keeps the
+    // element in the DOM with data-state="closed" rather than unmounting it.
+    // Accept either: fully removed OR transitioning out (data-state="closed").
     await waitFor(() => {
-      expect(screen.queryByText('Dismiss me')).toBeNull();
+      const el = screen.queryByText('Dismiss me');
+      expect(
+        el === null || el.closest('[data-state="closed"]') !== null,
+      ).toBe(true);
     });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 4. Variant classes
+// 4. maxToasts cap
+// ---------------------------------------------------------------------------
+
+describe('ToastProvider — maxToasts cap', () => {
+  it('respects maxToasts — drops oldest when limit is exceeded', async () => {
+    const TestHarness = () => {
+      const { toast } = useToast();
+      return (
+        <button
+          onClick={() => {
+            toast({ title: 'Toast 1' });
+            toast({ title: 'Toast 2' });
+            toast({ title: 'Toast 3' });
+            toast({ title: 'Toast 4' }); // exceeds maxToasts=3
+          }}
+        >
+          Add 4 toasts
+        </button>
+      );
+    };
+    render(
+      <ToastProvider maxToasts={3}>
+        <TestHarness />
+      </ToastProvider>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /add 4/i }));
+    // Only 3 most-recent toasts should be visible; oldest is dropped
+    await waitFor(() => {
+      expect(screen.queryByText('Toast 1')).toBeNull();
+      expect(screen.getByText('Toast 2')).toBeInTheDocument();
+      expect(screen.getByText('Toast 3')).toBeInTheDocument();
+      expect(screen.getByText('Toast 4')).toBeInTheDocument();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 5. Variant classes
 // ---------------------------------------------------------------------------
 
 describe('useToast — variant classes', () => {
@@ -229,7 +272,7 @@ describe('useToast — variant classes', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 5. Toast with action renders an action button
+// 6. Toast with action renders an action button
 // ---------------------------------------------------------------------------
 
 describe('useToast — action prop', () => {
@@ -251,7 +294,7 @@ describe('useToast — action prop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Toast with description renders the description text
+// 7. Toast with description renders the description text
 // ---------------------------------------------------------------------------
 
 describe('useToast — description prop', () => {
@@ -270,7 +313,7 @@ describe('useToast — description prop', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. Viewport position classes
+// 8. Viewport position classes
 // ---------------------------------------------------------------------------
 
 describe('ToastProvider — viewport position classes', () => {
@@ -365,7 +408,7 @@ describe('ToastProvider — viewport position classes', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 8. axe accessibility
+// 9. axe accessibility
 // ---------------------------------------------------------------------------
 
 const axeWithConfig = configureAxe({

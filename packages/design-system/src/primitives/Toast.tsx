@@ -125,6 +125,7 @@ export function ToastProvider({
   swipeDirection = 'right',
 }: ToastProviderProps): React.ReactElement {
   const [messages, setMessages] = React.useState<ToastMessage[]>([]);
+  const [dismissedIds, setDismissedIds] = React.useState<Set<string>>(new Set());
 
   const toast = React.useCallback((msg: Omit<ToastMessage, 'id'>) => {
     const id = Math.random().toString(36).slice(2);
@@ -134,27 +135,42 @@ export function ToastProvider({
     });
   }, [maxToasts]);
 
+  // Initiate Radix exit animation by toggling open=false rather than immediately
+  // removing from state. onOpenChange(false) fires after the animation completes
+  // and cleans up both states.
   const dismiss = React.useCallback((id: string) => {
-    setMessages((prev) => prev.filter((m) => m.id !== id));
+    setDismissedIds((prev) => new Set([...prev, id]));
   }, []);
 
   const positionClass = POSITION_CLASSES[position];
 
+  const contextValue = React.useMemo(
+    () => ({ toast, dismiss, messages }),
+    [toast, dismiss, messages],
+  );
+
   return (
-    <ToastContext.Provider value={{ toast, dismiss, messages }}>
+    <ToastContext.Provider value={contextValue}>
       <RadixToast.Provider swipeDirection={swipeDirection}>
         {children}
         {messages.map((msg) => {
           const variantClass = VARIANT_CLASSES[msg.variant ?? 'default'];
-          const duration = msg.duration ?? 5000;
 
           return (
             <RadixToast.Root
               key={msg.id}
-              open
-              duration={duration === Infinity ? undefined : duration}
+              open={!dismissedIds.has(msg.id)}
+              duration={msg.duration ?? 5000}
               onOpenChange={(open) => {
-                if (!open) dismiss(msg.id);
+                if (!open) {
+                  // Animation complete — remove from both states
+                  setMessages((prev) => prev.filter((m) => m.id !== msg.id));
+                  setDismissedIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(msg.id);
+                    return next;
+                  });
+                }
               }}
               className={`group pointer-events-auto relative flex w-full max-w-sm flex-col gap-1 rounded-lg border bg-surface-primary p-4 shadow-lg transition-all ease-default data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[swipe=end]:translate-x-[var(--radix-toast-swipe-end-x)] data-[swipe=move]:translate-x-[var(--radix-toast-swipe-move-x)] data-[swipe=move]:transition-none data-[swipe=end]:animate-out data-[state=closed]:slide-out-to-end-full data-[state=open]:slide-in-from-end-full ${variantClass}`.trim()}
             >
