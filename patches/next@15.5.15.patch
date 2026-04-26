@@ -1,0 +1,12 @@
+diff --git a/dist/build/webpack/plugins/define-env-plugin.js b/dist/build/webpack/plugins/define-env-plugin.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..4951faa1cdc9e2312671e6cdb957bbcfa57b1287
+--- /dev/null
++++ b/dist/build/webpack/plugins/define-env-plugin.js
+@@ -0,0 +1,6 @@
++// Compatibility shim for @storybook/experimental-nextjs-vite (via vite-plugin-storybook-nextjs).
++// In Next.js 15.5 the getDefineEnv function was moved from
++// next/dist/build/webpack/plugins/define-env-plugin.js to
++// next/dist/build/define-env.js. This shim re-exports it from the new path
++// so Storybook 8.6 can still resolve it.
++module.exports = require('../../define-env.js');
