@@ -539,6 +539,9 @@ importers:
       '@visx/axis':
         specifier: ^3.12.0
         version: 3.12.0(react@19.2.5)
+      '@visx/curve':
+        specifier: ^3.12.0
+        version: 3.12.0
       '@visx/group':
         specifier: ^3.12.0
         version: 3.12.0(react@19.2.5)

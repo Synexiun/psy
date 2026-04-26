@@ -268,60 +268,8 @@ export function Tooltip({ tooltipContent, side = 'top', className = '', children
 }
 
 // ---------------------------------------------------------------------------
-// Sparkline (SVG mini-chart)
+// Sparkline (SVG mini-chart) — re-exported from the design-system package
 // ---------------------------------------------------------------------------
 
-export interface SparklineProps {
-  data: number[];
-  width?: number;
-  height?: number;
-  color?: string;
-  strokeWidth?: number;
-  ariaLabel?: string;
-}
-
-export function Sparkline({
-  data,
-  width = 120,
-  height = 40,
-  color = 'var(--color-accent-bronze)',
-  strokeWidth = 2,
-  ariaLabel,
-}: SparklineProps): React.ReactElement | null {
-  if (data.length < 2) return null;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-
-  const points = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - ((v - min) / range) * height;
-    return `${x},${y}`;
-  });
-
-  const firstPointX = points[0]?.split(',')[0] ?? '0';
-  const lastPointX = points[points.length - 1]?.split(',')[0] ?? String(width);
-  const areaPoints = `${firstPointX},${height} ` + points.join(' ') + ` ${lastPointX},${height}`;
-
-  return (
-    <svg
-      width={width}
-      height={height}
-      viewBox={`0 0 ${width} ${height}`}
-      role="img"
-      aria-label={ariaLabel}
-      className="overflow-visible"
-    >
-      <polygon points={areaPoints} fill={color} opacity={0.12} />
-      <polyline
-        points={points.join(' ')}
-        fill="none"
-        stroke={color}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
+export type { SparklineProps } from '@disciplineos/design-system/primitives/Sparkline';
+export { Sparkline } from '@disciplineos/design-system/primitives/Sparkline';

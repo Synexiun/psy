@@ -20,7 +20,8 @@
     "./primitives/Skeleton": "./src/primitives/Skeleton.tsx",
     "./primitives/Tooltip": "./src/primitives/Tooltip.tsx",
     "./primitives/Badge": "./src/primitives/Badge.tsx",
-    "./primitives/ProgressRing": "./src/primitives/ProgressRing.tsx"
+    "./primitives/ProgressRing": "./src/primitives/ProgressRing.tsx",
+    "./primitives/Sparkline": "./src/primitives/Sparkline.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -38,6 +39,7 @@
   "dependencies": {
     "@radix-ui/react-tooltip": "^1.2.8",
     "@visx/axis": "^3.12.0",
+    "@visx/curve": "^3.12.0",
     "@visx/group": "^3.12.0",
     "@visx/scale": "^3.12.0",
     "@visx/shape": "^3.12.0",
