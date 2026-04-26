@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 
 export function useReducedMotion(): boolean {
   const [reduced, setReduced] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
+    if (typeof window === 'undefined') return true;
     const ambientOff = document.documentElement.getAttribute('data-ambient-motion') === 'off';
     const osReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     return ambientOff || osReduced;

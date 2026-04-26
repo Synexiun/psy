@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 
@@ -23,8 +23,7 @@ describe('useReducedMotion', () => {
     expect(result.current).toBe(true);
   });
 
-  it('returns true when the Settings flag is set', () => {
-    document.documentElement.setAttribute('data-ambient-motion', 'off');
+  it('reacts to the Settings flag toggling on at runtime', async () => {
     vi.spyOn(window, 'matchMedia').mockImplementation(() => ({
       matches: false,
       media: '',
@@ -36,6 +35,11 @@ describe('useReducedMotion', () => {
       onchange: null,
     }));
     const { result } = renderHook(() => useReducedMotion());
+    expect(result.current).toBe(false);
+
+    await act(async () => {
+      document.documentElement.setAttribute('data-ambient-motion', 'off');
+    });
     expect(result.current).toBe(true);
   });
 
