@@ -4,6 +4,8 @@ import { ThemeProvider } from 'next-themes';
 import { NextIntlClientProvider } from 'next-intl';
 import '../src/app/globals.css';
 
+const RTL_LOCALES = new Set(['ar', 'fa']);
+
 const preview: Preview = {
   globalTypes: {
     theme: {
@@ -24,7 +26,9 @@ const preview: Preview = {
         icon: 'globe',
         items: [
           { value: 'en', title: 'English (LTR)' },
-          { value: 'ar', title: 'Arabic (RTL)' },
+          { value: 'fr', title: 'Français (LTR)' },
+          { value: 'ar', title: 'Arabic / عربي (RTL)' },
+          { value: 'fa', title: 'Persian / فارسی (RTL)' },
         ],
         dynamicTitle: true,
       },
@@ -32,9 +36,9 @@ const preview: Preview = {
   },
   decorators: [
     (Story, context) => {
-      const theme = (context.globals['theme'] as string) ?? 'dark';
-      const locale = (context.globals['locale'] as string) ?? 'en';
-      const dir = locale === 'ar' ? 'rtl' : 'ltr';
+      const theme = (context.globals['theme'] as string | undefined) ?? 'dark';
+      const locale = (context.globals['locale'] as string | undefined) ?? 'en';
+      const dir = RTL_LOCALES.has(locale) ? 'rtl' : 'ltr';
       return (
         <ThemeProvider
           attribute="data-theme"
@@ -43,7 +47,12 @@ const preview: Preview = {
           themes={['dark', 'light']}
           disableTransitionOnChange
         >
-          <NextIntlClientProvider locale={locale} messages={{}}>
+          <NextIntlClientProvider
+            locale={locale}
+            messages={{}}
+            onError={() => {}}
+            getMessageFallback={({ key }) => key}
+          >
             <div dir={dir} lang={locale} style={{ minHeight: '100vh', padding: '1rem' }}>
               <Story />
             </div>
