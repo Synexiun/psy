@@ -19,7 +19,8 @@
     "./primitives/Spinner": "./src/primitives/Spinner.tsx",
     "./primitives/Skeleton": "./src/primitives/Skeleton.tsx",
     "./primitives/Tooltip": "./src/primitives/Tooltip.tsx",
-    "./primitives/Badge": "./src/primitives/Badge.tsx"
+    "./primitives/Badge": "./src/primitives/Badge.tsx",
+    "./primitives/ProgressRing": "./src/primitives/ProgressRing.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
