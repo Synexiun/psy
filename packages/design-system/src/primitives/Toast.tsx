@@ -58,6 +58,8 @@ export interface ToastProviderProps {
   position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
   /** Max toasts visible at once (default: 5) */
   maxToasts?: number;
+  /** Swipe direction for dismiss gesture — pass "left" for RTL layouts (default: "right") */
+  swipeDirection?: 'right' | 'left' | 'up' | 'down';
 }
 
 export interface UseToastReturn {
@@ -120,6 +122,7 @@ export function ToastProvider({
   children,
   position = 'bottom-right',
   maxToasts = 5,
+  swipeDirection = 'right',
 }: ToastProviderProps): React.ReactElement {
   const [messages, setMessages] = React.useState<ToastMessage[]>([]);
 
@@ -139,7 +142,7 @@ export function ToastProvider({
 
   return (
     <ToastContext.Provider value={{ toast, dismiss, messages }}>
-      <RadixToast.Provider swipeDirection="right">
+      <RadixToast.Provider swipeDirection={swipeDirection}>
         {children}
         {messages.map((msg) => {
           const variantClass = VARIANT_CLASSES[msg.variant ?? 'default'];

@@ -88,15 +88,15 @@ function TestHarnessDismiss() {
   );
 }
 
+// Type alias to avoid import overhead in helper signatures
+type ToastProviderProps = React.ComponentProps<typeof ToastProvider>;
+
 function renderWithProvider(
   ui: React.ReactElement,
   position: ToastProviderProps['position'] = 'bottom-right',
 ) {
   return render(<ToastProvider position={position}>{ui}</ToastProvider>);
 }
-
-// Type alias to avoid import overhead in helper signatures
-type ToastProviderProps = React.ComponentProps<typeof ToastProvider>;
 
 // ---------------------------------------------------------------------------
 // 1. ToastProvider renders children

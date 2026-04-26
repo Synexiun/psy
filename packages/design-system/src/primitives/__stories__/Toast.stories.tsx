@@ -258,7 +258,7 @@ export const RTLContext: Story = {
   name: 'RTL context (ar/fa)',
   render: () => (
     <div dir="rtl" style={{ padding: '2rem', minWidth: '360px', position: 'relative' }}>
-      <ToastProvider position="bottom-right">
+      <ToastProvider position="bottom-right" swipeDirection="left">
         <div className="flex flex-col items-start gap-3">
           <p className="text-sm text-ink-secondary">
             position=&quot;bottom-right&quot; — در RTL در گوشه پایین-چپ ظاهر می‌شود
