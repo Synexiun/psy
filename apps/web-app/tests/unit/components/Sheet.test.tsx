@@ -308,7 +308,7 @@ describe('Sheet — trigger ARIA attributes', () => {
     expect(trigger).toHaveAttribute('aria-haspopup', 'dialog');
   });
 
-  it('trigger button has data-state="closed" when sheet is closed', () => {
+  it('trigger button has aria-expanded="false" when sheet is closed', () => {
     render(
       <Sheet
         title="Trigger state"
@@ -318,7 +318,7 @@ describe('Sheet — trigger ARIA attributes', () => {
       </Sheet>,
     );
     const trigger = screen.getByRole('button', { name: /open sheet/i });
-    expect(trigger).toHaveAttribute('data-state', 'closed');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 });
 
@@ -331,9 +331,9 @@ describe('Sheet — accessibility', () => {
     renderOpen({ title: 'Accessible title' });
     const dialog = screen.getByRole('dialog');
     const labelledBy = dialog.getAttribute('aria-labelledby');
-    expect(labelledBy).toBeTruthy();
+    expect(labelledBy).not.toBeNull();
     // The referenced element should contain the title text
-    const titleEl = document.getElementById(labelledBy!);
+    const titleEl = document.getElementById(labelledBy as string);
     expect(titleEl?.textContent).toBe('Accessible title');
   });
 
@@ -487,20 +487,20 @@ const axe = configureAxe({
 
 describe('Sheet — axe accessibility', () => {
   it('open right sheet has no critical a11y violations', async () => {
-    const { container } = renderOpen({ side: 'right' });
-    const results = await axe(container);
+    renderOpen({ side: 'right' });
+    const results = await axe(document.body);
     expect(results).toHaveNoViolations();
   });
 
   it('open sheet with description has no critical a11y violations', async () => {
-    const { container } = renderOpen({ description: 'Sheet description' });
-    const results = await axe(container);
+    renderOpen({ description: 'Sheet description' });
+    const results = await axe(document.body);
     expect(results).toHaveNoViolations();
   });
 
   it('open left sheet has no critical a11y violations', async () => {
-    const { container } = renderOpen({ side: 'left' });
-    const results = await axe(container);
+    renderOpen({ side: 'left' });
+    const results = await axe(document.body);
     expect(results).toHaveNoViolations();
   });
 });
