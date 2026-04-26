@@ -58,7 +58,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ): React.ReactElement {
     const base =
-      'inline-flex items-center justify-center font-medium transition-all duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+      'inline-flex items-center justify-center font-medium transition-all duration-fast ease-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
 
     const sizing: Record<ButtonSize, string> = {
       sm: 'h-8 px-3 text-sm rounded-md gap-1.5',
@@ -101,7 +101,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
   function Card({ tone = 'neutral', hover = false, className = '', children, ...props }, ref): React.ReactElement {
-    const base = 'rounded-xl border bg-surface-secondary p-5 transition-all duration-base ease-standard';
+    const base = 'rounded-xl border bg-surface-secondary p-5 transition-all duration-base ease-default';
 
     const tones: Record<string, string> = {
       neutral: 'border-border-subtle shadow-sm',
@@ -130,7 +130,7 @@ export function ProgressRing({
   size = 120,
   strokeWidth = 10,
   color = 'var(--color-accent-bronze)',
-  trackColor = 'var(--color-border-subtle)',
+  trackColor = 'var(--color-surface-tertiary)',
   label,
   sublabel,
   ariaLabel,
@@ -162,7 +162,7 @@ export function ProgressRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={dashoffset}
-          className="transition-all duration-slow ease-standard"
+          className="transition-all duration-slow ease-default"
         />
       </svg>
       {(label || sublabel) && (
