@@ -1154,6 +1154,7 @@ The rule scans JSX `className` strings for banned utility classes (`ml-*`, `mr-*
 - [ ] Run to fail.
 - [ ] Implement the rule. Use `context.report` with a descriptive message including the suggested replacement (e.g., `"Use 'ms-4' instead of 'ml-4' for RTL support"`).
 - [ ] Run on `apps/web-app` to see if any existing code violates: `cd D:/Psycho && pnpm --filter @disciplineos/web-app exec eslint src --rule '@disciplineos/discipline/no-physical-tailwind-properties: error'` (after registering the plugin in Task 2.5). If existing code violates, fix it (don't silence the rule).
+- [ ] **Documented exception (per spec §7.1):** chart-internal physical properties inside `BarChart` and `Sparkline` are the ONLY allowed exception. They may use `// eslint-disable-next-line @disciplineos/discipline/no-physical-tailwind-properties -- chart axis layout` with a justification comment. All other code must be fixed, never disabled.
 - [ ] Commit (along with Task 2.1 scaffold).
 
 ---
@@ -1177,12 +1178,13 @@ The rule scans JSX expression children. When the expression is a bare `{identifi
     - `<span>{user.intensity}</span>` (member-expression form)
   - **Negative (must NOT flag):**
     - `<div>{formatNumberClinical(score)}</div>` (already wrapped)
-    - `<div className="clinical-number">{score}</div>` (CSS-class escape hatch)
+    - `<div className="clinical-number">{score}</div>` (CSS-class escape hatch — exact match)
+    - `<div className="text-lg clinical-number font-semibold">{score}</div>` (CSS-class escape hatch — substring within multi-class string; rule MUST split on whitespace, not exact-match)
     - `<div>{regularCount}</div>` (unrelated identifier)
     - `<div>{phq9Skipped}</div>` (matches `^phq9/i` but is a boolean/state flag — confirms the regex is too greedy and we must add a deny-list OR document that booleans co-located with `phq9` get a known-false-positive carve-out via `clinical-number` className wrap)
     - `<div>{auditCompleted}</div>` (matches `^auditC/` but is a boolean state — same carve-out reasoning)
 - [ ] Run to fail.
-- [ ] Implement. If the negative `phq9Skipped` / `auditCompleted` cases force the rule to add a `BOOLEAN_SUFFIXES = ['Skipped', 'Completed', 'Enabled', 'Pending']` deny-list before reporting, do so — the rule must not false-positive on adjacent boolean state, or developers will start sprinkling eslint-disable comments and the rule loses authority.
+- [ ] Implement. The rule **MUST** include a `BOOLEAN_SUFFIXES = ['Skipped', 'Completed', 'Enabled', 'Pending', 'Required', 'Visible', 'Active', 'Disabled']` deny-list — when an identifier matches a clinical regex AND ends with a boolean suffix, do NOT report. Without this carve-out, developers will sprinkle eslint-disable comments on legitimate boolean state and the rule loses authority.
 - [ ] Run to pass.
 - [ ] Commit.
 
@@ -1199,6 +1201,8 @@ The rule fires on `ImportDeclaration` nodes when:
 - AND the import source is `@disciplineos/llm-client` (or any path containing `llm-client`)
 
 Next.js 15 `app/` is ESM-only — `require()` is not used, so we only visit `ImportDeclaration` (no `CallExpression` for `require()`). The second test axis is import shape (default vs named), not module system.
+
+**Cross-platform path matching:** The path-glob check MUST normalize backslashes to forward slashes before comparing (`context.filename.replace(/\\/g, '/')`). Windows is a supported dev target per `CLAUDE.md` "Dev environment" section; without normalization the rule silently no-ops on Windows because `**/app/**/crisis/**` won't match `app\[locale]\crisis\page.tsx`.
 
 - [ ] Write the test — fixtures with paths set via the rule-tester `filename` option. ≥4 invalid + ≥2 valid:
   - **Invalid (must flag):**
@@ -1259,7 +1263,7 @@ Next.js 15 `app/` is ESM-only — `require()` is not used, so we only visit `Imp
 - [ ] Plugin builds and tests pass: `pnpm --filter @disciplineos/eslint-plugin-discipline test`
 - [ ] After Task 2.5 wires the plugin, **re-run all three rules against `apps/web-app/src` and confirm zero violations**: `cd D:/Psycho/apps/web-app && pnpm lint` (this is the post-wiring verification gate that Task 2.2 deferred — do it here, not earlier; if anything fires, fix the calling code, never silence the rule)
 - [ ] All three rules each have ≥6 unit-test cases (rule 2: ≥10 incl. boolean false-positive negatives; rule 3: ≥6 across crisis/companion × default/named)
-- [ ] Manual sanity check: temporarily plant a deliberate violation (e.g., `<div>{phq9Score}</div>` in a real component file), run lint, confirm error message, revert. Proves the rule fires on real code, not just rule-tester fixtures.
+- [ ] Manual sanity check: temporarily plant a deliberate violation (e.g., `<div>{phq9Score}</div>` in a real component file), run lint, confirm error message, revert. Proves the rule fires on real code, not just rule-tester fixtures. **Do NOT commit the planted violation** — `git status` must be clean before moving on.
 
 **Stop here. Run plan-document-reviewer on this chunk before proceeding.**
 
@@ -1456,16 +1460,15 @@ Next.js 15 `app/` is ESM-only — `require()` is not used, so we only visit `Imp
 |------|-----------|-------|
 | 4.21 | `PageShell` | the page-level layout shell |
 | 4.22 | `TopBar` | theme toggle + locale switcher + notifications bell badge — mirrors fully in RTL |
-| 4.23 | `SidebarNav` | Lucide + custom icons (per spec §3 — 12 custom icons land here) |
+| 4.23 | `SidebarNav` | Lucide + custom icons. **Source of the 12 custom SVGs:** they ship as part of the Phase 0 brand foundation under `packages/design-system/src/icons/custom/*.svg` (delivered via Chunk 1 alongside tokens — if missing at task start, HALT and surface). This task imports them; it does not author them. |
 | 4.24 | `BottomNav` | mobile-shape; 5 slots max (per spec §5) |
 | 4.25 | `WizardShell` | multi-step shell with save-and-resume |
 
 ### 4.4 — Net-new data-display primitives (4) — Visx-backed
 
-> **Pre-task:** Install Visx in `packages/design-system` if not already present (`pnpm --filter @disciplineos/design-system add @visx/group @visx/scale @visx/shape @visx/axis @visx/text`). Single commit before 4.26.
-
 | Task | Component | Notes |
 |------|-----------|-------|
+| 4.25.5 | `(Visx install)` | `pnpm --filter @disciplineos/design-system add @visx/group @visx/scale @visx/shape @visx/axis @visx/text` — single dedicated commit. Lands BEFORE 4.26 (4.11 Sparkline refresh also depends on Visx, so this commit precedes both). |
 | 4.26 | `Stat` | hero number + label + delta; uses `formatNumberClinical` only when `clinical` prop is true (generic primitive — clinical use is opt-in) |
 | 4.27 | `Trend` | Stat + Sparkline composition; takes `useStubs`-resolvable data prop |
 | 4.28 | `RingChart` | multi-segment ProgressRing extension |
@@ -1603,7 +1606,7 @@ Same TDD-per-component template as Chunk 4 (the new template), but each clinical
 - `estimateStateClientMirror_parity_with_server_for_all_intensities_0_to_10` — parameterized over 11 cases (0..10)
 
 **5.3 — `BreathingPulse`:**
-- `breathingPulse_inhale_exhale_phase_durations_locked_to_4000ms_each` — assert the animation's `inhale` and `exhale` phase durations are exactly 4000ms each (deterministic timing, not visual regression — read animation config or expose via `data-phase-duration` attribute for testing)
+- `breathingPulse_inhale_exhale_phase_durations_locked_to_4000ms_each` — assert the animation's `inhale` and `exhale` phase durations are exactly 4000ms each. **Implementation contract:** the component MUST expose the timing on the rendered DOM via `data-inhale-ms="4000"` and `data-exhale-ms="4000"` attributes. The test reads those attributes — do NOT inspect animation internals or stub `requestAnimationFrame`. The data attribute is self-documenting and survives styling changes.
 - `breathingPulse_suppressed_when_useReducedMotion_returns_true` — when the hook reports reduced motion (OS prefers-reduced-motion OR `data-ambient-motion="off"`), the component renders a static state instead of animating
 
 **5.4 — `ResilienceRing`:**
@@ -1626,7 +1629,7 @@ Same TDD-per-component template as Chunk 4 (the new template), but each clinical
 - `rciDelta_renders_latin_delta_in_fa_locale` (Rule #9) — delta `-3`, locale `fa`, expect `'-3'` not `'-۳'`
 
 **5.8 — `CompassionTemplate`:**
-- `compassionTemplate_loads_from_shared_rules_relapse_templates_json` (Rule #4) — assert templates resolve via `import templates from '@/data/relapse_templates.json'` where `@/data/relapse_templates.json` is a build-time bundling of `D:/Psycho/shared-rules/relapse_templates.json`. The component MUST NOT contain hand-rolled template strings; a Vitest gate greps the component source for any string literal containing words like `"failed"`, `"reset"`, `"streak"`, etc., and fails if found.
+- `compassionTemplate_loads_from_shared_rules_relapse_templates_json` (Rule #4) — assert templates resolve via `import templates from '@/data/relapse_templates.json'` where `@/data/relapse_templates.json` is a build-time bundling of `D:/Psycho/shared-rules/relapse_templates.json`. The component MUST NOT contain hand-rolled template strings; a Vitest gate parses the component source via `@typescript-eslint/parser` and walks the AST for `Literal` and `TemplateLiteral` nodes ONLY (NOT identifiers / member expressions / comments — that would false-positive on words like `resetState` or doc text), failing if any match the forbidden phrases (`/\b(failed|streak[- ]?reset|you (failed|lost))\b/i`). Identifier-level matches are explicitly excluded.
 - `compassionTemplate_renders_verbatim_no_interpolation` (Rule #4) — given a template with `{{user_name}}`, the component does NOT substitute (interpolation is a clinical-content modification that requires QA sign-off; v1 renders verbatim)
 - `relapseSurface_does_not_contain_streak_reset_copy` — scans rendered output for forbidden phrases ("streak reset", "you failed", etc.)
 - `compassionTemplate_uses_fraunces_soft_60_font_axis` — visual / class-name assertion
@@ -1643,7 +1646,7 @@ Same TDD-per-component template as Chunk 4 (the new template), but each clinical
 - `insightCard_renders_latin_numerics_under_fa_locale` (Rule #9) — any numeric in the card body renders Latin
 
 **5.11 — `safety/emergency-numbers.ts` constant:**
-- `frontend_emergency_numbers_match_backend_byte_equivalence` — Vitest CI gate: read backend `services/api/src/discipline/safety/emergency_numbers.py`, extract the `EMERGENCY_NUMBERS` literal via Python pre-process (or re-emit as JSON in the backend build), `JSON.stringify` the frontend export, assert byte-equal
+- `frontend_emergency_numbers_match_backend_byte_equivalence` — Vitest CI gate. **Preferred implementation:** add a one-line Python build step `python -c "from discipline.safety.emergency_numbers import EMERGENCY_NUMBERS; import json; print(json.dumps(EMERGENCY_NUMBERS, sort_keys=True))" > services/api/build/emergency_numbers.json` and check both source-of-truth files into the same PR. The Vitest gate reads the JSON artifact + the frontend export and asserts byte-equal. **Fallback (only if the build-step path is rejected):** read the `.py` source directly and parse the literal — fragile because it depends on the literal's surface formatting; treat as last resort.
 
 ---
 
@@ -1668,6 +1671,9 @@ describe('CRITICAL clinical contracts (per CLAUDE.md non-negotiables)', () => {
   it('RCIDelta: renders-latin-delta-in-fa', () => { /* ... */ });
   it('ResilienceRing: day-count-latin-in-fa', () => { /* ... */ });
   it('InsightCard: renders-latin-numerics-in-fa', () => { /* ... */ });
+
+  // From 5.6 — pinned PHQ-9 thresholds parity with backend (Rule: pinned per Kroenke 2001)
+  it('phq9Thresholds: frontend-backend-value-equality', () => { /* ... */ });
 
   // From 5.8 — Rule #4 (compassion templates from JSON, no failure framing)
   it('CompassionTemplate: loads-from-shared-rules-relapse-templates-json', () => { /* ... */ });
@@ -1734,7 +1740,8 @@ Steps:
   - Are hotline numbers inlined from a local JSON at server-render time? (if no → REBUILD)
   - Are `tel:` / `sms:` rendered as plain anchors (works with JS disabled)? (if no → REBUILD)
 - [ ] Record the decision as a one-paragraph note in the PR description for Task 6.8 (e.g., "Audit found `'use client'` + a `useEffect` fetch — REBUILD as Server Component" OR "Audit found Server Component + inlined data — POLISH only: token refresh + Lucide icons").
-- [ ] No commit at this step — the decision lives in the 6.8 PR description. Move to Task 6.1.
+- [ ] **Mirror the same one-paragraph note as a top-of-file comment** in the refactored `crisis/page.tsx` once 6.8 lands (e.g., `// /crisis route: REBUILT 2026-04-26 — was 'use client' + useEffect fetch; now Server Component with inlined hotline data per spec §7.7. See PR #N for audit details.`). PR descriptions are not preserved as long-term archeology; the source comment is.
+- [ ] No commit at this step — the decision lives in the 6.8 PR description (and the source comment lands with that PR). Move to Task 6.1.
 
 ---
 
@@ -1751,7 +1758,7 @@ Steps:
 | 6.7a | Refresh TopBar + SidebarNav + BottomNav + ThemeToggle + LocaleSwitcher + WordmarkSvg (nav primitives) | `components/{TopBar,SidebarNav,BottomNav,ThemeToggle,LocaleSwitcher,WordmarkSvg}.tsx` | covered by every screen's E2E | spec §5.4 |
 | 6.7b | NotificationsDrawer (Sheet behavior + bell badge + unread count — separate concern from nav primitives) | `components/NotificationsDrawer.tsx` + `hooks/useNotificationCount.ts` (stub-fed) | new `tests/e2e/notifications-drawer.spec.ts` | spec §5.4, §6.6 |
 | 6.8 | Refresh `/crisis` route — POLISH or REBUILD per Task 6.0 decision | `app/[locale]/crisis/page.tsx` (per spec §7.7: no `'use client'`, no `<Suspense>`, no client fetch, hotline data inlined at server-render, `tel:`/`sms:` server-rendered, JS-disabled functional); ESLint rule `discipline/no-llm-on-crisis-route` MUST pass on this route; SW precache entry covers this route (verified via Workbox `precache.js` glob from Chunk 3 task 3.2) | `tests/e2e/crisis.spec.ts` with `--javaScriptEnabled=false` assertion AND assertion that `tel:` anchors render server-side (visible in `view-source:`) | spec §5.1 + §7.7 |
-| 6.9 | **Middleware update — preserve `/:locale/crisis(.*)` in PUBLIC_ROUTES + emit `X-Phi-Boundary: 1` on canonical PHI route list** | `src/middleware.ts` (clerkMiddleware wrapping `createMiddleware(routing)`); set `X-Phi-Boundary: 1` for: `/reports*`, `/assessments/history*`, `/journal*`, `/patterns*` (per spec §7.6 — note `/api/exports/fhir-r4` lives backend-side, not in this client middleware) | `tests/unit/middleware-routes.test.ts` with TWO regression guards: (1) `crisis_route_remains_in_public_routes_after_refactor` — fails if anyone removes `/:locale/crisis(.*)` from `PUBLIC_ROUTES` (CLAUDE.md non-negotiable #1); (2) `phi_routes_emit_boundary_header` — iterates the canonical PHI route list and asserts each emits the header | spec §7.6 + CLAUDE.md "common pitfalls" |
+| 6.9 | **Middleware update — preserve `/:locale/crisis(.*)` in PUBLIC_ROUTES + emit `X-Phi-Boundary: 1` on canonical PHI route list** | `src/middleware.ts` (clerkMiddleware wrapping `createMiddleware(routing)`); set `X-Phi-Boundary: 1` for: `/reports*`, `/assessments/history*`, `/journal*`, `/patterns*` (per spec §7.6 — note `/api/exports/fhir-r4` lives backend-side, not in this client middleware; **add a one-line comment in `tests/unit/middleware-routes.test.ts` explaining the omission so a future contributor doesn't add it and break the test**) | `tests/unit/middleware-routes.test.ts` with TWO regression guards: (1) `crisis_route_remains_in_public_routes_after_refactor` — fails if anyone removes `/:locale/crisis(.*)` from `PUBLIC_ROUTES` (CLAUDE.md non-negotiable #1); (2) `phi_routes_emit_boundary_header` — iterates the canonical PHI route list and asserts each emits the header | spec §7.6 + CLAUDE.md "common pitfalls" |
 | 6.10 | Client-side `usePhiAudit` hook + `apiFetch` interceptor | `src/hooks/usePhiAudit.ts`, `src/lib/api.ts` | new spec `tests/e2e/phi-audit.spec.ts` (asserts `/api/audit/phi-read` is called for each PHI route from §7.6) | spec §7.6 |
 
 **Per-task acceptance:**
@@ -1782,13 +1789,13 @@ Steps:
 
 **Pre-task: clinical-QA scheduling** — see R8 in spec §11. Pre-book reviewer slots for Companion + Reports + FHIR schema *before* this chunk starts.
 
-**Pre-task: ESLint rule extension to companion route** — Before Task 7.4 begins, confirm the `discipline/no-llm-on-crisis-route` rule from Chunk 2 already covers `app/[locale]/companion/**` (it does, per Chunk 2 Task 2.4 fixtures). Run `pnpm lint` from `apps/web-app`; rule must be active before any file is created under `companion/`. Halt if the rule is not wired.
+**Pre-task: ESLint rule extension to companion route** — Before Task 7.4 begins, confirm the `discipline/no-llm-on-crisis-route` rule from Chunk 2 already covers `app/[locale]/companion/**` (it does, per Chunk 2 Task 2.4 fixtures). Run `pnpm lint` from `apps/web-app`; rule must be active before any file is created under `companion/`. **Verify with a deliberate negative test:** create a throwaway file `apps/web-app/src/app/[locale]/companion/__verify_rule__.tsx` containing `import llm from '@disciplineos/llm-client';`, run `pnpm lint`, confirm the rule fires with the expected message, then DELETE the throwaway file (verify `git status` clean before proceeding). This proves the rule fires on real source paths, not just rule-tester fixtures. Halt if the rule is not wired or does not fire.
 
 **Locale-parity gate (applies to every task in this chunk):** Every new screen ships translation keys in `packages/i18n-catalog/src/catalogs/{en,fr,ar,fa}.json` in the SAME PR as the screen. Non-EN locales carry `_meta.status: "draft"` until native review. The `localeFallback_draft_key_falls_back_to_en_silently` Vitest gate in `clinical-contracts.test.ts` (from Chunk 5 §5.12) flips from `it.todo` to live in this chunk and asserts no untranslated key surfaces a missing-translation placeholder to users.
 
 | Order | Task | Files | Dependencies / blockers |
 |-------|------|-------|-------------------------|
-| 7.1 | Reports landing + detail (incl. **FHIR R4 export download action** per spec §5.5 + CLAUDE.md cross-ref `Docs/Technicals/13_Analytics_Reporting.md`) | `app/[locale]/reports/page.tsx`, `reports/[period]/page.tsx`; `hooks/useReports.ts`; `components/FhirExportButton.tsx` (calls `/api/exports/fhir-r4`, requires step-up auth — UI handles 401-with-stepUp-required response); `tests/e2e/reports.spec.ts`; locale catalog keys for `reports.*` in en/fr/ar/fa | clinical-QA on RCIDelta interpretation; FHIR schema sign-off (parallel with implementation); step-up re-auth flow available |
+| 7.1 | Reports landing + detail (incl. **FHIR R4 export download action** per spec §5.5 + CLAUDE.md cross-ref `Docs/Technicals/13_Analytics_Reporting.md`) | `app/[locale]/reports/page.tsx`, `reports/[period]/page.tsx`; `hooks/useReports.ts`; `components/FhirExportButton.tsx` (calls `/api/exports/fhir-r4`, requires step-up auth — UI handles 401-with-stepUp-required response by invoking **Clerk's built-in step-up factor verification flow** via `clerkClient.users.verifyTOTP` / `verifyPasskey`, NOT a custom modal; the same step-up trigger is shared with `/settings/privacy` destructive actions per spec §7.6 / R3); `tests/e2e/reports.spec.ts`; locale catalog keys for `reports.*` in en/fr/ar/fa | clinical-QA on RCIDelta interpretation; FHIR schema sign-off (parallel with implementation); step-up re-auth flow available |
 | 7.2 | Patterns landing + detail — **note: PatternsPreviewTile (small dashboard summary) was built in Chunk 6 task 6.1; THIS task uses the full `InsightCard` from Chunk 5 §5.10 in a list/detail view** | `app/[locale]/patterns/page.tsx`, `patterns/[id]/page.tsx`; `hooks/usePatterns.ts`; `tests/e2e/patterns.spec.ts`; locale catalog keys for `patterns.*` | InsightCard from Chunk 5; do NOT reuse PatternsPreviewTile here |
 | 7.3 | Library landing + category + article | `app/[locale]/library/page.tsx`, `library/[category]/page.tsx`, `library/[category]/[slug]/page.tsx`; `hooks/useLibrary.ts`; `tests/e2e/library.spec.ts`; locale catalog keys for `library.*` | content team supplies categories + initial article slugs (5 categories per spec §5.5) |
 | 7.4 | Companion — **route is LLM-prohibited (spec §7.7); ESLint rule confirmed live via pre-task above** | `app/[locale]/companion/page.tsx`; `hooks/useCompanion.ts`; `tests/e2e/companion.spec.ts`; locale catalog keys for `companion.*` | CompassionTemplate from Chunk 5; `companionRoute_has_zero_llm_imports` gate (in `clinical-contracts.test.ts` §5.12) flips from `it.todo` to live in this chunk; clinical-QA review on copy + flow |
