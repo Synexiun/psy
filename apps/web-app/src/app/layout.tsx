@@ -31,7 +31,7 @@ export const metadata: Metadata = {
 // in the locale layout, so nonce reading is collocated there.
 export default function RootLayout({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <html>
+    <html suppressHydrationWarning>
       <body>
         <Providers>{children}</Providers>
       </body>
