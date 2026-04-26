@@ -27,6 +27,7 @@ from discipline.reports.fhir_export import (
     AssessmentSession,
     UrgeCheckInRecord,
     _assessment_observation,
+    _patient_resource,
     _urge_observation,
 )
 
@@ -131,3 +132,46 @@ class TestUrgeObservation:
         result = _urge_observation(_checkin(checked_in_at=eastern))
         # 07:00-05:00 = 12:00 UTC
         assert result["effectiveDateTime"] == "2026-01-15T12:00:00Z"
+
+
+# ---------------------------------------------------------------------------
+# _patient_resource — HIPAA PHI privacy contract
+# ---------------------------------------------------------------------------
+
+
+class TestPatientResource:
+    def test_resource_type_is_patient(self) -> None:
+        result = _patient_resource("user-abc")
+        assert result["resourceType"] == "Patient"
+
+    def test_id_is_user_id(self) -> None:
+        result = _patient_resource("user-xyz-123")
+        assert result["id"] == "user-xyz-123"
+
+    def test_no_name_field(self) -> None:
+        result = _patient_resource("u1")
+        assert "name" not in result
+
+    def test_no_birthdate_field(self) -> None:
+        assert "birthDate" not in _patient_resource("u1")
+
+    def test_no_address_field(self) -> None:
+        assert "address" not in _patient_resource("u1")
+
+    def test_no_telecom_field(self) -> None:
+        assert "telecom" not in _patient_resource("u1")
+
+    def test_no_identifier_field(self) -> None:
+        assert "identifier" not in _patient_resource("u1")
+
+    def test_meta_profile_present(self) -> None:
+        result = _patient_resource("u1")
+        assert "meta" in result
+        assert "profile" in result["meta"]  # type: ignore[index]
+
+    def test_meta_profile_is_fhir_r4_patient(self) -> None:
+        profiles = _patient_resource("u1")["meta"]["profile"]  # type: ignore[index]
+        assert any("fhir" in str(p).lower() for p in profiles)
+
+    def test_returns_dict(self) -> None:
+        assert isinstance(_patient_resource("u1"), dict)
