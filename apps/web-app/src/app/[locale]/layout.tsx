@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages, setRequestLocale } from 'next-intl/server';
 import { notFound } from 'next/navigation';
-import { Inter, IBM_Plex_Sans_Arabic, Vazirmatn } from 'next/font/google';
+import { Inter, Fraunces, Vazirmatn } from 'next/font/google';
 import { headers } from 'next/headers';
 import { ClerkProvider } from '@clerk/nextjs';
 import { isRtl, type Locale } from '@disciplineos/i18n-catalog';
@@ -15,11 +15,11 @@ const inter = Inter({
   variable: '--font-inter',
 });
 
-const plexArabic = IBM_Plex_Sans_Arabic({
-  subsets: ['arabic'],
-  weight: ['400', '500', '600', '700'],
+const fraunces = Fraunces({
+  subsets: ['latin'],
   display: 'swap',
-  variable: '--font-plex-arabic',
+  variable: '--font-fraunces',
+  axes: ['SOFT', 'WONK', 'opsz'],
 });
 
 const vazirmatn = Vazirmatn({
@@ -71,11 +71,14 @@ export default async function LocaleLayout({
   // stamp it onto any inline scripts it emits, satisfying the nonce-based CSP.
   const headersList = await headers();
   const nonce = headersList.get('x-nonce') ?? '';
+  const isFa = locale === 'fa';
+  const fontVars = `${inter.variable} ${fraunces.variable}${isFa ? ' ' + vazirmatn.variable : ''}`.trim();
   const shell = (
     <html
       lang={locale}
       dir={dir}
-      className={`${inter.variable} ${plexArabic.variable} ${vazirmatn.variable}`}
+      className={fontVars}
+      suppressHydrationWarning
     >
       <body className="min-h-screen bg-surface-primary text-ink-primary antialiased">
         <NextIntlClientProvider messages={messages}>
