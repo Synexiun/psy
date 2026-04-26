@@ -53,12 +53,9 @@ export const rule = createRule({
             });
             continue;
           }
-          for (const prefix of Object.keys(PREFIX_REPLACEMENTS)) {
+          for (const [prefix, replacer] of Object.entries(PREFIX_REPLACEMENTS)) {
             if (token.startsWith(prefix) && token.length > prefix.length) {
-              const suffix = token.slice(prefix.length);
-              const replacer = PREFIX_REPLACEMENTS[prefix];
-              if (replacer === undefined) continue;
-              const good = replacer(suffix);
+              const good = replacer(token.slice(prefix.length));
               context.report({
                 node,
                 messageId: 'usePhysicalLogical',
