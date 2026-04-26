@@ -333,9 +333,11 @@ Companion has no nav entry. Reached from: (a) check-in submit when user reports 
 │                  [Check in →]    7-segment outer        │
 │                                                         │
 │  ┌─ State ─────┐ ┌─ Patterns ─────┐ ┌─ Last 7 ─────┐   │
-│  │ HRV: mid    │ │ Top 2 insight  │ │ Sparkline    │   │
-│  │ Sleep 6.2h  │ │ previews       │ │ 7 ●●●○●●●    │   │
-│  │ Sparkline   │ │ All patterns → │ │ Open journal │   │
+│  │ HRV: mid    │ │ 2 light cards  │ │ Sparkline    │   │
+│  │ Sleep 6.2h  │ │ (title + 1-line│ │ 7 ●●●○●●●    │   │
+│  │ Sparkline   │ │ summary, no    │ │ Open journal │   │
+│  │             │ │ lifecycle UI)  │ │              │   │
+│  │             │ │ All patterns → │ │              │   │
 │  └─────────────┘ └────────────────┘ └──────────────┘   │
 │                                                         │
 │  [Check in]  [Use a tool]  [Open journal]              │
@@ -351,6 +353,8 @@ ResilienceRing center: Fraunces, `clinical-number`, `tabular-nums`, breathing pu
 **Empty (new user)**: ring shows "Day 1". State card shows "Wear your device for 3 days to see signal".
 
 **State card decision (recommended default)**: shows raw signal interpretation ("HRV: mid, sleep 6.2h") rather than soft framing ("Stable, with mild fatigue"). Clinically literate users want raw; over-soft erodes trust.
+
+**Patterns preview card vs Patterns landing**: the Dashboard preview is a lightweight 2-row teaser (title + 1-line summary) — *not* a full `InsightCard`. The full `InsightCard` (with dismiss/snooze/acknowledge lifecycle from Sprint 108) lives only on `/patterns` and `/patterns/[id]`. Reason: lifecycle UI on the Dashboard preview would invite accidental dismissal of a not-yet-read insight.
 
 ### 6.2 Check-in
 
@@ -799,8 +803,8 @@ PR cannot merge if any of:
 | **1 Generic primitives** | 2 | 15 new generic primitives (Slider … BarChart); Sparkline → Visx; Storybook stories per primitive | Design-system v2 ready for screen work |
 | **2 Clinical primitives** | 3 | ResilienceRing, UrgeSlider, SeverityBand, RCIDelta, CompassionTemplate, CrisisCard, InsightCard, BreathingPulse; `estimateStateClientMirror` w/ parity test; clinical-contract Vitest gates | Clinical contracts enforced at unit level |
 | **3 Existing screens refresh** | 4 | Dashboard, Check-in, Tools, Journal, Assessments, Settings — visual + interaction refresh, no IA change. **Existing E2E fixtures (`apps/web-app/tests/e2e/dashboard.spec.ts` and any other refreshed-screen specs) updated in the same PR as the screen refresh** — selector changes (data-testid renames, copy changes) must not lag the UI. | Existing 6 screens shipped on new system; brand visible; E2E green |
-| **4 New screens** | 5–6 | Wk 5: Reports + Patterns. Wk 6: Library + Companion + Notifications. Companion + Reports gated by clinical-QA review (see R8) | 5 new surfaces; v1 IA complete |
-| **5 Cross-cutting + offline** | 7 | SW offline queue (check-ins); SW push handler; SW `/crisis` precache for all shipping locales; performance work to budgets | Production-grade reliability layer |
+| **4 New screens** | 5–6 | Wk 5: Reports + Patterns. Wk 6: Library + Companion + Notifications. **"Notifications" here = the `/settings/notifications` config screen + the TopBar bell drawer (Sheet listing recent push events) — there is no standalone `/notifications` route in v1.** Companion + Reports gated by clinical-QA review (see R8) | 5 new surfaces; v1 IA complete |
+| **5 Cross-cutting + offline** | 7 | SW offline queue (check-ins); SW push handler (**security review per R3 — Clerk step-up auth pattern — completes BEFORE handler implementation, not after**); SW `/crisis` precache for all shipping locales; performance work to budgets | Production-grade reliability layer |
 | **6 Polish + clinical QA** | 8 | NVDA/JAWS/VoiceOver passes on top 4; fa locale visual review (Vazirmatn render); clinical QA on Companion + Crisis + safety items; Chromatic sign-off; perf audit | Release-ready |
 | **7 Launch** | 9 | Canary 10% × 10min → full shift; rollback armed; monitor error rates, LCP per route, axe-core production scan, PHI audit-stream coverage | v1 live; v1.1 backlog captured |
 
