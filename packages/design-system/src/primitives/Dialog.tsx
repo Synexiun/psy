@@ -62,7 +62,10 @@ export function Dialog({
   closeLabel = 'Close',
   className = '',
 }: DialogProps): React.ReactElement {
-  if (process.env.NODE_ENV !== 'production' && !title) {
+  if (
+    process.env.NODE_ENV !== 'production' &&
+    (title === null || title === undefined || title === false || title === '')
+  ) {
     console.warn('[Dialog] `title` is empty or falsy. The dialog will have no accessible label — screen readers will not announce a meaningful name. Provide a non-empty title.');
   }
 
