@@ -28,4 +28,48 @@ describe('registerSW', () => {
       Object.defineProperty(navigator, 'serviceWorker', origSW);
     }
   });
+
+  it('registers /sw.js immediately when readyState is complete', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const registerMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: registerMock },
+      configurable: true,
+    });
+    Object.defineProperty(document, 'readyState', {
+      value: 'complete',
+      configurable: true,
+      writable: true,
+    });
+
+    const { registerSW } = await import('@/lib/sw-register');
+    registerSW();
+
+    expect(registerMock).toHaveBeenCalledWith('/sw.js');
+  });
+
+  it('defers registration via load event when readyState is not complete', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    const registerMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'serviceWorker', {
+      value: { register: registerMock },
+      configurable: true,
+    });
+    Object.defineProperty(document, 'readyState', {
+      value: 'loading',
+      configurable: true,
+      writable: true,
+    });
+
+    const { registerSW } = await import('@/lib/sw-register');
+    registerSW();
+
+    // register should NOT have been called synchronously
+    expect(registerMock).not.toHaveBeenCalled();
+
+    // fire the load event to trigger the deferred registration
+    window.dispatchEvent(new Event('load'));
+
+    expect(registerMock).toHaveBeenCalledWith('/sw.js');
+  });
 });

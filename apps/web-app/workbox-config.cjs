@@ -1,7 +1,7 @@
 const { generateSW } = require('workbox-build');
 
 generateSW({
-  globDirectory: 'out/',
+  globDirectory: '../web-crisis/out/',
   globPatterns: [
     'en/crisis/**/*.html',
   ],
