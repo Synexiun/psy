@@ -33,6 +33,16 @@ ruleTester.run('no-llm-on-crisis-route', rule, {
       code: "import { ask } from '@disciplineos/llm-client';",
       filename: 'app/[locale]/journal/components/JournalEntry.tsx',
     },
+    // 4. Path containing "crisis" as part of a longer segment — must NOT be flagged
+    {
+      code: "import llm from '@disciplineos/llm-client';",
+      filename: 'app/[locale]/pre-crisis/page.tsx',
+    },
+    // 5. Path containing "crisis" as a prefix of a longer segment — must NOT be flagged
+    {
+      code: "import llm from '@disciplineos/llm-client';",
+      filename: 'app/[locale]/crisis-resources/page.tsx',
+    },
   ],
   invalid: [
     // 1. Crisis route × default import of @disciplineos/llm-client
@@ -63,6 +73,12 @@ ruleTester.run('no-llm-on-crisis-route', rule, {
     {
       code: "import llm from '@disciplineos/llm-client';",
       filename: 'app\\[locale]\\crisis\\page.tsx',
+      errors: [{ messageId: 'noLlmOnCrisisRoute' }],
+    },
+    // 6. Absolute POSIX path (CI on Linux) — must still be flagged
+    {
+      code: "import llm from '@disciplineos/llm-client';",
+      filename: '/home/ci/repo/src/app/[locale]/crisis/page.tsx',
       errors: [{ messageId: 'noLlmOnCrisisRoute' }],
     },
   ],

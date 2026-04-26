@@ -29,10 +29,11 @@ export const rule = createRule({
         // and relative paths (app/...) that start directly with the app directory.
         const inAppDir =
           filename.includes('/app/') || filename.startsWith('app/');
-        const isCrisisRoute = inAppDir && filename.includes('/crisis/');
-        const isCompanionRoute = inAppDir && filename.includes('/companion/');
+        const isCrisisRoute    = /(?:^|\/)crisis(?:\/|$)/.test(filename);
+        const isCompanionRoute = /(?:^|\/)companion(?:\/|$)/.test(filename);
+        const inCrisisOrCompanion = inAppDir && (isCrisisRoute || isCompanionRoute);
 
-        if (!isCrisisRoute && !isCompanionRoute) {
+        if (!inCrisisOrCompanion) {
           return;
         }
 
