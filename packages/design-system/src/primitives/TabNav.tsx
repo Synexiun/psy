@@ -63,6 +63,10 @@ export function TabNav({
   // Radix does not receive any key set to undefined.
   // When neither `value` nor `defaultValue` is provided, fall back to the
   // first tab's value so something is always selected on mount.
+  if (process.env.NODE_ENV !== 'production' && defaultValue === '') {
+    console.warn('[TabNav] `defaultValue` was provided as an empty string. No tab will be selected. Pass a valid tab value or omit the prop to auto-select the first tab.');
+  }
+
   const resolvedDefaultValue =
     defaultValue ?? (value === undefined ? (tabs[0]?.value ?? '') : undefined);
 
@@ -87,7 +91,7 @@ export function TabNav({
           <RadixTabs.Trigger
             key={tab.value}
             value={tab.value}
-            disabled={tab.disabled ?? false}
+            disabled={tab.disabled}
             className="relative -mb-px px-4 py-2.5 text-sm font-medium text-ink-tertiary transition-colors duration-fast ease-default hover:border-b-2 hover:border-border-emphasis hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-bronze/30 disabled:cursor-not-allowed disabled:opacity-50 data-[state=active]:border-b-2 data-[state=active]:border-accent-bronze data-[state=active]:font-medium data-[state=active]:text-ink-primary"
           >
             {tab.label}
