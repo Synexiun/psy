@@ -68,6 +68,7 @@ In `apps/web-app/src/app/globals.css` Tailwind v4 `@theme`. Dark is `:root`, lig
 --accent-teal:       hsl(173 35% 45%);   /* calm, urge-low, breathing */
 --accent-teal-soft:  hsl(173 25% 25%);
 
+--signal-stable:     hsl(173 45% 50%);   /* positive deltas, stable state, "improved" */
 --signal-warning:    hsl( 38 70% 55%);   /* mid-band urge / PHQ-9 moderate */
 --signal-crisis:     hsl(355 65% 48%);   /* oxblood — T3/T4 only */
 
@@ -96,8 +97,12 @@ Theme toggle persists via `localStorage` + Clerk user metadata (so it follows th
 
 - **Body**: `Inter` variable, weights 300–700, `font-feature-settings: 'cv11', 'ss01'` (single-storey `a`, slashed `0` — clinical legibility).
 - **Display**: `Fraunces` variable, default `font-variation-settings: 'SOFT' 30, 'WONK' 0`. Override `'SOFT' 60` in CompassionTemplate (warmer); `'SOFT' 0` in clinical scores (restrained).
-- **Arabic**: Inter falls back to `IBM Plex Sans Arabic` for Arabic glyphs (Inter is Latin-only).
-- **Persian**: `Vazirmatn` (loaded only when `locale === 'fa'` to save 85KB woff2 on other locales).
+- **Arabic glyph fallback**: declared in CSS as a font stack, not loaded as a separate `next/font` instance:
+  ```css
+  --font-body: 'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  ```
+  Browser glyph-coverage matching means Arabic codepoints render in Plex Arabic while Latin codepoints render in Inter, in the same paragraph.
+- **Persian**: `Vazirmatn` loaded as a separate `next/font/google` instance, gated on `locale === 'fa'` in `apps/web-app/src/app/[locale]/layout.tsx` so other locales don't download the 85KB woff2.
 
 Display serif applies to Latin glyphs only. Per Rule #9, clinical numbers stay Latin even in `ar`/`fa`, so Fraunces still renders the numbers in those locales.
 
@@ -178,7 +183,7 @@ The `clinical/` split is load-bearing: those primitives carry contractual rules 
 - `UrgeSlider` — replaces inline check-in slider. Thumb breathes at rest, gradient calm→bronze→crisis along track, value renders Latin via `formatNumberClinical`.
 - `SeverityBand` — chip for PHQ-9/GAD-7/AUDIT-C bands. Color + Latin number + clinical-neutral label. Bands sourced from pinned threshold constants (`PHQ9_SEVERITY_THRESHOLDS` etc.) — never hand-rolled.
 - `RCIDelta` — prior score → current score → significance flag (●●● / ●●○ / ●○○) per Jacobson & Truax 1991.
-- `CompassionTemplate` — relapse companion renderer. Reads from `shared-rules/relapse_templates.json`, renders with Fraunces SOFT 60. No LLM, no string interpolation of user-supplied text.
+- `CompassionTemplate` — relapse companion renderer. Reads from `shared-rules/relapse_templates.json` (per CLAUDE.md Rule #4 — backend prerequisite; directory and JSON file may need creation by an earlier sprint if not present), with deterministic selection by a function in the existing `discipline/clinical/` Python module (exact filename TBD by backend; the spec contracts on the *interface*, not the implementation file). Renders with Fraunces SOFT 60. No LLM, no string interpolation of user-supplied text.
 - `CrisisCard` — T3/T4 escalation card. Oxblood. `tel:` + `sms:` + safety-directory pull from local copy with `verifiedAt` ≤ 90 days check at render. Never feature-flagged.
 - `InsightCard` — pattern detail with dismiss / snooze (24h, 7d) / acknowledge lifecycle (Sprint 108 contract).
 
@@ -186,7 +191,7 @@ The `clinical/` split is load-bearing: those primitives carry contractual rules 
 
 ### 4.4 Reused / extended (existing 11)
 
-`Button`, `Card`, `Input`, `Textarea`, `Spinner`, `Divider`, `ProgressRing`, `Badge`, `Skeleton`, `Tooltip`, `Sparkline` — get token refresh (new HSL values, dark/light dual palette). No API changes; consumers untouched. `Sparkline` implementation swapped to Visx-based for parity with `BarChart`.
+`Button`, `Card`, `Input`, `Textarea`, `Spinner`, `Divider`, `ProgressRing`, `Badge`, `Skeleton`, `Tooltip`, `Sparkline` — get token refresh (new HSL values, dark/light dual palette). No API changes; consumers untouched. `Sparkline` internal implementation swapped to Visx-based for parity with `BarChart`, **preserving the existing prop contract** (`data`, `color`, `strokeWidth`, etc. — verified against `packages/design-system/src/primitives/web.tsx` Sparkline current API). Existing consumers (e.g. `MoodSparkline`) require no change.
 
 ### 4.5 Cut to v1.1
 
@@ -226,10 +231,12 @@ Storybook ships with v1. Every primitive has stories in {dark, light} × {en, ar
 /settings/notifications        Push + nudge config (NEW)
 /settings/privacy              Export/delete (POLISH)
 /settings/appearance           Theme + locale + motion (NEW)
-/crisis                        In-app crisis (POLISH)
+/crisis                        In-app crisis (POLISH-OR-REBUILD)
 ```
 
 `/crisis` is the *in-app* surface — authenticated, full design system, primary path. The `web-crisis` static-export app at `crisis.discipline.app` remains the SLO fallback. Both must always work; the in-app surface is what users hit 99% of the time. Per Rule #1 the in-app `/crisis` uses deterministic render — no LLM, hotline data inlined from local mirror at server-render time.
+
+**Scope flag for `/crisis`**: marked POLISH-OR-REBUILD because Phase 0 must verify the existing `/crisis` route in `apps/web-app/src/app/[locale]/crisis/` is currently a Server Component. If it uses any `'use client'` component or client-side data fetching, the §7.7 contract (synchronous Server Component, JS-disabled rendering) requires a rebuild — not a refresh. Phase 0 deliverable includes this audit; if rebuild is required, Phase 3 schedule absorbs it (the existing shell is small).
 
 `typedRoutes: true` is already enabled; every route above gets a typed `Href` and any internal `Link` to a non-existent route fails the build.
 
@@ -508,7 +515,7 @@ Tailwind v4 logical-property utilities: `ms-/me-`, `ps-/pe-`, `start-/end-`, `bo
 
 Applied to ResilienceRing center, every SeverityBand number, every Stat hero number, RCIDelta numbers, UrgeSlider value, assessment item totals.
 
-**Custom ESLint rule** `discipline/clinical-numbers-must-format` scans JSX for direct render of variables matching the clinical-numeric naming pattern (`*_total`, `intensity`, `score`, `phq*`, `gad*`, `audit_c_*`, `rci_*`) without `formatNumberClinical()` wrapper or `.clinical-number` className. CI fail.
+**Custom ESLint rule** `discipline/clinical-numbers-must-format` scans JSX for direct render of variables matching the clinical-numeric naming pattern in **both snake_case and camelCase forms**: `*_total` / `*Total`, `intensity`, `score`, `phq9*` / `phq9Score` / `phq_9_*`, `gad7*` / `gad7Score` / `gad_7_*`, `audit_c_*` / `auditC*`, `rci_*` / `rci*`, `severity`, `band`. Without `formatNumberClinical()` wrapper or `.clinical-number` className → CI fail. Pattern source-of-truth lives in `tools/eslint-plugin-discipline/src/clinical-numbers.ts` as a regex array; updates reviewed by clinical lead.
 
 **Boundary**: clinical = a number a clinician would compare across locales (PHQ-9 = 12). Body = a UI count ("3 patterns active") — those localize per locale.
 
@@ -545,22 +552,28 @@ Testing layered:
 1. Read entries for user's country-locale from local mirror
 2. Drop any entry where `verifiedAt + 90 days < today`
 3. If empty → fall back to ICASA international list (locale-agnostic, hand-vetted)
-4. If still empty → render pinned `EMERGENCY_NUMBERS` constant + "Call your local emergency number"
+4. If still empty → render pinned `EMERGENCY_NUMBERS` constant from `apps/web-app/src/lib/safety/emergency-numbers.ts` (a frozen `Record<CountryCode, { tel: string; label: string }>` mirroring the same constant at `services/api/src/discipline/safety/emergency_numbers.py`; CI byte-equivalence check across the two) + "Call your local emergency number"
 
 CI byte-equality between `packages/safety-directory/src/hotlines.json` and `services/api/data/safety/hotlines.json` is in place; freshness check runs at render (not build) because the 90-day boundary moves daily. Cached for 1h per session via TanStack Query.
 
 ### 7.6 PHI boundary (Rule #11)
 
-PHI-reading surfaces: Reports, Assessments history, Journal, Pattern detail.
+**Routes that emit `X-Phi-Boundary: 1`** (canonical list — every backend handler under these path patterns sets the header; client interceptor matches by route prefix):
+
+- `/reports`, `/reports/[period]`
+- `/assessments/history`, `/assessments/history/[id]`
+- `/journal`, `/journal/[id]`
+- `/patterns`, `/patterns/[id]`
+- `/api/exports/fhir-r4` (also requires step-up auth)
 
 Server response sets `X-Phi-Boundary: 1`. Client: `apiFetch` interceptor reads header → fire-and-forget POST to `/api/audit/phi-read` with `{route, renderedAt, sessionId}`. Audit stream receives both the server-side fetch event and the client-side view event — required for the regulatory chain.
 
-Client audit failure does not block UI. Failure raises a server-side alert via security stream.
+Client audit failure does not block UI. Failure raises a server-side alert via security stream. Vitest gate `phi_routes_emit_boundary_header` iterates the canonical list above against the test client; any new PHI route added to the routing table without a matching entry in the list fails the test.
 
 ### 7.7 Crisis path determinism (Rule #1)
 
 `/crisis` route in web-app:
-- Custom ESLint rule `discipline/no-llm-on-crisis-route`: import of `@disciplineos/llm-client` from `app/[locale]/crisis/**` fails CI
+- Custom ESLint rule `discipline/no-llm-on-crisis-route`: import of `@disciplineos/llm-client` from `app/[locale]/crisis/**` **and `app/[locale]/companion/**`** fails CI (Companion is also LLM-prohibited per Rule #4)
 - No `<Suspense>` boundaries, no client-side data fetching — fully synchronous Server Component
 - Hotline data inlined from local JSON at server-render time
 - `tel:` and `sms:` rendered server-side, hydrated immediately, function with JS disabled
@@ -670,7 +683,7 @@ Per-route `loading.tsx` files render route-specific skeletons. Skeleton dimensio
 Service worker (Workbox) registered in `apps/web-app/src/lib/sw-register.ts`.
 
 **Precache (installed at first visit):**
-- `/[locale]/crisis` for every shipped locale
+- `/[locale]/crisis` for every shipped locale (Phase 5 deliverable — see §10). **Phase 0 ships a minimum SW that precaches `/crisis` for the user's *current* locale only**, to validate the SW pipeline and route registration without taking on the multi-locale complexity until clinical-QA has signed off on `ar`/`fa` crisis copy.
 - Local safety directory JSON (~80KB)
 - Inter + Fraunces + Vazirmatn (Vazirmatn only when `fa` is shipped) woff2
 - App shell HTML
@@ -737,6 +750,8 @@ Coverage bars (per CLAUDE.md): 80% overall, **95% for `clinical/` + intervention
 - `localeFallback_draft_key_falls_back_to_en_silently`
 - `crisisRoute_has_zero_llm_imports`
 - `crisisRoute_renders_tel_links_server_side`
+- `companionRoute_has_zero_llm_imports` (Rule #4 — CompassionTemplate is deterministic, never LLM)
+- `phi_routes_emit_boundary_header` (iterates the canonical PHI route list from §7.6)
 
 Each maps to a CLAUDE.md rule. Failing test = unconditional merge block.
 
@@ -783,8 +798,8 @@ PR cannot merge if any of:
 | **0 Foundation** | 1 | Token refresh in `globals.css` (dark + light HSL, Fraunces, type scale, motion); custom ESLint rules; minimum SW (precache `/crisis` only); Storybook setup; Chromatic baseline | Existing app re-themed, no IA change; every primitive has dual-theme + dual-locale stories |
 | **1 Generic primitives** | 2 | 15 new generic primitives (Slider … BarChart); Sparkline → Visx; Storybook stories per primitive | Design-system v2 ready for screen work |
 | **2 Clinical primitives** | 3 | ResilienceRing, UrgeSlider, SeverityBand, RCIDelta, CompassionTemplate, CrisisCard, InsightCard, BreathingPulse; `estimateStateClientMirror` w/ parity test; clinical-contract Vitest gates | Clinical contracts enforced at unit level |
-| **3 Existing screens refresh** | 4 | Dashboard, Check-in, Tools, Journal, Assessments, Settings — visual + interaction refresh, no IA change | Existing 6 screens shipped on new system; brand visible |
-| **4 New screens** | 5–6 | Wk 5: Reports + Patterns. Wk 6: Library + Companion + Notifications. Companion + Reports gated by clinical-QA review | 5 new surfaces; v1 IA complete |
+| **3 Existing screens refresh** | 4 | Dashboard, Check-in, Tools, Journal, Assessments, Settings — visual + interaction refresh, no IA change. **Existing E2E fixtures (`apps/web-app/tests/e2e/dashboard.spec.ts` and any other refreshed-screen specs) updated in the same PR as the screen refresh** — selector changes (data-testid renames, copy changes) must not lag the UI. | Existing 6 screens shipped on new system; brand visible; E2E green |
+| **4 New screens** | 5–6 | Wk 5: Reports + Patterns. Wk 6: Library + Companion + Notifications. Companion + Reports gated by clinical-QA review (see R8) | 5 new surfaces; v1 IA complete |
 | **5 Cross-cutting + offline** | 7 | SW offline queue (check-ins); SW push handler; SW `/crisis` precache for all shipping locales; performance work to budgets | Production-grade reliability layer |
 | **6 Polish + clinical QA** | 8 | NVDA/JAWS/VoiceOver passes on top 4; fa locale visual review (Vazirmatn render); clinical QA on Companion + Crisis + safety items; Chromatic sign-off; perf audit | Release-ready |
 | **7 Launch** | 9 | Canary 10% × 10min → full shift; rollback armed; monitor error rates, LCP per route, axe-core production scan, PHI audit-stream coverage | v1 live; v1.1 backlog captured |
@@ -797,13 +812,14 @@ Aggressive but credible — Phase 0 leverages existing design-system foundation 
 
 | ID | Risk | Mitigation |
 |----|------|------------|
-| R1 | Fraunces variable subset must include all glyphs across en/fr/ar (currency, math, punctuation) | Subset audit during Phase 0; ship full Fraunces if subset is too brittle |
+| R1 | Fraunces variable subset must include all Latin glyphs needed across en/fr (display headings) **and Latin digits in every locale** (per Rule #9, clinical numbers render in Latin even in `ar`/`fa`, so Fraunces still needs to render `0–9` + comma + period in those locales). Currency/math/punctuation in display copy may surface gaps. | Glyph-coverage audit during Phase 0 against representative copy + clinical-number samples in all 4 locales; ship full Fraunces if the subset proves brittle |
 | R2 | Offline queue conflict resolution: user offline 6h, 3 queued check-ins replay against fresher server state | Clinical-QA on dedup window (recommended: 60s); decide before Phase 5 |
 | R3 | Push notification deep-link to Companion — payload metadata only; deep link must re-auth before showing PHI | Security review during Phase 5; align with Clerk step-up auth pattern already used for `/settings/privacy` |
 | R4 | Tools landing — bandit selects suggested tools; how does this compose with the "all tools" library view? | Decision: landing = top 3 suggestions + "Browse all →" link to full library. Confirm with backend `intervention` module owner before Phase 3 |
 | R5 | Reports FHIR R4 export — schema needs clinical-QA approval | Spec the export schema during Phase 4 in parallel with Reports UI; QA review before Phase 6 |
 | R6 | Vazirmatn 85KB font budget on `fa` users — combined with Fraunces this is heavy on slow 3G | Defer to Phase 5 perf audit; consider `font-display: swap` + system-fa-fallback (Tahoma) as instant fallback |
 | R7 | Storybook + Chromatic monthly cost (~$250/mo) | Confirm budget before Phase 0 commit; alternative is local visual diff tooling (slower review cycle) |
+| R8 | **Phase 4 schedule risk** — Companion and Reports both need clinical-QA cycles that are externally paced (clinical lead availability, template review, RCI-display sign-off, FHIR schema review). Two clinical-QA dependencies converge on a 2-week window. | Pre-book clinical-QA review slots before Phase 4 start; draft Companion templates + Reports schema during Phase 0–2 so review can begin in parallel with implementation; cut Notifications to v1.1 if Phase 4 slips beyond Week 6 |
 
 ---
 
@@ -819,13 +835,12 @@ Aggressive but credible — Phase 0 leverages existing design-system foundation 
 8. **Reports tool-efficacy on sparse data** — Recommended default: hide with "Not enough data this week" message. False confidence here erodes the entire Reports surface.
 9. **Reduce-motion link in Companion footer** — Recommended default: include. Companion users may be in a state where breathing pulse feels intrusive even if normally tolerated.
 10. **Custom ESLint rules timeline** — Recommended default: ship as Phase 0 prerequisite (~1.5 days engineering); enforcement begins Phase 1.
-11. **PHI audit dispatch** — Recommended default: both server (fetch event) and client (view event). Required for the regulatory chain per Rule #11 intent.
-12. **Service worker offline queue scope** — Recommended default: full queue for check-ins (Phase 5). If schedule pressure, defer to v1.1 and ship only `/crisis` precache (Rule #1 minimum).
-13. **`estimateStateClientMirror` vs no client coloring** — Recommended default: mirror with parity test. Crisp UX > strict single-source-of-truth in this case (parity test catches drift).
-14. **Visx for Sparkline** — Recommended default: yes. Adds ~15KB gz; unifies chart layer with BarChart.
-15. **Offline check-in dedup window** — Recommended default: 60 seconds (most-recent-wins). Confirm with clinical-QA during Phase 5.
-16. **Chromatic vs local visual diff** — Recommended default: Chromatic ($250/mo). Visual regression rigor matters for a 37-component system. Confirm budget.
-17. **Phase ordering — existing-screens refresh before new screens** — Recommended default: keep current order. Iterative perceived improvement; lower risk.
+11. **Service worker offline queue scope** — Recommended default: full queue for check-ins (Phase 5). If schedule pressure, defer to v1.1 and ship only `/crisis` precache (Rule #1 minimum).
+12. **`estimateStateClientMirror` vs no client coloring** — Recommended default: mirror with parity test. Crisp UX > strict single-source-of-truth in this case (parity test catches drift).
+13. **Visx for Sparkline** — Recommended default: yes. Adds ~15KB gz; unifies chart layer with BarChart.
+14. **Offline check-in dedup window** — Recommended default: 60 seconds (most-recent-wins). Confirm with clinical-QA during Phase 5.
+15. **Chromatic vs local visual diff** — Recommended default: Chromatic ($250/mo). Visual regression rigor matters for a 37-component system. Confirm budget.
+16. **Phase ordering — existing-screens refresh before new screens** — Recommended default: keep current order. Iterative perceived improvement; lower risk.
 
 ---
 
