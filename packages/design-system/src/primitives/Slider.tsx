@@ -55,18 +55,24 @@ export function Slider({
   // Resolve the thumb count from whichever mode is active; fall back to [0].
   const thumbValues = value ?? defaultValue ?? [0];
 
+  // exactOptionalPropertyTypes: only include optional props when defined so
+  // Radix does not receive the key set to undefined.
+  const optionalRootProps = {
+    ...(value !== undefined && { value }),
+    ...(defaultValue !== undefined && { defaultValue }),
+    ...(onValueChange !== undefined && { onValueChange }),
+    ...(onValueCommit !== undefined && { onValueCommit }),
+    ...(dir !== undefined && { dir }),
+  };
+
   return (
     <RadixSlider.Root
       className={`relative flex w-full touch-none select-none items-center ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`.trim()}
-      value={value}
-      defaultValue={defaultValue}
       min={min}
       max={max}
       step={step}
       disabled={disabled}
-      onValueChange={onValueChange}
-      onValueCommit={onValueCommit}
-      dir={dir}
+      {...optionalRootProps}
     >
       <RadixSlider.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-surface-tertiary">
         <RadixSlider.Range className="absolute h-full bg-accent-bronze" />
