@@ -12,6 +12,9 @@ build/
 **/.next/
 **/out/
 
+# --- Generated service worker (built by sw:build after next export) ---
+apps/web-app/public/sw.js
+
 # --- Playwright / test artifacts ---
 **/test-results/
 **/playwright-report/
