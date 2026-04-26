@@ -1,9 +1,9 @@
-/* eslint-disable quotes */
 'use client';
 
 import { use, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
+import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
 import { Button, Card } from '@/components/primitives';
 import { submitCheckIn } from '@/lib/api';
@@ -172,7 +172,7 @@ function CheckInInner({ locale }: { locale: string }) {
                       aria-valuemin={0}
                       aria-valuemax={10}
                       aria-valuenow={intensity}
-                      className="w-full h-2 rounded-full appearance-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
+                      className="clinical-number w-full h-2 rounded-full appearance-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
                       style={{
                         background: `linear-gradient(to right, ${intensityColor(intensity)} ${trackFill}%, var(--color-surface-tertiary) ${trackFill}%)`,
                       }}
@@ -185,7 +185,7 @@ function CheckInInner({ locale }: { locale: string }) {
                       style={{ color: intensityColor(intensity) }}
                       aria-live="polite"
                     >
-                      {intensity}
+                      {formatNumberClinical(intensity)}
                     </span>
                     <span>{t('app.urge.intensityScaleMax')}</span>
                   </div>

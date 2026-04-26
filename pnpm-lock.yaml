@@ -145,6 +145,9 @@ importers:
       '@axe-core/playwright':
         specifier: ^4.10.0
         version: 4.11.2(playwright-core@1.59.1)
+      '@disciplineos/eslint-plugin-discipline':
+        specifier: workspace:*
+        version: link:../../tools/eslint-plugin-discipline
       '@next/bundle-analyzer':
         specifier: ^15.0.0
         version: 15.5.15

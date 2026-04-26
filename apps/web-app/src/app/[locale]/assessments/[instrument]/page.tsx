@@ -20,7 +20,7 @@ import { use } from 'react';
 import { notFound } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
-import { formatNumberClinical, formatScoreWithMax } from '@disciplineos/i18n-catalog';
+import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
 import { Button, Card } from '@/components/primitives';
 
@@ -535,7 +535,7 @@ function SummaryView({
               {t('assessments.session.severityLabel')}
             </span>
             {band && (
-              <span className="rounded-full bg-surface-tertiary px-3 py-0.5 text-sm font-semibold text-ink-primary">
+              <span className="clinical-number rounded-full bg-surface-tertiary px-3 py-0.5 text-sm font-semibold text-ink-primary">
                 {band}
               </span>
             )}

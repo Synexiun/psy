@@ -40,7 +40,7 @@ export function MoodSparkline({ data, isLoading }: MoodSparklineProps) {
           strokeWidth={2}
           ariaLabel={`Mood trend over last ${intensities.length} check-ins`}
         />
-        <div className="mb-1 text-right">
+        <div className="mb-1 text-end">
           <p className="text-2xl font-semibold text-ink-primary tabular-nums">
             {intensities[intensities.length - 1]}
           </p>
