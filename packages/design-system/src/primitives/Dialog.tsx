@@ -38,13 +38,15 @@ export interface DialogProps {
   /** Uncontrolled initial open state */
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
-  /** Trigger element that opens the dialog (rendered via Radix Trigger asChild) */
-  trigger?: React.ReactNode;
-  /** Dialog title — required for accessibility (maps to aria-labelledby) */
+  /** Trigger element — must be a single ReactElement (Radix asChild clones it) */
+  trigger?: React.ReactElement;
+  /** Dialog title — required for accessibility (maps to aria-labelledby); must be non-empty */
   title: React.ReactNode;
   /** Optional description — maps to aria-describedby */
   description?: React.ReactNode;
   children: React.ReactNode;
+  /** Label for the close button — translate for non-en locales (default: "Close") */
+  closeLabel?: string;
   /** Additional classes applied to the panel container */
   className?: string;
 }
@@ -57,8 +59,13 @@ export function Dialog({
   title,
   description,
   children,
+  closeLabel = 'Close',
   className = '',
 }: DialogProps): React.ReactElement {
+  if (process.env.NODE_ENV !== 'production' && !title) {
+    console.warn('[Dialog] `title` is empty or falsy. The dialog will have no accessible label — screen readers will not announce a meaningful name. Provide a non-empty title.');
+  }
+
   // exactOptionalPropertyTypes: only spread props when defined so Radix
   // does not receive any key set to undefined.
   const optionalRootProps = {
@@ -96,7 +103,7 @@ export function Dialog({
                   strokeLinecap="round"
                 />
               </svg>
-              <span className="sr-only">Close</span>
+              <span className="sr-only">{closeLabel}</span>
             </RadixDialog.Close>
           </div>
           {description !== undefined && (
