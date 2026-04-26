@@ -53,21 +53,24 @@ export function Switch({
 }: SwitchProps): React.ReactElement {
   const switchId = useId();
 
+  if (process.env.NODE_ENV !== 'production' && label !== undefined && ariaLabel !== undefined) {
+    console.warn('[Switch] Both `label` and `ariaLabel` were provided. `ariaLabel` is ignored when a visible label is present — the label provides the accessible name via htmlFor.');
+  }
+
   // exactOptionalPropertyTypes: only spread props when defined so Radix
   // does not receive the key set to undefined.
   const optionalRootProps = {
     ...(checked !== undefined && { checked }),
     ...(defaultChecked !== undefined && { defaultChecked }),
     ...(onCheckedChange !== undefined && { onCheckedChange }),
+    // aria-label: only include when no visible label is present.
+    ...(label === undefined && ariaLabel !== undefined && { 'aria-label': ariaLabel }),
   };
 
   const root = (
     <RadixSwitch.Root
       id={switchId}
       disabled={disabled}
-      // When a visible label is present, htmlFor provides the accessible name.
-      // When no label is present, aria-label on Root provides it instead.
-      aria-label={label !== undefined ? undefined : ariaLabel}
       className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-fast ease-default focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-accent-bronze data-[state=unchecked]:bg-surface-tertiary`.trim()}
       {...optionalRootProps}
     >
