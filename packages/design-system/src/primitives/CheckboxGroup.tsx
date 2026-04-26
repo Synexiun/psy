@@ -19,7 +19,7 @@
  * Logical properties only; no ml-*/mr-*/pl-*/pr-* classes anywhere in this file.
  */
 import * as React from 'react';
-import { useId } from 'react';
+import { useId, useRef } from 'react';
 import * as RadixCheckbox from '@radix-ui/react-checkbox';
 
 export interface CheckboxOption {
@@ -62,7 +62,14 @@ export function CheckboxGroup({
   const isControlled = value !== undefined;
   const checkedValues = isControlled ? value : internalChecked;
 
-  const handleCheckedChange = (optionValue: string, checked: boolean) => {
+  // Guard against controlled ↔ uncontrolled switches at runtime (dev only).
+  const wasControlledRef = useRef(isControlled);
+  if (process.env.NODE_ENV !== 'production' && wasControlledRef.current !== isControlled) {
+    console.warn('[CheckboxGroup] Component is changing between controlled and uncontrolled mode.');
+  }
+
+  const handleCheckedChange = (optionValue: string, checked: RadixCheckbox.CheckedState) => {
+    if (checked === 'indeterminate') return;
     const next = checked
       ? [...checkedValues, optionValue]
       : checkedValues.filter((v) => v !== optionValue);
@@ -81,7 +88,7 @@ export function CheckboxGroup({
     >
       {options.map((option) => {
         const itemId = `${groupId}-${option.value}`;
-        const isDisabled = option.disabled ?? disabled;
+        const isDisabled = disabled || (option.disabled ?? false);
         const isChecked = checkedValues.includes(option.value);
 
         return (
@@ -90,9 +97,7 @@ export function CheckboxGroup({
               id={itemId}
               checked={isChecked}
               disabled={isDisabled}
-              onCheckedChange={(checked) =>
-                handleCheckedChange(option.value, checked === true)
-              }
+              onCheckedChange={(checked) => handleCheckedChange(option.value, checked)}
               className="mt-0.5 size-4 shrink-0 rounded border border-border-subtle bg-surface-primary transition-colors duration-fast ease-default hover:border-accent-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent-bronze data-[state=checked]:bg-accent-bronze"
             >
               <RadixCheckbox.Indicator className="flex items-center justify-center text-surface-primary">
