@@ -117,6 +117,27 @@ export const LeftSheet: Story = {
 };
 
 // ---------------------------------------------------------------------------
+// TopSheet — side=top
+// ---------------------------------------------------------------------------
+
+export const TopSheet: Story = {
+  name: 'Top',
+  render: () => (
+    <Sheet open onOpenChange={() => undefined} title="Top sheet" side="top" size="sm">
+      <p>Top panel content</p>
+    </Sheet>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          '`side="top"`: Panel slides down from the top edge. Height is controlled by the `size` prop (`h-40` for `sm`). Uses `inset-x-0` (symmetric) so no directional bias in RTL.',
+      },
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
 // BottomSheet — side=bottom, useful for mobile-style patterns
 // ---------------------------------------------------------------------------
 
@@ -233,6 +254,84 @@ export const RTLContext: Story = {
       description: {
         story:
           'In a `dir="rtl"` context, `side="right"` uses logical `end-0` positioning — "end" in RTL maps to the physical **left** edge, so the panel slides in from the left. The title, description, and body all mirror via logical CSS properties. All internal layout uses `gap-*`, `ps-*`/`pe-*` (via `p-6` symmetric padding), and logical flex — no physical `ml-*/mr-*/pl-*/pr-*` present. Wrap the Sheet in a `dir="rtl"` element for Arabic (ar) and Persian (fa) locales.',
+      },
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Theme × locale matrix — dark/light × EN/AR
+// ---------------------------------------------------------------------------
+
+export const DarkEn: Story = {
+  name: 'Dark × EN',
+  render: () => (
+    <div data-theme="dark" style={{ height: '400px', position: 'relative' }}>
+      <Sheet open onOpenChange={() => undefined} title="Sheet (dark, EN)" side="right">
+        <p>Content in English</p>
+      </Sheet>
+    </div>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story: 'Dark theme, English locale. Right-side panel with default `md` size.',
+      },
+    },
+  },
+};
+
+export const DarkAr: Story = {
+  name: 'Dark × AR',
+  render: () => (
+    <div data-theme="dark" dir="rtl" lang="ar" style={{ height: '400px', position: 'relative' }}>
+      <Sheet open onOpenChange={() => undefined} title="ورقة" side="right" closeLabel="إغلاق">
+        <p>محتوى عربي</p>
+      </Sheet>
+    </div>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Dark theme, Arabic locale (`dir="rtl"`, `lang="ar"`). The `end-0` logical positioning places the panel at the physical left edge in RTL.',
+      },
+    },
+  },
+};
+
+export const LightEn: Story = {
+  name: 'Light × EN',
+  render: () => (
+    <div data-theme="light" style={{ height: '400px', position: 'relative' }}>
+      <Sheet open onOpenChange={() => undefined} title="Sheet (light, EN)" side="right">
+        <p>Content in English</p>
+      </Sheet>
+    </div>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story: 'Light theme, English locale. Right-side panel with default `md` size.',
+      },
+    },
+  },
+};
+
+export const LightAr: Story = {
+  name: 'Light × AR',
+  render: () => (
+    <div data-theme="light" dir="rtl" lang="ar" style={{ height: '400px', position: 'relative' }}>
+      <Sheet open onOpenChange={() => undefined} title="ورقة" side="right" closeLabel="إغلاق">
+        <p>محتوى عربي</p>
+      </Sheet>
+    </div>
+  ),
+  parameters: {
+    docs: {
+      description: {
+        story:
+          'Light theme, Arabic locale (`dir="rtl"`, `lang="ar"`). Verify panel, title, and body all mirror correctly under light token values.',
       },
     },
   },

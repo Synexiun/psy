@@ -19,7 +19,11 @@
 
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { configureAxe, toHaveNoViolations } from 'jest-axe';
+import type * as React from 'react';
 import { Sheet } from '@disciplineos/design-system/primitives/Sheet';
+
+expect.extend(toHaveNoViolations);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -404,6 +408,32 @@ describe('Sheet — RTL context', () => {
       ),
     ).not.toThrow();
   });
+
+  it('side="right" panel carries end-0 and border-s for logical RTL-safe positioning', () => {
+    const { baseElement } = render(
+      <div dir="rtl">
+        <Sheet open onOpenChange={() => undefined} title="عنوان" side="right">
+          <p>Body</p>
+        </Sheet>
+      </div>,
+    );
+    const dialog = baseElement.querySelector('[role="dialog"]');
+    expect(dialog?.className).toContain('end-0');
+    expect(dialog?.className).toContain('border-s');
+  });
+
+  it('side="left" panel carries start-0 and border-e for logical RTL-safe positioning', () => {
+    const { baseElement } = render(
+      <div dir="rtl">
+        <Sheet open onOpenChange={() => undefined} title="عنوان" side="left">
+          <p>Body</p>
+        </Sheet>
+      </div>,
+    );
+    const dialog = baseElement.querySelector('[role="dialog"]');
+    expect(dialog?.className).toContain('start-0');
+    expect(dialog?.className).toContain('border-e');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -441,5 +471,36 @@ describe('Sheet — token hygiene', () => {
     const { baseElement } = renderOpen({ side });
     const panel = baseElement.querySelector('[role="dialog"]');
     expect(panel?.className ?? '').not.toContain('hsl(');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// axe accessibility scans
+// ---------------------------------------------------------------------------
+
+const axe = configureAxe({
+  rules: {
+    // color-contrast requires computed styles not available in jsdom
+    'color-contrast': { enabled: false },
+  },
+});
+
+describe('Sheet — axe accessibility', () => {
+  it('open right sheet has no critical a11y violations', async () => {
+    const { container } = renderOpen({ side: 'right' });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('open sheet with description has no critical a11y violations', async () => {
+    const { container } = renderOpen({ description: 'Sheet description' });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
+  });
+
+  it('open left sheet has no critical a11y violations', async () => {
+    const { container } = renderOpen({ side: 'left' });
+    const results = await axe(container);
+    expect(results).toHaveNoViolations();
   });
 });
