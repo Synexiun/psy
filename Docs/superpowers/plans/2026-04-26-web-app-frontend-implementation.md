@@ -1168,15 +1168,21 @@ The rule scans JSX expression children. When the expression is a bare `{identifi
 - Wrapped in `formatNumberClinical(...)` call
 - The enclosing JSX element has `className` containing `clinical-number`
 
-- [ ] Write the test — at least 6 cases:
-  - `<div>{phq9Score}</div>` → flagged
-  - `<div>{score}</div>` → flagged
-  - `<div>{formatNumberClinical(score)}</div>` → ok
-  - `<div className="clinical-number">{score}</div>` → ok
-  - `<div>{regularCount}</div>` → ok (not clinical)
-  - `<span>{user.intensity}</span>` → flagged (member-expression form)
+- [ ] Write the test — at least 10 cases (the regex array in `clinical-numbers.ts` is broad; we need explicit positive AND negative coverage to prevent false positives that erode trust in the rule):
+  - **Positive (must flag):**
+    - `<div>{phq9Score}</div>` (snake_case-adjacent camelCase)
+    - `<div>{score}</div>` (bare keyword)
+    - `<div>{auditCScore}</div>` (camelCase variant of `audit_c`)
+    - `<div>{rciDelta}</div>` (camelCase variant of `rci_`)
+    - `<span>{user.intensity}</span>` (member-expression form)
+  - **Negative (must NOT flag):**
+    - `<div>{formatNumberClinical(score)}</div>` (already wrapped)
+    - `<div className="clinical-number">{score}</div>` (CSS-class escape hatch)
+    - `<div>{regularCount}</div>` (unrelated identifier)
+    - `<div>{phq9Skipped}</div>` (matches `^phq9/i` but is a boolean/state flag — confirms the regex is too greedy and we must add a deny-list OR document that booleans co-located with `phq9` get a known-false-positive carve-out via `clinical-number` className wrap)
+    - `<div>{auditCompleted}</div>` (matches `^auditC/` but is a boolean state — same carve-out reasoning)
 - [ ] Run to fail.
-- [ ] Implement.
+- [ ] Implement. If the negative `phq9Skipped` / `auditCompleted` cases force the rule to add a `BOOLEAN_SUFFIXES = ['Skipped', 'Completed', 'Enabled', 'Pending']` deny-list before reporting, do so — the rule must not false-positive on adjacent boolean state, or developers will start sprinkling eslint-disable comments and the rule loses authority.
 - [ ] Run to pass.
 - [ ] Commit.
 
@@ -1192,7 +1198,17 @@ The rule fires on `ImportDeclaration` nodes when:
 - The source file path matches `**/app/**/crisis/**` OR `**/app/**/companion/**`
 - AND the import source is `@disciplineos/llm-client` (or any path containing `llm-client`)
 
-- [ ] Write the test — fixtures with paths set via the rule-tester `filename` option. ≥4 invalid (one each from crisis/companion × esm/cjs) + ≥2 valid (same imports from non-crisis paths).
+Next.js 15 `app/` is ESM-only — `require()` is not used, so we only visit `ImportDeclaration` (no `CallExpression` for `require()`). The second test axis is import shape (default vs named), not module system.
+
+- [ ] Write the test — fixtures with paths set via the rule-tester `filename` option. ≥4 invalid + ≥2 valid:
+  - **Invalid (must flag):**
+    - crisis route × default import: `import llm from '@disciplineos/llm-client'` in `app/[locale]/crisis/page.tsx`
+    - crisis route × named import: `import { ask } from '@disciplineos/llm-client'` in `app/[locale]/crisis/components/CrisisCard.tsx`
+    - companion route × default import: same as above but in `app/[locale]/companion/page.tsx`
+    - companion route × named import: same as above but in `app/[locale]/companion/components/CompanionThread.tsx`
+  - **Valid (must NOT flag):**
+    - same default + named imports from `app/[locale]/journal/page.tsx` (non-crisis, non-companion path)
+    - safe import from inside crisis: `import { tel } from '@disciplineos/safety-directory'` in `app/[locale]/crisis/page.tsx` (importing a non-LLM client)
 - [ ] Run to fail.
 - [ ] Implement.
 - [ ] Run to pass.
@@ -1241,8 +1257,9 @@ The rule fires on `ImportDeclaration` nodes when:
 ### Phase 0b chunk-completion checklist
 
 - [ ] Plugin builds and tests pass: `pnpm --filter @disciplineos/eslint-plugin-discipline test`
-- [ ] `pnpm lint` passes from `apps/web-app`
-- [ ] All three rules each have ≥6 unit-test cases
+- [ ] After Task 2.5 wires the plugin, **re-run all three rules against `apps/web-app/src` and confirm zero violations**: `cd D:/Psycho/apps/web-app && pnpm lint` (this is the post-wiring verification gate that Task 2.2 deferred — do it here, not earlier; if anything fires, fix the calling code, never silence the rule)
+- [ ] All three rules each have ≥6 unit-test cases (rule 2: ≥10 incl. boolean false-positive negatives; rule 3: ≥6 across crisis/companion × default/named)
+- [ ] Manual sanity check: temporarily plant a deliberate violation (e.g., `<div>{phq9Score}</div>` in a real component file), run lint, confirm error message, revert. Proves the rule fires on real code, not just rule-tester fixtures.
 
 **Stop here. Run plan-document-reviewer on this chunk before proceeding.**
 
@@ -1284,7 +1301,7 @@ The rule fires on `ImportDeclaration` nodes when:
 - Modify: `apps/web-app/next.config.mjs` (no special config; Workbox runs via npm script)
 
 - [ ] Add Workbox deps. Install.
-- [ ] Write `workbox-config.cjs` that precaches the crisis page route + the safety-directory JSON for the *current locale* only (Phase 0 scope per spec §8.5). Use `precacheAndRoute` with a glob for the default locale's `/crisis` HTML.
+- [ ] Write `workbox-config.cjs` that precaches the crisis page route + the safety-directory JSON for the **default routing locale `en` only** (Phase 0 single-locale minimum per spec §8.5; full `en+ar+fa` precache is deferred to Chunk 8 §8.3 in Phase 5). Use `precacheAndRoute` with the explicit glob `out/en/crisis/**/*.html` (build-time, unambiguous — do NOT use a runtime `[locale]` placeholder which Workbox can't resolve).
 - [ ] Add a `pnpm sw:build` script that runs `workbox injectManifest` and emits to `public/sw.js`.
 - [ ] Implement `sw-register.ts` — registers in `useEffect` on the root client component, only when `process.env.NODE_ENV === 'production'`.
 - [ ] Test: write a Vitest unit test that asserts the registration is a no-op outside production.
@@ -1328,8 +1345,9 @@ The rule fires on `ImportDeclaration` nodes when:
 - Modify: `apps/web-app/package.json` (add `chromatic` devDep + `chromatic` script)
 
 - [ ] Confirm with the user (one-time decision) that the Chromatic project token is provisioned and an env var is set in CI. **Do not commit a token.**
+- [ ] Write `chromatic.config.json` with **`onlyStoryFiles: ["packages/design-system/src/**/*.stories.@(ts|tsx)"]`** so Chromatic snapshots ONLY design-system primitives — feature-component stories under `apps/web-app/src/components/**` churn too fast for visual-regression to be valuable, and snapshots there waste reviewer time. (Storybook itself remains broader per Task 3.3 — only Chromatic is scoped down.)
 - [ ] Add the `chromatic` script: `"chromatic": "chromatic --exit-zero-on-changes"`.
-- [ ] Add a GitHub Actions workflow `apps/web-app/.github/workflows/chromatic.yml` (or amend an existing repo-level workflow) that runs Chromatic on PRs touching `apps/web-app/` or `packages/design-system/`.
+- [ ] Add a GitHub Actions workflow at the **repo-root** path `D:/Psycho/.github/workflows/chromatic.yml` (GitHub Actions only reads workflows from `.github/workflows/` at the repository root — putting it under `apps/web-app/.github/` does nothing). The workflow runs Chromatic on PRs touching `apps/web-app/` or `packages/design-system/`.
 - [ ] Run a local baseline once stories exist (Chunk 4); for now just commit the scaffolding.
 - [ ] Commit.
 
@@ -1346,96 +1364,191 @@ The rule fires on `ImportDeclaration` nodes when:
 
 ---
 
-## Chunk 4: Phase 1 — Generic primitives (28 components)
+## Chunk 4: Phase 1 — Generic primitives (20 net-new + 11 refreshed = 31 components touched)
 
 **Time estimate:** 1 week.
 
-**Approach:** TDD per component. Each primitive lands as: failing test → implementation → Storybook story (4 variants: dark+light × en+ar) → commit. The template is identical for each; the engineer follows it 28 times.
+**Scope reconciliation:** Spec §4.3 enumerates **28 net-new primitives total** = 9 generic + 5 layout/shell + 4 data display + 2 feedback + **7 clinical + 1 motion**. The clinical 7 + motion 1 are deferred to Chunk 5 (separate `clinical/` directory, contractual rules). Chunk 4 covers **20 net-new generic** (9 + 5 + 4 + 2) plus the **11 refreshed** (spec §4.4: Button, Card, Input, Textarea, Spinner, Divider, ProgressRing, Badge, Skeleton, Tooltip, Sparkline). Total: **31 components touched.**
 
-**Component template (apply to each):**
+**Storybook prerequisite:** Storybook + axe-core were bootstrapped in Chunk 3 (Task 3.3). This chunk consumes that infrastructure; no setup work here.
+
+**Approach:** TDD per component. Two distinct task shapes — a **refresh** template (extract + retoken, preserve API) and a **new** template (build from scratch). Each component lands as its own commit.
+
+---
+
+### 4.0 — Two task templates
+
+**Refresh template (apply to the 11 refreshed primitives — API must NOT change):**
 
 ````markdown
-### Task 4.X: <ComponentName>
+### Task 4.X: <ComponentName> (REFRESH)
+
+**Files:**
+- Modify (extract → its own file): `packages/design-system/src/primitives/<ComponentName>.tsx`
+- Create: `packages/design-system/src/primitives/__tests__/<ComponentName>.test.tsx`
+- Create: `packages/design-system/src/primitives/__stories__/<ComponentName>.stories.tsx`
+- Reference: `packages/design-system/src/primitives/web.tsx` (the existing 653-line monolith; copy this component out, do not rewrite)
+
+- [ ] Snapshot the existing prop contract from `web.tsx` (TypeScript interface + default values). Write a contract test that exercises EVERY prop with its existing semantics — this is the regression guard.
+- [ ] Run contract test against the existing `web.tsx` import path to verify it passes (proves the test is honest about current behavior)
+- [ ] Extract the component into its own file. Update tokens to the new Quiet Strength CSS vars (no hardcoded colors). Do NOT change the public API surface.
+- [ ] Re-point the contract test at the new import path. Run — must still pass.
+- [ ] Add Storybook story: dark + light × en + ar = 4 variants.
+- [ ] Run axe-core on every story variant; zero serious/critical violations.
+- [ ] If component supports RTL-relevant props (e.g., `Sparkline` direction, `Tooltip` side), add a `dir="rtl"` story variant.
+- [ ] Commit with message: `feat(ds): refresh <ComponentName> — Quiet Strength tokens, API unchanged`
+````
+
+**New template (apply to the 20 net-new generic primitives):**
+
+````markdown
+### Task 4.X: <ComponentName> (NEW)
 
 **Files:**
 - Create: `packages/design-system/src/primitives/<ComponentName>.tsx`
 - Create: `packages/design-system/src/primitives/__tests__/<ComponentName>.test.tsx`
 - Create: `packages/design-system/src/primitives/__stories__/<ComponentName>.stories.tsx`
 
-- [ ] Write failing test: rendered name, props pass-through, accessible role, RTL behavior if applicable
-- [ ] Run to fail
-- [ ] Implement (Radix wrapper if applicable; tokens via Tailwind class names that map to CSS vars)
-- [ ] Add story: dark + light × en + ar variants
-- [ ] Run to pass; visual smoke in Storybook
-- [ ] Commit
+- [ ] Write failing test: rendered output, props pass-through, accessible role/name (use `@testing-library/react` + `jest-axe`), RTL behavior if directional, and (for data-driven primitives like `Stat`/`Trend`) a `useStubs` default-value path that renders without prop-drilling in design time.
+- [ ] Run to fail.
+- [ ] Implement — Radix wrapper if applicable (Slider, RadioGroup, Switch, Select, Tabs, Dialog, Toast); tokens via Tailwind class names that map to CSS vars; logical properties only (`ms-*`, `me-*`, `ps-*`, `pe-*`, never physical — the ESLint rule from Chunk 2 enforces this).
+- [ ] Add Storybook story: dark + light × en + ar = 4 variants.
+- [ ] Run axe-core on every story variant; zero serious/critical violations.
+- [ ] If component is directional (`Slider` drag, `Sheet` side, `Tooltip` side, `Toast` corner), add an explicit `dir="rtl"` story variant and assert mirrored layout.
+- [ ] Commit with message: `feat(ds): add <ComponentName> primitive`
 ````
 
-**The 16 generic primitives, in dependency order:**
+---
 
-| Order | Component | Notes / dependencies |
-|-------|-----------|----------------------|
-| 4.1 | `Button` | extracted from current `web.tsx` |
-| 4.2 | `Card` | |
-| 4.3 | `Input` | |
-| 4.4 | `Textarea` | |
-| 4.5 | `Spinner` | |
+### 4.1 — Refreshed primitives (11) — extract from `web.tsx`, retoken, preserve API
+
+| Task | Component | Refresh notes |
+|------|-----------|---------------|
+| 4.1 | `Button` | variants: default/secondary/ghost/destructive |
+| 4.2 | `Card` | header/footer slots stay |
+| 4.3 | `Input` | error/disabled states |
+| 4.4 | `Textarea` | resize behavior unchanged |
+| 4.5 | `Spinner` | reduced-motion aware (already handled in current impl — preserve) |
 | 4.6 | `Divider` | |
-| 4.7 | `Badge` | |
-| 4.8 | `Skeleton` | shimmer suppressed under reduced motion |
-| 4.9 | `Tooltip` | Radix Tooltip wrap |
-| 4.10 | `ProgressRing` | |
-| 4.11 | `Slider` | Radix Slider wrap; logical-property aware (RTL drag direction inverts) |
-| 4.12 | `RadioGroup` | Radix |
-| 4.13 | `CheckboxGroup` | composition of Radix Checkboxes |
-| 4.14 | `Switch` | Radix |
-| 4.15 | `Select` | Radix |
-| 4.16 | `TabNav` | Radix Tabs |
+| 4.7 | `Badge` | variants: neutral/positive/warning/critical |
+| 4.8 | `Skeleton` | shimmer animation suppressed under reduced motion |
+| 4.9 | `Tooltip` | Radix Tooltip wrap (refresh — already exists in `web.tsx`) |
+| 4.10 | `ProgressRing` | tokens only; geometry untouched |
+| 4.11 | `Sparkline` | **Visx-backed swap; preserves prop contract** (`data`, `color`, `strokeWidth`); update `MoodSparkline` consumer in the SAME commit so existing E2E `dashboard.spec.ts` does not break |
 
-**Then the layout primitives (depend on 4.1–4.16):**
+### 4.2 — Net-new generic primitives (9) — Radix wrappers
 
-| Order | Component | Notes |
-|-------|-----------|-------|
-| 4.17 | `Dialog` | Radix Dialog wrap |
-| 4.18 | `Sheet` | Radix Dialog (side variant) |
-| 4.19 | `Toast` | Radix Toast |
-| 4.20 | `PageShell` | the page-level layout shell |
-| 4.21 | `WizardShell` | multi-step shell with save-and-resume |
+| Task | Component | Notes |
+|------|-----------|-------|
+| 4.12 | `Slider` | Radix Slider; thumb behavior must mirror in RTL |
+| 4.13 | `RadioGroup` | Radix |
+| 4.14 | `CheckboxGroup` | composition of Radix Checkboxes |
+| 4.15 | `Switch` | Radix |
+| 4.16 | `Select` | Radix Select |
+| 4.17 | `TabNav` | Radix Tabs |
+| 4.18 | `Dialog` | Radix Dialog wrap |
+| 4.19 | `Sheet` | Radix Dialog (side variant) — `dir="rtl"` flips slide direction |
+| 4.20 | `Toast` | Radix Toast — corner placement flips in RTL |
 
-**Then the data primitives (depend on Visx — install in 4.22 first):**
+### 4.3 — Net-new layout & shell primitives (5)
 
-| Order | Component | Notes |
-|-------|-----------|-------|
-| 4.22 | `Sparkline` | **Visx-backed; preserves existing prop contract** (`data`, `color`, `strokeWidth`); update `MoodSparkline` consumer in same PR |
-| 4.23 | `Stat` | hero number + label + delta; uses `formatNumberClinical` for clinical context |
-| 4.24 | `Trend` | Stat + Sparkline composition |
-| 4.25 | `RingChart` | multi-segment ProgressRing extension |
-| 4.26 | `BarChart` | Visx |
-| 4.27 | `Banner` | |
-| 4.28 | `EmptyState` | |
+| Task | Component | Notes |
+|------|-----------|-------|
+| 4.21 | `PageShell` | the page-level layout shell |
+| 4.22 | `TopBar` | theme toggle + locale switcher + notifications bell badge — mirrors fully in RTL |
+| 4.23 | `SidebarNav` | Lucide + custom icons (per spec §3 — 12 custom icons land here) |
+| 4.24 | `BottomNav` | mobile-shape; 5 slots max (per spec §5) |
+| 4.25 | `WizardShell` | multi-step shell with save-and-resume |
 
-**Sub-task at the end of Chunk 4:**
+### 4.4 — Net-new data-display primitives (4) — Visx-backed
 
-### Task 4.29: Delete the legacy `primitives.tsx` and `web.tsx`
+> **Pre-task:** Install Visx in `packages/design-system` if not already present (`pnpm --filter @disciplineos/design-system add @visx/group @visx/scale @visx/shape @visx/axis @visx/text`). Single commit before 4.26.
+
+| Task | Component | Notes |
+|------|-----------|-------|
+| 4.26 | `Stat` | hero number + label + delta; uses `formatNumberClinical` only when `clinical` prop is true (generic primitive — clinical use is opt-in) |
+| 4.27 | `Trend` | Stat + Sparkline composition; takes `useStubs`-resolvable data prop |
+| 4.28 | `RingChart` | multi-segment ProgressRing extension |
+| 4.29 | `BarChart` | Visx; instrument trends over time |
+
+### 4.5 — Net-new feedback primitives (2)
+
+| Task | Component | Notes |
+|------|-----------|-------|
+| 4.30 | `Banner` | dismissable; severity variants (info/warning/error) |
+| 4.31 | `EmptyState` | illustration slot + headline + CTA |
+
+---
+
+### Task 4.32: Delete the legacy `primitives.tsx` and `web.tsx` (cleanup — runs LAST, after 4.1–4.31)
 
 **Files:**
 - Delete: `apps/web-app/src/components/primitives.tsx`
 - Delete: `packages/design-system/src/primitives/web.tsx`
 - Delete: `packages/design-system/src/primitives/web.test.ts`
-- Modify: `packages/design-system/src/index.ts` (re-export from new per-component files via `primitives/index.ts`)
-- Modify: every consumer that imports from the old paths (use Grep to find them)
+- Modify: `packages/design-system/src/index.ts` (re-export from per-component files via `primitives/index.ts`)
+- Modify: every consumer that imports from the old paths
 
-- [ ] Grep for old import paths: `grep -r "design-system/src/primitives/web" D:/Psycho/apps D:/Psycho/packages`
-- [ ] Update each consumer to import from the new per-component path or from the package root (`@disciplineos/design-system`)
-- [ ] Run full test + lint + typecheck
-- [ ] Commit
+Steps:
+
+- [ ] Use the Grep tool (NOT bash `grep`) to find all consumers in TWO patterns:
+  - Direct path: pattern `from\s+['"]@disciplineos/design-system/src/primitives/web['"]` — catches `from '@disciplineos/design-system/src/primitives/web'` and the `.tsx` variant
+  - Re-export path: pattern `from\s+['"]@disciplineos/design-system['"]` then check the imported symbol list against the components that previously lived only in `web.tsx`
+- [ ] Update each consumer to import from `@disciplineos/design-system` (the package root barrel)
+- [ ] Verify the per-component `primitives/index.ts` re-exports every symbol the old `web.tsx` exported — diff the named exports
+- [ ] Run full `pnpm typecheck && pnpm lint && pnpm test` from the repo root
+- [ ] Commit with message: `chore(ds): remove legacy web.tsx monolith — all primitives extracted`
+
+---
+
+### Per-primitive progress checklist (track here as work proceeds)
+
+> Mark each box as the task lands. The chunk is done only when every row is checked off — including axe and (when applicable) RTL story.
+
+| # | Component | Type | Test | Impl | Story | Axe | RTL | Committed |
+|---|-----------|------|:----:|:----:|:-----:|:---:|:---:|:---------:|
+| 4.1 | Button | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.2 | Card | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.3 | Input | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.4 | Textarea | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.5 | Spinner | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.6 | Divider | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.7 | Badge | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.8 | Skeleton | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.9 | Tooltip | R | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.10 | ProgressRing | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.11 | Sparkline | R | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.12 | Slider | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.13 | RadioGroup | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.14 | CheckboxGroup | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.15 | Switch | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.16 | Select | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.17 | TabNav | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.18 | Dialog | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.19 | Sheet | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.20 | Toast | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.21 | PageShell | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.22 | TopBar | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.23 | SidebarNav | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.24 | BottomNav | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.25 | WizardShell | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.26 | Stat | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.27 | Trend | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.28 | RingChart | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.29 | BarChart | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.30 | Banner | N | ☐ | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 4.31 | EmptyState | N | ☐ | ☐ | ☐ | ☐ | — | ☐ |
+| 4.32 | (delete legacy) | — | — | ☐ | — | — | — | ☐ |
+
+(Type: R = refresh, N = new. RTL "—" = component has no directional/positional behavior; RTL story not required.)
 
 ### Phase 1 chunk-completion checklist
 
-- [ ] All 28 generic primitives ship with tests + stories + Chromatic baseline approved
-- [ ] No remaining imports from the old `web.tsx` or `primitives.tsx`
-- [ ] Storybook story shelf shows all 28, each in 4 variants
+- [ ] All 31 components ship with tests + stories + axe-clean + Chromatic baseline approved
+- [ ] No remaining imports from the old `web.tsx` or `primitives.tsx` (verified via Grep tool with both direct-path and re-export patterns)
+- [ ] Storybook story shelf shows all 31, each in 4 variants minimum (dark+light × en+ar); directional components add a 5th `dir="rtl"` variant
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` green from every package
-- [ ] No regression in existing E2E
+- [ ] No regression in existing E2E (`dashboard.spec.ts` updated in 4.11 commit alongside Sparkline swap)
 
 **Stop here. Run plan-document-reviewer.**
 
@@ -1445,45 +1558,151 @@ The rule fires on `ImportDeclaration` nodes when:
 
 **Time estimate:** 1 week.
 
-**Preconditions** (re-check before starting, per top-of-plan precondition list):
-- `shared-rules/relapse_templates.json` exists
-- `discipline/clinical/` Python module exposes the deterministic-selection function
-- `services/api/src/discipline/safety/emergency_numbers.py` exists
+**File-structure requirement:** All 8 clinical primitives live under `packages/design-system/src/clinical/` (NOT `primitives/`). The `clinical/` directory is load-bearing — the ESLint rule `clinical-numbers-must-format` from Chunk 2 keys off this path; primitives outside `clinical/` are not subject to the rule. Putting a clinical primitive in the wrong directory silently bypasses linting.
 
-**Approach:** Same TDD-per-component template as Chunk 4. The clinical contracts (Latin digits, deterministic render, no LLM) are the *test names*: every clinical primitive's test file includes ≥1 test that asserts the rule. Examples are listed in spec §9.2.
+### Preconditions — HALT-AND-SURFACE if missing
 
-| Order | Component | Critical contract tests |
-|-------|-----------|-------------------------|
-| 5.1 | `formatters.ts` (re-export `formatNumberClinical` from `@disciplineos/i18n-catalog`) | `formatNumberClinical_returns_latin_digits_in_fa_locale`, `formatNumberClinical_returns_latin_digits_in_ar_locale` |
-| 5.2 | `clinical-mirrors.ts` (the `estimateStateClientMirror` function) | `estimateStateClientMirror_parity_with_server_for_all_intensities_0_to_10` (parameterized over 0–10) |
-| 5.3 | `BreathingPulse` (motion) | reads `useReducedMotion`; suppressed under either signal |
-| 5.4 | `ResilienceRing` | `dashboard_resilienceRing_value_never_decrements_across_renders` (Rule #3) |
-| 5.5 | `UrgeSlider` | `urgeSlider_value_renders_latin_in_arabic_context` (Rule #9) |
-| 5.6 | `SeverityBand` | `severityBand_uses_pinned_phq9_thresholds_not_hand_rolled` (imports `PHQ9_SEVERITY_THRESHOLDS` from a TS mirror of the backend constant; Vitest gate ensures the constant is imported, not redefined) |
-| 5.7 | `RCIDelta` | follows Jacobson & Truax 1991; ●●●/●●○/●○○ scale; tested across all transitions |
-| 5.8 | `CompassionTemplate` | `compassionTemplate_renders_verbatim_no_interpolation` (Rule #4); `relapseSurface_does_not_contain_streak_reset_copy`; consumes JSON template; deterministic |
-| 5.9 | `CrisisCard` | `crisisCard_drops_entries_older_than_90_days` (Rule #10); `crisisCard_falls_back_to_icasa_when_all_local_stale` |
-| 5.10 | `InsightCard` | dismiss/snooze/acknowledge lifecycle from Sprint 108 contract; tested across all state transitions |
-| 5.11 | `safety/emergency-numbers.ts` constant + Vitest cross-stack equivalence | `frontend_emergency_numbers_match_backend_byte_equivalence` (CI runs `python -m json.dumps` on backend file, `JSON.stringify` on frontend file, byte-equal) |
+Before starting any task in this chunk, verify the following exist. **If any are missing, STOP, do NOT proceed, and report to the user with the missing-file list and a recommendation to either (a) create them in a backend sprint first, or (b) descope the dependent clinical primitive to v1.1.**
 
-### Task 5.12: Clinical-contracts cross-cutting test file
+```bash
+test -f D:/Psycho/shared-rules/relapse_templates.json || echo "MISSING: shared-rules/relapse_templates.json (CompassionTemplate blocked)"
+test -d D:/Psycho/services/api/src/discipline/clinical/ || echo "MISSING: discipline/clinical/ Python module (CompassionTemplate selection function blocked)"
+test -f D:/Psycho/services/api/src/discipline/safety/emergency_numbers.py || echo "MISSING: emergency_numbers.py (CrisisCard data source blocked)"
+```
 
-**Files:**
+The halt protocol is mandatory — proceeding without these files produces clinical primitives that lie about their data source, which is a CLAUDE.md non-negotiable violation (#4 — relapse copy from JSON, not hand-rolled; #1 — crisis flows deterministic with validated data).
+
+### Approach
+
+Same TDD-per-component template as Chunk 4 (the new template), but each clinical primitive's test file MUST include the named contract tests in the table below — the contract test name *is* the rule. The clinical-contracts manifest in §5.12 cross-references every contract by name, so missing or renaming a contract test breaks CI.
+
+### Per-primitive task tracking (checkbox per cell)
+
+| # | Component / file | Path | Test | Impl | Story | Axe | Committed |
+|---|------------------|------|:----:|:----:|:-----:|:---:|:---------:|
+| 5.1 | `formatters.ts` re-export | `apps/web-app/src/lib/formatters.ts` | ☐ | ☐ | — | — | ☐ |
+| 5.2 | `clinical-mirrors.ts` | `apps/web-app/src/lib/clinical-mirrors.ts` | ☐ | ☐ | — | — | ☐ |
+| 5.3 | `BreathingPulse` | `packages/design-system/src/clinical/BreathingPulse.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.4 | `ResilienceRing` | `packages/design-system/src/clinical/ResilienceRing.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.5 | `UrgeSlider` | `packages/design-system/src/clinical/UrgeSlider.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.6 | `SeverityBand` | `packages/design-system/src/clinical/SeverityBand.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.7 | `RCIDelta` | `packages/design-system/src/clinical/RCIDelta.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.8 | `CompassionTemplate` | `packages/design-system/src/clinical/CompassionTemplate.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.9 | `CrisisCard` | `packages/design-system/src/clinical/CrisisCard.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.10 | `InsightCard` | `packages/design-system/src/clinical/InsightCard.tsx` | ☐ | ☐ | ☐ | ☐ | ☐ |
+| 5.11 | `safety/emergency-numbers.ts` | `apps/web-app/src/lib/safety/emergency-numbers.ts` | ☐ | ☐ | — | — | ☐ |
+
+### Required contract tests per task (the test name IS the rule — do not rename)
+
+**5.1 — `formatters.ts` re-export `formatNumberClinical`:**
+- `formatNumberClinical_returns_latin_digits_in_fa_locale` — input `5`, locale `fa`, expect `'5'` (NOT `'۵'`)
+- `formatNumberClinical_returns_latin_digits_in_ar_locale` — input `5`, locale `ar`, expect `'5'` (NOT `'٥'`)
+- `formatNumberClinical_returns_latin_digits_in_en_locale` — sanity baseline
+
+**5.2 — `clinical-mirrors.ts` (the `estimateStateClientMirror` function for design-time stub state):**
+- `estimateStateClientMirror_parity_with_server_for_all_intensities_0_to_10` — parameterized over 11 cases (0..10)
+
+**5.3 — `BreathingPulse`:**
+- `breathingPulse_inhale_exhale_phase_durations_locked_to_4000ms_each` — assert the animation's `inhale` and `exhale` phase durations are exactly 4000ms each (deterministic timing, not visual regression — read animation config or expose via `data-phase-duration` attribute for testing)
+- `breathingPulse_suppressed_when_useReducedMotion_returns_true` — when the hook reports reduced motion (OS prefers-reduced-motion OR `data-ambient-motion="off"`), the component renders a static state instead of animating
+
+**5.4 — `ResilienceRing`:**
+- `dashboard_resilienceRing_value_never_decrements_across_renders` (CLAUDE.md Rule #3) — given a sequence of `value` props that include a non-monotone descent, the ring clamps to the previous max
+- `resilienceRing_day_count_renders_latin_in_fa_locale` (Rule #9) — render with `locale="fa"` and `value={42}`, assert the rendered day count is `'42'` not `'۴۲'`
+- `resilienceRing_day_count_renders_latin_in_ar_locale` (Rule #9) — same with `locale="ar"`, assert `'42'` not `'٤٢'`
+
+**5.5 — `UrgeSlider`:**
+- `urgeSlider_value_renders_latin_in_arabic_context` (Rule #9) — render at value 7 with `locale="ar"`, assert displayed value is `'7'`
+- `urgeSlider_value_renders_latin_in_persian_context` (Rule #9) — same with `locale="fa"`
+- `urgeSlider_thumb_drag_direction_inverts_in_rtl` — drag right under `dir="rtl"` decreases value (RTL mirror)
+
+**5.6 — `SeverityBand`:**
+- `severityBand_uses_pinned_phq9_thresholds_not_hand_rolled` — imports `PHQ9_SEVERITY_THRESHOLDS` from `apps/web-app/src/lib/clinical/phq9-thresholds.ts` (a TS mirror of `services/api/src/discipline/psychometric/scoring/phq9.py` `PHQ9_SEVERITY_THRESHOLDS`; the mirror is value-equal-tested in §5.12)
+- `severityBand_renders_latin_score_under_fa_locale` (Rule #9) — score `15`, locale `fa`, expect `'15'`
+
+**5.7 — `RCIDelta`:**
+- `rciDelta_uses_jacobson_truax_1991_significance_thresholds` — import the threshold constant rather than redefining
+- `rciDelta_renders_dot_scale_for_all_significance_levels` — ●●●/●●○/●○○ across the three transition cases
+- `rciDelta_renders_latin_delta_in_fa_locale` (Rule #9) — delta `-3`, locale `fa`, expect `'-3'` not `'-۳'`
+
+**5.8 — `CompassionTemplate`:**
+- `compassionTemplate_loads_from_shared_rules_relapse_templates_json` (Rule #4) — assert templates resolve via `import templates from '@/data/relapse_templates.json'` where `@/data/relapse_templates.json` is a build-time bundling of `D:/Psycho/shared-rules/relapse_templates.json`. The component MUST NOT contain hand-rolled template strings; a Vitest gate greps the component source for any string literal containing words like `"failed"`, `"reset"`, `"streak"`, etc., and fails if found.
+- `compassionTemplate_renders_verbatim_no_interpolation` (Rule #4) — given a template with `{{user_name}}`, the component does NOT substitute (interpolation is a clinical-content modification that requires QA sign-off; v1 renders verbatim)
+- `relapseSurface_does_not_contain_streak_reset_copy` — scans rendered output for forbidden phrases ("streak reset", "you failed", etc.)
+- `compassionTemplate_uses_fraunces_soft_60_font_axis` — visual / class-name assertion
+
+**5.9 — `CrisisCard`:**
+- `crisisCard_does_not_import_or_invoke_llm_client` (Rule #1) — component-level static analysis: scan the component's source for any reference to `@disciplineos/llm-client`, `Anthropic`, `OpenAI`, `Claude`, etc. and fail if present. (This complements the route-level gate `crisisRoute_has_zero_llm_imports` in §5.12.)
+- `crisisCard_data_sourced_from_emergency_numbers_constant` — asserts the `EMERGENCY_NUMBERS` import resolves to `apps/web-app/src/lib/safety/emergency-numbers.ts`, which is byte-equivalent to backend `services/api/src/discipline/safety/emergency_numbers.py` (cross-stack gate in §5.11)
+- `crisisCard_drops_entries_older_than_90_days` (Rule #10) — given an entry with `verifiedAt` 91 days ago, the entry is filtered out at render
+- `crisisCard_falls_back_to_icasa_when_all_local_stale` — if every entry for the user's country is stale, fall back to international hotline (ICASA)
+- `crisisCard_renders_with_javascript_disabled` — RSC-only path; no `'use client'` in this component
+
+**5.10 — `InsightCard`:**
+- `insightCard_dismiss_lifecycle_per_sprint_108_contract` — exercise dismiss / snooze (24h, 7d) / acknowledge across all transitions
+- `insightCard_renders_latin_numerics_under_fa_locale` (Rule #9) — any numeric in the card body renders Latin
+
+**5.11 — `safety/emergency-numbers.ts` constant:**
+- `frontend_emergency_numbers_match_backend_byte_equivalence` — Vitest CI gate: read backend `services/api/src/discipline/safety/emergency_numbers.py`, extract the `EMERGENCY_NUMBERS` literal via Python pre-process (or re-emit as JSON in the backend build), `JSON.stringify` the frontend export, assert byte-equal
+
+---
+
+### Task 5.12: Clinical-contracts cross-cutting test file (CRITICAL — the contract manifest)
+
+**File:**
 - Create: `apps/web-app/tests/unit/clinical-contracts.test.ts`
 
-A single Vitest file that aggregates the cross-cutting gates that aren't per-component — e.g., `phi_routes_emit_boundary_header` (will pass once Chunk 6 ships middleware), `crisisRoute_has_zero_llm_imports` (works against the source tree), `companionRoute_has_zero_llm_imports`, `localeFallback_draft_key_falls_back_to_en_silently`.
+This file is the **single auditable manifest** of the clinical contracts a reviewer (clinical lead, security lead, or future engineer) checks before approving a release. Every contract MUST appear here either as a re-imported assertion from the per-component test file, OR as a cross-cutting gate that doesn't fit a single component. The manifest is the source-of-truth — per-component tests are the implementation.
 
-Some gates may be marked `it.todo` until the prerequisite chunk ships; the file documents the contract.
+**Required cross-cutting gates** (some `it.todo` until later chunks ship):
 
-- [ ] Write the file. Use `import.meta.glob('**/app/**/{crisis,companion}/**/*.{ts,tsx}')` to enumerate routes for the LLM-import gate.
-- [ ] Run; some pass, some `todo`. Commit.
+```ts
+// Manifest of CRITICAL contracts — every clinical primitive contributes ≥1
+describe('CRITICAL clinical contracts (per CLAUDE.md non-negotiables)', () => {
+  // From 5.4 — Rule #3 (resilience streak monotonic)
+  it('ResilienceRing: value-never-decrements-across-renders', () => { /* re-runs the per-component assertion */ });
+
+  // From 5.5/5.6/5.7/5.10/5.4 — Rule #9 (Latin digits for clinical scores)
+  it('UrgeSlider: renders-latin-digit-in-fa', () => { /* ... */ });
+  it('SeverityBand: renders-latin-score-in-fa', () => { /* ... */ });
+  it('RCIDelta: renders-latin-delta-in-fa', () => { /* ... */ });
+  it('ResilienceRing: day-count-latin-in-fa', () => { /* ... */ });
+  it('InsightCard: renders-latin-numerics-in-fa', () => { /* ... */ });
+
+  // From 5.8 — Rule #4 (compassion templates from JSON, no failure framing)
+  it('CompassionTemplate: loads-from-shared-rules-relapse-templates-json', () => { /* ... */ });
+  it('CompassionTemplate: no-failure-framing-copy', () => { /* ... */ });
+
+  // From 5.9 — Rule #1 (no LLM on crisis path)
+  it('CrisisCard: no-llm-call-component-level', () => { /* ... */ });
+  it.todo('crisisRoute: zero-llm-imports-route-level (Chunk 6)'); // works after route ships
+  it.todo('companionRoute: zero-llm-imports-route-level (Chunk 7)');
+
+  // From 5.3 — deterministic motion
+  it('BreathingPulse: deterministic-4s-4s-timing', () => { /* ... */ });
+
+  // From 5.11 — Rule #10 (safety directory freshness + cross-stack equivalence)
+  it('emergency-numbers: frontend-backend-byte-equivalence', () => { /* ... */ });
+  it('CrisisCard: drops-stale-entries-90-day-window', () => { /* ... */ });
+
+  // PHI-boundary header — works after Chunk 6 middleware ships
+  it.todo('phi-routes: emit-x-phi-boundary-1-header (Chunk 6)');
+
+  // Locale-fallback (no machine translation) — works after Chunk 7
+  it.todo('localeFallback: draft-key-falls-back-to-en-silently (Chunk 7)');
+});
+```
+
+- [ ] Write the file. For the route-level LLM-import gate (deferred to Chunk 6/7), use `import.meta.glob('**/app/**/{crisis,companion}/**/*.{ts,tsx}')` to enumerate routes when implementing.
+- [ ] Run; some pass, some `it.todo`. Commit.
 
 ### Phase 2 chunk-completion checklist
 
-- [ ] All 11 clinical tasks land with tests
-- [ ] Storybook stories for clinical primitives in 4 variants
+- [ ] All 11 clinical tasks (5.1–5.11) land with their named contract tests passing (every test name in this chunk's tables matches a real `it(...)` in code)
+- [ ] All clinical components live under `packages/design-system/src/clinical/` (not `primitives/`)
+- [ ] Storybook stories for the 8 visual clinical primitives in 4 variants (5.1, 5.2, 5.11 are non-visual)
 - [ ] `pnpm typecheck && pnpm lint && pnpm test` green
-- [ ] Clinical-contracts test file exists and passes for the gates that don't require Chunk 6+
+- [ ] `clinical-contracts.test.ts` exists with the full manifest; gates that depend on later chunks are `it.todo` (not skipped, not deleted)
 
 **Stop here. Run plan-document-reviewer.**
 
@@ -1495,63 +1714,103 @@ Some gates may be marked `it.todo` until the prerequisite chunk ships; the file 
 
 **Approach (task per existing screen):** for each of the 6 existing screens, the task is "refresh onto the new system, no IA change, update E2E selectors in the same PR." Split per screen so each PR is small.
 
-| Order | Task | Screen | Files modified | E2E updated |
-|-------|------|--------|----------------|-------------|
-| 6.1 | Refresh Dashboard | `apps/web-app/src/app/[locale]/page.tsx` + `components/StreakWidget.tsx`, `StateIndicator.tsx`, `PatternCard.tsx`, `QuickActions.tsx` | `tests/e2e/dashboard.spec.ts` |
-| 6.2 | Refresh Check-in | `apps/web-app/src/app/[locale]/check-in/page.tsx` (use `UrgeSlider`) | `tests/e2e/check-in.spec.ts` |
-| 6.3 | Refresh Tools landing + detail | `apps/web-app/src/app/[locale]/tools/page.tsx` + `tools/[slug]/page.tsx` (new) | `tests/e2e/tools.spec.ts` |
-| 6.4 | Refresh Journal | `journal/page.tsx`, `journal/new/page.tsx`, `journal/[id]/page.tsx` (new) | `tests/e2e/journal.spec.ts` |
-| 6.5 | Refresh Assessments + take instrument + new history | `assessments/page.tsx`, `assessments/[instrument]/page.tsx`, `assessments/history/[id]/page.tsx` (new) | `tests/e2e/assessments.spec.ts` |
-| 6.6 | Refresh Settings shell + 4 sub-pages | `settings/page.tsx`, `settings/{account,notifications,privacy,appearance}/page.tsx` | settings has no E2E currently; add a smoke spec |
-| 6.7 | New TopBar + SidebarNav refresh + BottomNav refresh + NotificationsDrawer + ThemeToggle + LocaleSwitcher + WordmarkSvg | `components/{TopBar,SidebarNav,BottomNav,NotificationsDrawer,ThemeToggle,LocaleSwitcher,WordmarkSvg}.tsx` | covered by every screen's E2E |
-| 6.8 | Refresh `/crisis` route (POLISH-OR-REBUILD per spec §5.1) | `app/[locale]/crisis/page.tsx` — verify it is a Server Component; if it uses `'use client'`, rewrite as Server Component | `tests/e2e/crisis.spec.ts` (add `--javaScriptEnabled=false` assertion) |
-| 6.9 | Middleware: emit `X-Phi-Boundary: 1` on the canonical PHI route list | `src/middleware.ts` | `tests/unit/middleware-routes.test.ts` |
-| 6.10 | Client-side `useAuditPhi` hook + `apiFetch` interceptor | `src/hooks/useAuditPhi.ts`, `src/lib/api.ts` | new spec `tests/e2e/phi-audit.spec.ts` (asserts `/api/audit/phi-read` is called) |
+**Naming convention:** the PHI audit hook is named **`usePhiAudit`** throughout (matches the spec's prose convention; do not drift to `useAuditPhi` — the noun-then-verb form was a draft naming).
+
+---
+
+### Task 6.0: Audit existing `/crisis` route → POLISH-or-REBUILD decision artifact
+
+**Why first:** The `/crisis` refresh in 6.8 has two very different scopes depending on the audit outcome. Recording the decision before any other work begins prevents 6.8 from silently expanding mid-chunk and prevents a builder from skipping the analysis.
+
+**Files:**
+- Read-only: `apps/web-app/src/app/[locale]/crisis/page.tsx` and any colocated components
+
+Steps:
+
+- [ ] Read the existing `/crisis` route. Check, in order, against spec §7.7:
+  - Does the page declare `'use client'`? (if yes → REBUILD)
+  - Does it use any `<Suspense>` boundaries? (if yes → REBUILD)
+  - Does it perform client-side data fetching (e.g., `useQuery`, `fetch` in a `useEffect`)? (if yes → REBUILD)
+  - Are hotline numbers inlined from a local JSON at server-render time? (if no → REBUILD)
+  - Are `tel:` / `sms:` rendered as plain anchors (works with JS disabled)? (if no → REBUILD)
+- [ ] Record the decision as a one-paragraph note in the PR description for Task 6.8 (e.g., "Audit found `'use client'` + a `useEffect` fetch — REBUILD as Server Component" OR "Audit found Server Component + inlined data — POLISH only: token refresh + Lucide icons").
+- [ ] No commit at this step — the decision lives in the 6.8 PR description. Move to Task 6.1.
+
+---
+
+### Existing-screens task table
+
+| Order | Task | Screen | Files modified | E2E updated | Spec ref |
+|-------|------|--------|----------------|-------------|----------|
+| 6.1 | Refresh Dashboard (incl. PatternsPreviewTile distinct from full InsightCard) | `apps/web-app/src/app/[locale]/page.tsx` + `components/StreakWidget.tsx`, `StateIndicator.tsx`, `PatternsPreviewTile.tsx` (new — small summary tile, NOT a full InsightCard), `QuickActions.tsx` | `tests/e2e/dashboard.spec.ts` | spec §6.1 |
+| 6.2 | Refresh Check-in | `apps/web-app/src/app/[locale]/check-in/page.tsx` (use `UrgeSlider` from clinical/) | `tests/e2e/check-in.spec.ts` | spec §6.2 |
+| 6.3 | Refresh Tools landing + detail | `apps/web-app/src/app/[locale]/tools/page.tsx` + `tools/[slug]/page.tsx` (new) | `tests/e2e/tools.spec.ts` | spec §6.5 |
+| 6.4 | Refresh Journal — **wire `usePhiAudit` (PHI route per spec §7.6)** | `journal/page.tsx`, `journal/new/page.tsx`, `journal/[id]/page.tsx` (new); add `usePhiAudit('/journal')` to list page and `usePhiAudit('/journal/[id]')` to detail page | `tests/e2e/journal.spec.ts` (assert `/api/audit/phi-read` fires on view) | spec §6.3 + §7.6 |
+| 6.5 | Refresh Assessments + take instrument + new history — **wire `usePhiAudit` on history detail (PHI route per spec §7.6)** | `assessments/page.tsx`, `assessments/[instrument]/page.tsx`, `assessments/history/[id]/page.tsx` (new); add `usePhiAudit('/assessments/history/[id]')` to history detail | `tests/e2e/assessments.spec.ts` (assert audit fires on history detail view) | spec §6.4 + §7.6 |
+| 6.6 | Refresh Settings shell + 4 sub-pages **(smoke spec must cover Appearance theme toggle round-trip + Locale switcher round-trip — both are new wiring)** | `settings/page.tsx`, `settings/{account,notifications,privacy,appearance}/page.tsx` | new `tests/e2e/settings-smoke.spec.ts` covering theme toggle + locale switch | spec §6.6 |
+| 6.7a | Refresh TopBar + SidebarNav + BottomNav + ThemeToggle + LocaleSwitcher + WordmarkSvg (nav primitives) | `components/{TopBar,SidebarNav,BottomNav,ThemeToggle,LocaleSwitcher,WordmarkSvg}.tsx` | covered by every screen's E2E | spec §5.4 |
+| 6.7b | NotificationsDrawer (Sheet behavior + bell badge + unread count — separate concern from nav primitives) | `components/NotificationsDrawer.tsx` + `hooks/useNotificationCount.ts` (stub-fed) | new `tests/e2e/notifications-drawer.spec.ts` | spec §5.4, §6.6 |
+| 6.8 | Refresh `/crisis` route — POLISH or REBUILD per Task 6.0 decision | `app/[locale]/crisis/page.tsx` (per spec §7.7: no `'use client'`, no `<Suspense>`, no client fetch, hotline data inlined at server-render, `tel:`/`sms:` server-rendered, JS-disabled functional); ESLint rule `discipline/no-llm-on-crisis-route` MUST pass on this route; SW precache entry covers this route (verified via Workbox `precache.js` glob from Chunk 3 task 3.2) | `tests/e2e/crisis.spec.ts` with `--javaScriptEnabled=false` assertion AND assertion that `tel:` anchors render server-side (visible in `view-source:`) | spec §5.1 + §7.7 |
+| 6.9 | **Middleware update — preserve `/:locale/crisis(.*)` in PUBLIC_ROUTES + emit `X-Phi-Boundary: 1` on canonical PHI route list** | `src/middleware.ts` (clerkMiddleware wrapping `createMiddleware(routing)`); set `X-Phi-Boundary: 1` for: `/reports*`, `/assessments/history*`, `/journal*`, `/patterns*` (per spec §7.6 — note `/api/exports/fhir-r4` lives backend-side, not in this client middleware) | `tests/unit/middleware-routes.test.ts` with TWO regression guards: (1) `crisis_route_remains_in_public_routes_after_refactor` — fails if anyone removes `/:locale/crisis(.*)` from `PUBLIC_ROUTES` (CLAUDE.md non-negotiable #1); (2) `phi_routes_emit_boundary_header` — iterates the canonical PHI route list and asserts each emits the header | spec §7.6 + CLAUDE.md "common pitfalls" |
+| 6.10 | Client-side `usePhiAudit` hook + `apiFetch` interceptor | `src/hooks/usePhiAudit.ts`, `src/lib/api.ts` | new spec `tests/e2e/phi-audit.spec.ts` (asserts `/api/audit/phi-read` is called for each PHI route from §7.6) | spec §7.6 |
 
 **Per-task acceptance:**
-- The screen renders in dark + light × en + ar without regression
-- E2E green for the touched spec
+- The screen renders in dark + light × en + ar without regression (visual smoke before merge)
+- All nav components and any directional UI use logical properties (`ms-*`/`me-*`, `start`/`end`); Storybook story passes in `dir="rtl"` for `ar`/`fa`; ESLint `no-physical-tailwind-properties` rule from Chunk 2 fires on any regression
+- E2E green for the touched spec; existing E2E selectors (data-testid) updated in the SAME PR as the screen refresh (per spec §10 Phase 3 requirement)
 - Lint, typecheck, unit tests green
+- For PHI screens (6.4, 6.5): audit hook wiring confirmed via E2E network assertion
 - Visual review in Storybook (for components) before merging
 
 ### Phase 3 chunk-completion checklist
 
-- [ ] All 6 existing screens refreshed
-- [ ] TopBar + sidebar + bottom-nav refreshed; NotificationsDrawer functional (bell triggers Sheet)
-- [ ] PHI middleware live + audited
-- [ ] `pnpm test:e2e` green for all existing specs
+- [ ] Task 6.0 audit decision recorded in the 6.8 PR description
+- [ ] All 6 existing screens refreshed (6.1–6.6)
+- [ ] TopBar + SidebarNav + BottomNav refreshed (6.7a); NotificationsDrawer functional with bell badge + unread count (6.7b)
+- [ ] `/crisis` route conforms to spec §7.7 (server component, inlined hotline, JS-disabled functional, ESLint rule passing, SW precached) — 6.8
+- [ ] PHI middleware live + audited; `/:locale/crisis(.*)` regression test passing — 6.9
+- [ ] PHI hook wired on Journal + Assessments-history detail; audit network call verified in E2E — 6.10
+- [ ] `pnpm test:e2e` green for all existing specs + new settings-smoke + notifications-drawer + phi-audit specs
 
 **Stop here. Run plan-document-reviewer.**
 
 ---
 
-## Chunk 7: Phase 4 — New screens
+## Chunk 7: Phase 4 — New screens (6 surfaces)
 
 **Time estimate:** 2 weeks.
 
 **Pre-task: clinical-QA scheduling** — see R8 in spec §11. Pre-book reviewer slots for Companion + Reports + FHIR schema *before* this chunk starts.
 
+**Pre-task: ESLint rule extension to companion route** — Before Task 7.4 begins, confirm the `discipline/no-llm-on-crisis-route` rule from Chunk 2 already covers `app/[locale]/companion/**` (it does, per Chunk 2 Task 2.4 fixtures). Run `pnpm lint` from `apps/web-app`; rule must be active before any file is created under `companion/`. Halt if the rule is not wired.
+
+**Locale-parity gate (applies to every task in this chunk):** Every new screen ships translation keys in `packages/i18n-catalog/src/catalogs/{en,fr,ar,fa}.json` in the SAME PR as the screen. Non-EN locales carry `_meta.status: "draft"` until native review. The `localeFallback_draft_key_falls_back_to_en_silently` Vitest gate in `clinical-contracts.test.ts` (from Chunk 5 §5.12) flips from `it.todo` to live in this chunk and asserts no untranslated key surfaces a missing-translation placeholder to users.
+
 | Order | Task | Files | Dependencies / blockers |
 |-------|------|-------|-------------------------|
-| 7.1 | Reports landing + detail | `app/[locale]/reports/page.tsx`, `reports/[period]/page.tsx`; `hooks/useReports.ts`; `tests/e2e/reports.spec.ts` | clinical-QA on RCIDelta interpretation; FHIR schema sign-off (parallel with implementation) |
-| 7.2 | Patterns landing + detail | `app/[locale]/patterns/page.tsx`, `patterns/[id]/page.tsx`; `hooks/usePatterns.ts`; `tests/e2e/patterns.spec.ts` | InsightCard from Chunk 5 |
-| 7.3 | Library landing + category + article | `app/[locale]/library/page.tsx`, `library/[category]/page.tsx`, `library/[category]/[slug]/page.tsx`; `hooks/useLibrary.ts`; `tests/e2e/library.spec.ts` | content team supplies categories + initial article slugs (5 categories per spec §5.5) |
-| 7.4 | Companion | `app/[locale]/companion/page.tsx`; `hooks/useCompanion.ts`; `tests/e2e/companion.spec.ts` | CompassionTemplate from Chunk 5; `companionRoute_has_zero_llm_imports` gate green; clinical-QA review on copy + flow |
-| 7.5 | Notifications config (`/settings/notifications`) + bell-drawer Sheet content | `app/[locale]/settings/notifications/page.tsx` (already created in 6.6 shell); `components/NotificationsDrawer.tsx` (already created in 6.7) — fill out content here | `hooks/useNotifications.ts` |
-| 7.6 | Appearance settings (theme + locale + motion) | `app/[locale]/settings/appearance/page.tsx` | uses `useTheme` from `next-themes`, `LocaleSwitcher`, and a new "Reduce ambient motion" toggle that flips `[data-ambient-motion]` on `<html>` |
+| 7.1 | Reports landing + detail (incl. **FHIR R4 export download action** per spec §5.5 + CLAUDE.md cross-ref `Docs/Technicals/13_Analytics_Reporting.md`) | `app/[locale]/reports/page.tsx`, `reports/[period]/page.tsx`; `hooks/useReports.ts`; `components/FhirExportButton.tsx` (calls `/api/exports/fhir-r4`, requires step-up auth — UI handles 401-with-stepUp-required response); `tests/e2e/reports.spec.ts`; locale catalog keys for `reports.*` in en/fr/ar/fa | clinical-QA on RCIDelta interpretation; FHIR schema sign-off (parallel with implementation); step-up re-auth flow available |
+| 7.2 | Patterns landing + detail — **note: PatternsPreviewTile (small dashboard summary) was built in Chunk 6 task 6.1; THIS task uses the full `InsightCard` from Chunk 5 §5.10 in a list/detail view** | `app/[locale]/patterns/page.tsx`, `patterns/[id]/page.tsx`; `hooks/usePatterns.ts`; `tests/e2e/patterns.spec.ts`; locale catalog keys for `patterns.*` | InsightCard from Chunk 5; do NOT reuse PatternsPreviewTile here |
+| 7.3 | Library landing + category + article | `app/[locale]/library/page.tsx`, `library/[category]/page.tsx`, `library/[category]/[slug]/page.tsx`; `hooks/useLibrary.ts`; `tests/e2e/library.spec.ts`; locale catalog keys for `library.*` | content team supplies categories + initial article slugs (5 categories per spec §5.5) |
+| 7.4 | Companion — **route is LLM-prohibited (spec §7.7); ESLint rule confirmed live via pre-task above** | `app/[locale]/companion/page.tsx`; `hooks/useCompanion.ts`; `tests/e2e/companion.spec.ts`; locale catalog keys for `companion.*` | CompassionTemplate from Chunk 5; `companionRoute_has_zero_llm_imports` gate (in `clinical-contracts.test.ts` §5.12) flips from `it.todo` to live in this chunk; clinical-QA review on copy + flow |
+| 7.5 | Notifications **PREFERENCES UI ONLY** (`/settings/notifications` config screen + bell-drawer Sheet content). **Push handler is explicitly OUT OF SCOPE here — deferred to Chunk 8 Phase 5 task 8.2 pending R3 security review.** Do NOT extend `sw.js` in this task; Chunk 8 §8.2 owns that. | `app/[locale]/settings/notifications/page.tsx` (shell from 6.6); `components/NotificationsDrawer.tsx` (shell from 6.7b) — fill out content here; `hooks/useNotifications.ts`; locale catalog keys for `notifications.*` | none — pure UI/preferences; no SW changes |
+| 7.6 | Appearance settings (theme + locale + motion) | `app/[locale]/settings/appearance/page.tsx`; locale catalog keys for `appearance.*` | uses `useTheme` from `next-themes` (Chunk 1), `LocaleSwitcher` (Chunk 6 §6.7a), and a new "Reduce ambient motion" toggle that flips `[data-ambient-motion]` on `<html>` (the `useReducedMotion` hook from Chunk 1 §1.5 already reads this attribute) |
 
 **Per-task acceptance:**
 - E2E covers golden path + ≥2 edge cases
 - A11y: axe-core scan zero serious/critical
-- Stub data sufficient to render every state in Storybook + dev mode
+- Stub data (via `useStubs` from Chunk 3 §3.1) sufficient to render every state in Storybook + dev mode
+- Locale catalog parity: keys exist in `en.json`, `fr.json`, `ar.json`, `fa.json`; non-EN at `_meta.status: "draft"`; locale-fallback test green
+- Logical properties only (`ms-*`/`me-*`); RTL story for `ar`/`fa` passes visual review
 
 ### Phase 4 chunk-completion checklist
 
-- [ ] All 5 new screens shipped and reachable from nav
+- [ ] All **6 new screens** shipped and reachable from nav (7.1 Reports, 7.2 Patterns, 7.3 Library, 7.4 Companion, 7.5 Notifications-prefs, 7.6 Appearance)
 - [ ] Clinical-QA sign-off on Companion copy and Reports interpretation
-- [ ] FHIR R4 export schema approved + endpoint stubbed
+- [ ] FHIR R4 export schema approved + endpoint stubbed; FhirExportButton wired; step-up flow exercised in E2E
 - [ ] axe-core matrix expanded to cover new routes
-- [ ] No `'use client'` in `companion/page.tsx`; no LLM imports anywhere under that route
+- [ ] No `'use client'` in `companion/page.tsx`; no LLM imports anywhere under `app/[locale]/companion/**` (ESLint rule + `companionRoute_has_zero_llm_imports` Vitest gate both green)
+- [ ] Locale catalog parity check passes (en/fr/ar/fa all have the new screen keys; draft-fallback test green)
+- [ ] Push notification handler **NOT** added in this chunk — confirmed by `git diff` showing no edits to `public/sw.js` or related Workbox files
 
 **Stop here. Run plan-document-reviewer.**
 
@@ -1586,10 +1845,11 @@ Some gates may be marked `it.todo` until the prerequisite chunk ships; the file 
 
 | Task | Notes |
 |------|-------|
-| 8.12 Canary deploy 10% × 10min | per `Docs/Technicals/08_Infrastructure_DevOps.md` §8 |
-| 8.13 Monitor: error rate, LCP per route, axe-core production scan, PHI audit-stream coverage | Grafana dashboards (separate spec) |
-| 8.14 Full traffic shift | Auto if canary green |
-| 8.15 v1.1 backlog captured | Cut: Reports DataTable, BreadCrumbs, CommandMenu (Cmd-K), ContextMenu, SplitView, dedicated ErrorBoundary, web-clinician/web-enterprise visual refresh |
+| 8.12 Verify rollback armed for `web-app` deploy pipeline (BEFORE canary) | Confirm the auto-rollback trigger (per `Docs/Technicals/08_Infrastructure_DevOps.md` §8) is wired specifically for the `web-app` surface — error-rate threshold, LCP regression threshold, and audit-stream-coverage drop all trigger automatic rollback; record the dashboard URL + threshold values in the canary PR. |
+| 8.13 Canary deploy 10% × 10min | per `Docs/Technicals/08_Infrastructure_DevOps.md` §8 |
+| 8.14 Monitor: error rate, LCP per route, axe-core production scan, PHI audit-stream coverage | Grafana dashboards (separate spec) |
+| 8.15 Full traffic shift | Auto if canary green |
+| 8.16 v1.1 backlog captured | Cut: Reports DataTable, BreadCrumbs, CommandMenu (Cmd-K), ContextMenu, SplitView, dedicated ErrorBoundary, web-clinician/web-enterprise visual refresh |
 
 ### Phases 5–7 chunk-completion checklist
 
