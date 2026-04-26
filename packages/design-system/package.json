@@ -28,7 +28,8 @@
     "./primitives/Switch": "./src/primitives/Switch.tsx",
     "./primitives/Select": "./src/primitives/Select.tsx",
     "./primitives/TabNav": "./src/primitives/TabNav.tsx",
-    "./primitives/Dialog": "./src/primitives/Dialog.tsx"
+    "./primitives/Dialog": "./src/primitives/Dialog.tsx",
+    "./primitives/Sheet": "./src/primitives/Sheet.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
