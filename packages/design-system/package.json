@@ -21,7 +21,8 @@
     "./primitives/Tooltip": "./src/primitives/Tooltip.tsx",
     "./primitives/Badge": "./src/primitives/Badge.tsx",
     "./primitives/ProgressRing": "./src/primitives/ProgressRing.tsx",
-    "./primitives/Sparkline": "./src/primitives/Sparkline.tsx"
+    "./primitives/Sparkline": "./src/primitives/Sparkline.tsx",
+    "./primitives/Slider": "./src/primitives/Slider.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -37,6 +38,7 @@
     "vitest": "^2.1.0"
   },
   "dependencies": {
+    "@radix-ui/react-slider": "^1.3.6",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@visx/axis": "^3.12.0",
     "@visx/curve": "^3.12.0",
