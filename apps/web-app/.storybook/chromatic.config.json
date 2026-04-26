@@ -1,5 +1,5 @@
 {
   "onlyStoryFiles": [
-    "packages/design-system/src/**/*.stories.@(ts|tsx)"
+    "../../../packages/design-system/src/**/*.stories.@(ts|tsx)"
   ]
 }
