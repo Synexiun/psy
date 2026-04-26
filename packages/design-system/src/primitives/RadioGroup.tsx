@@ -19,6 +19,7 @@
  * Logical properties only; no ml-*/mr-*/pl-*/pr-* classes anywhere in this file.
  */
 import * as React from 'react';
+import { useId } from 'react';
 import * as RadixRadioGroup from '@radix-ui/react-radio-group';
 
 export interface RadioOption {
@@ -51,6 +52,8 @@ export function RadioGroup({
   name,
   className = '',
 }: RadioGroupProps): React.ReactElement {
+  const groupId = useId();
+
   // exactOptionalPropertyTypes: only spread optional props when defined so
   // Radix does not receive the key set to undefined.
   const optionalRootProps = {
@@ -68,27 +71,31 @@ export function RadioGroup({
       aria-label={ariaLabel}
       {...optionalRootProps}
     >
-      {options.map((option) => (
-        <div key={option.value} className="flex items-start gap-3">
-          <RadixRadioGroup.Item
-            value={option.value}
-            disabled={option.disabled ?? disabled}
-            className="mt-0.5 size-4 shrink-0 rounded-full border border-border-subtle bg-surface-primary transition-colors duration-fast ease-default hover:border-accent-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent-bronze data-[state=checked]:bg-accent-bronze"
-          >
-            <RadixRadioGroup.Indicator className="flex items-center justify-center">
-              <div className="size-1.5 rounded-full bg-surface-primary" />
-            </RadixRadioGroup.Indicator>
-          </RadixRadioGroup.Item>
-          <div className="flex flex-col gap-0.5">
-            <label className="cursor-pointer text-sm font-medium leading-none text-ink-primary">
-              {option.label}
-            </label>
-            {option.description !== undefined && (
-              <p className="text-xs text-ink-tertiary">{option.description}</p>
-            )}
+      {options.map((option) => {
+        const itemId = `${groupId}-${option.value}`;
+        return (
+          <div key={option.value} className="flex items-start gap-3">
+            <RadixRadioGroup.Item
+              id={itemId}
+              value={option.value}
+              disabled={option.disabled ?? disabled}
+              className="mt-0.5 size-4 shrink-0 rounded-full border border-border-subtle bg-surface-primary transition-colors duration-fast ease-default hover:border-accent-bronze focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-accent-bronze data-[state=checked]:bg-accent-bronze"
+            >
+              <RadixRadioGroup.Indicator className="flex items-center justify-center">
+                <div className="size-1.5 rounded-full bg-surface-primary" />
+              </RadixRadioGroup.Indicator>
+            </RadixRadioGroup.Item>
+            <div className="flex flex-col gap-0.5">
+              <label htmlFor={itemId} className="cursor-pointer text-sm font-medium leading-none text-ink-primary">
+                {option.label}
+              </label>
+              {option.description !== undefined && (
+                <p className="text-xs text-ink-tertiary">{option.description}</p>
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </RadixRadioGroup.Root>
   );
 }
