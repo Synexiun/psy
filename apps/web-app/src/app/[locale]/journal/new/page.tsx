@@ -269,7 +269,7 @@ function JournalNewInner({ locale }: { locale: string }) {
         <nav aria-label="Breadcrumb">
           <a
             href={`/${locale}/journal`}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-500 hover:text-ink-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-tertiary hover:text-ink-secondary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
           >
             {/* Left-arrow SVG — no emoji, renders identically across locales */}
             <svg
@@ -295,7 +295,7 @@ function JournalNewInner({ locale }: { locale: string }) {
 
         {/* Page heading */}
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
             {t('journal.newEntry')}
           </h1>
         </header>
@@ -305,7 +305,7 @@ function JournalNewInner({ locale }: { locale: string }) {
           <div
             role="status"
             aria-live="polite"
-            className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+            className="flex items-center gap-2 rounded-lg border border-signal-warning/30 bg-signal-warning/10 px-4 py-3 text-sm text-signal-warning"
           >
             <svg
               aria-hidden="true"
@@ -333,7 +333,7 @@ function JournalNewInner({ locale }: { locale: string }) {
           <Card>
             <label
               htmlFor="journal-entry-text"
-              className="block text-sm font-medium text-ink-900"
+              className="block text-sm font-medium text-ink-primary"
             >
               {t('journal.newEntry')}
             </label>
@@ -346,7 +346,7 @@ function JournalNewInner({ locale }: { locale: string }) {
               placeholder="What's on your mind?"
               rows={8}
               maxLength={MAX_CHARS}
-              className="mt-3 w-full resize-y rounded-lg border border-surface-200 bg-surface-50 px-3 py-2.5 text-sm text-ink-900 placeholder-ink-300 focus:border-brand-400 focus:bg-surface-0 focus:outline-none focus:ring-2 focus:ring-brand-300 transition-colors"
+              className="mt-3 w-full resize-y rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm text-ink-primary placeholder-ink-quaternary focus:border-accent-bronze focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30 transition-colors"
               aria-describedby="journal-char-count journal-word-count"
               disabled={isSubmitting}
             />
@@ -357,7 +357,7 @@ function JournalNewInner({ locale }: { locale: string }) {
                 {/* Word count */}
                 <p
                   id="journal-word-count"
-                  className="text-xs text-ink-400"
+                  className="text-xs text-ink-quaternary"
                   aria-live="polite"
                 >
                   {latinDigits(wordCount)} {wordCount === 1 ? 'word' : 'words'}
@@ -368,7 +368,7 @@ function JournalNewInner({ locale }: { locale: string }) {
                   <span
                     role="status"
                     aria-live="polite"
-                    className="flex items-center gap-1 text-xs text-calm-600"
+                    className="flex items-center gap-1 text-xs text-signal-stable"
                   >
                     <svg
                       aria-hidden="true"
@@ -397,10 +397,10 @@ function JournalNewInner({ locale }: { locale: string }) {
                 aria-live="polite"
                 className={`text-xs tabular-nums ${
                   isOverLimit
-                    ? 'font-semibold text-crisis-600'
+                    ? 'font-semibold text-signal-crisis'
                     : showCharWarning
-                    ? 'text-amber-600'
-                    : 'text-ink-400'
+                    ? 'text-signal-warning'
+                    : 'text-ink-quaternary'
                 }`}
               >
                 {latinDigits(charCount)}/{latinDigits(MAX_CHARS)}
@@ -409,7 +409,7 @@ function JournalNewInner({ locale }: { locale: string }) {
 
             {/* Over-limit warning */}
             {isOverLimit && (
-              <p role="alert" className="mt-2 text-xs font-medium text-crisis-600">
+              <p role="alert" className="mt-2 text-xs font-medium text-signal-crisis">
                 Entry exceeds {latinDigits(MAX_CHARS)} characters. Please shorten before saving.
               </p>
             )}
@@ -418,9 +418,9 @@ function JournalNewInner({ locale }: { locale: string }) {
           {/* Mood tag section */}
           <Card>
             <fieldset>
-              <legend className="text-sm font-medium text-ink-900">
+              <legend className="text-sm font-medium text-ink-primary">
                 How are you feeling?{' '}
-                <span className="font-normal text-ink-400">(optional, up to {latinDigits(MAX_MOOD_TAGS)})</span>
+                <span className="font-normal text-ink-quaternary">(optional, up to {latinDigits(MAX_MOOD_TAGS)})</span>
               </legend>
               <div
                 className="mt-3 flex flex-wrap gap-2"
@@ -437,10 +437,10 @@ function JournalNewInner({ locale }: { locale: string }) {
                       onClick={() => toggleMood(mood)}
                       aria-pressed={active}
                       disabled={atLimit || isSubmitting}
-                      className={`min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 disabled:opacity-40 disabled:cursor-not-allowed ${
+                      className={`min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 disabled:opacity-40 disabled:cursor-not-allowed ${
                         active
-                          ? 'bg-brand-500 text-white shadow-sm'
-                          : 'bg-surface-100 text-ink-700 hover:bg-surface-200 border border-surface-200'
+                          ? 'bg-accent-bronze text-white shadow-sm'
+                          : 'bg-surface-tertiary text-ink-secondary hover:bg-surface-tertiary border border-border-subtle'
                       }`}
                     >
                       {mood}
@@ -456,7 +456,7 @@ function JournalNewInner({ locale }: { locale: string }) {
             <div
               role="alert"
               aria-live="assertive"
-              className="rounded-lg border border-crisis-200 bg-crisis-50/40 px-4 py-3 text-sm text-crisis-700"
+              className="rounded-lg border border-signal-crisis/30 bg-signal-crisis/10 px-4 py-3 text-sm text-signal-crisis"
             >
               {submitError}
             </div>

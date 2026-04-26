@@ -59,10 +59,10 @@ function JournalInner({ locale }: { locale: string }) {
         {/* Page header */}
         <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
               {t('nav.journal')}
             </h1>
-            <p className="mt-1 text-sm text-ink-500">{t('journal.subtitle')}</p>
+            <p className="mt-1 text-sm text-ink-tertiary">{t('journal.subtitle')}</p>
           </div>
           <Button
             variant="primary"
@@ -79,7 +79,7 @@ function JournalInner({ locale }: { locale: string }) {
         <section aria-labelledby="journal-entries-heading">
           <h2
             id="journal-entries-heading"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary"
           >
             {t('journal.entriesHeading')}
           </h2>
@@ -89,15 +89,15 @@ function JournalInner({ locale }: { locale: string }) {
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
-                  className="h-[108px] animate-pulse rounded-lg bg-ink-100"
+                  className="h-[108px] animate-pulse rounded-lg bg-surface-tertiary"
                   aria-hidden="true"
                 />
               ))}
             </div>
           ) : entries.length === 0 ? (
             <Card className="py-12 text-center">
-              <p className="text-base font-medium text-ink-700">{t('journal.emptyHeadline')}</p>
-              <p className="mt-2 text-sm leading-relaxed text-ink-500">{t('journal.emptyBody')}</p>
+              <p className="text-base font-medium text-ink-secondary">{t('journal.emptyHeadline')}</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink-tertiary">{t('journal.emptyBody')}</p>
             </Card>
           ) : (
             <div className="space-y-3">
@@ -107,7 +107,7 @@ function JournalInner({ locale }: { locale: string }) {
                     <div className="flex items-start justify-between gap-3">
                       <time
                         dateTime={entry.date}
-                        className="shrink-0 text-xs font-medium text-ink-400"
+                        className="shrink-0 text-xs font-medium text-ink-quaternary"
                       >
                         {formatEntryDate(entry.date)}
                       </time>
@@ -117,12 +117,12 @@ function JournalInner({ locale }: { locale: string }) {
                             🎙 {t('journal.voiceBadge')}
                           </Badge>
                         )}
-                        <span className="text-xs text-ink-400">
+                        <span className="text-xs text-ink-quaternary">
                           {entry.wordCount.toString()} {t('journal.wordCount')}
                         </span>
                       </div>
                     </div>
-                    <p className="mt-3 text-sm leading-relaxed text-ink-700 line-clamp-3">
+                    <p className="mt-3 text-sm leading-relaxed text-ink-secondary line-clamp-3">
                       {entry.preview}
                     </p>
                   </Card>

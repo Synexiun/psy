@@ -12,7 +12,7 @@ function SectionLabel() {
 
 function CardShell({ children, className = '' }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={`rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm ${className}`}>
+    <div className={`rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm ${className}`}>
       {children}
     </div>
   );
@@ -23,9 +23,9 @@ export default function DashboardLoading(): React.JSX.Element {
     // Replicate the Layout shell without client deps so this stays a
     // pure Server Component.  The sidebar/nav chrome comes from the parent
     // [locale]/layout.tsx; here we only render the main-content region.
-    <div className="flex min-h-screen bg-surface-50" aria-busy="true" aria-label="Loading dashboard">
+    <div className="flex min-h-screen bg-surface-primary" aria-busy="true" aria-label="Loading dashboard">
       {/* Sidebar placeholder */}
-      <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-surface-200 lg:bg-surface-0">
+      <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-border-subtle lg:bg-surface-secondary">
         <div className="flex h-16 items-center px-6">
           <Skeleton variant="text" width="8rem" height="1.125rem" />
         </div>
@@ -41,7 +41,7 @@ export default function DashboardLoading(): React.JSX.Element {
 
       <div className="flex flex-1 flex-col">
         {/* Mobile topbar placeholder */}
-        <header className="flex h-16 items-center justify-between border-b border-surface-200 bg-surface-0 px-4 sm:px-6 lg:hidden">
+        <header className="flex h-16 items-center justify-between border-b border-border-subtle bg-surface-secondary px-4 sm:px-6 lg:hidden">
           <Skeleton variant="text" width="8rem" height="1.125rem" />
           <Skeleton variant="rect" width="5rem" height="2rem" />
         </header>
@@ -135,7 +135,7 @@ export default function DashboardLoading(): React.JSX.Element {
         </main>
 
         {/* Bottom nav placeholder (mobile) */}
-        <div className="fixed inset-x-0 bottom-0 flex h-16 items-center justify-around border-t border-surface-200 bg-surface-0 lg:hidden">
+        <div className="fixed inset-x-0 bottom-0 flex h-16 items-center justify-around border-t border-border-subtle bg-surface-secondary lg:hidden">
           {Array.from({ length: 5 }).map((_, i) => (
             <div key={i} className="flex flex-col items-center gap-1 px-2">
               <Skeleton variant="circle" height="1.5rem" />

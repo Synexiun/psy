@@ -50,35 +50,35 @@ const INSTRUMENT_METADATA: Omit<AssessmentInstrument, 'lastDate' | 'lastScore' |
     name: 'PHQ-9',
     fullName: 'Patient Health Questionnaire-9',
     maxScore: 27,
-    color: 'var(--color-calm-500)',
+    color: 'var(--color-signal-stable)',
   },
   {
     id: 'gad7',
     name: 'GAD-7',
     fullName: 'Generalized Anxiety Disorder-7',
     maxScore: 21,
-    color: 'var(--color-brand-500)',
+    color: 'var(--color-accent-bronze)',
   },
   {
     id: 'audit-c',
     name: 'AUDIT-C',
     fullName: 'Alcohol Use Disorders Identification Test-C',
     maxScore: 12,
-    color: 'var(--color-amber-500, #f59e0b)',
+    color: 'var(--color-signal-warning)',
   },
   {
     id: 'pss10',
     name: 'PSS-10',
     fullName: 'Perceived Stress Scale-10',
     maxScore: 40,
-    color: 'var(--color-crisis-500)',
+    color: 'var(--color-signal-crisis)',
   },
   {
     id: 'who5',
     name: 'WHO-5',
     fullName: 'World Health Organization Well-Being Index (5-item)',
     maxScore: 100,
-    color: 'var(--color-calm-500)',
+    color: 'var(--color-signal-stable)',
   },
 ];
 
@@ -117,10 +117,10 @@ function AssessmentCard({
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           {/* Validated instrument name sourced from i18n catalog — never paraphrase */}
-          <p className="text-base font-semibold text-ink-900">
+          <p className="text-base font-semibold text-ink-primary">
             {t(`assessments.instruments.${catalogKey}.name`)}
           </p>
-          <p className="mt-0.5 text-xs text-ink-500 leading-snug">
+          <p className="mt-0.5 text-xs text-ink-tertiary leading-snug">
             {t(`assessments.instruments.${catalogKey}.fullName`)}
           </p>
         </div>
@@ -140,16 +140,16 @@ function AssessmentCard({
                 </span>
               }
               sublabel={
-                <span className="text-[10px] text-ink-400">/ {formatNumberClinical(instrument.maxScore)}</span>
+                <span className="text-[10px] text-ink-quaternary">/ {formatNumberClinical(instrument.maxScore)}</span>
               }
               ariaLabel={`${instrument.name} score: ${formatNumberClinical(instrument.lastScore!)} out of ${formatNumberClinical(instrument.maxScore)}`}
             />
           ) : (
             <div
-              className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-dashed border-surface-200"
+              className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-dashed border-border-subtle"
               aria-label={`${instrument.name} — no score yet`}
             >
-              <span className="text-xs text-ink-300">—</span>
+              <span className="text-xs text-ink-quaternary">—</span>
             </div>
           )}
         </div>
@@ -159,21 +159,21 @@ function AssessmentCard({
       <div className="space-y-1">
         {hasScore ? (
           <>
-            <p className="text-xs text-ink-400">
+            <p className="text-xs text-ink-quaternary">
               {t('assessments.lastCompleted')}:{' '}
-              <span className="text-ink-600 font-medium">{formatDate(instrument.lastDate!)}</span>
+              <span className="text-ink-secondary font-medium">{formatDate(instrument.lastDate!)}</span>
             </p>
             {instrument.lastSeverity && (
-              <p className="text-xs text-ink-400">
+              <p className="text-xs text-ink-quaternary">
                 {t('assessments.score')}:{' '}
-                <span className="font-medium text-ink-700 clinical-number">
+                <span className="font-medium text-ink-secondary clinical-number">
                   {formatNumberClinical(instrument.lastScore!)} — {instrument.lastSeverity}
                 </span>
               </p>
             )}
           </>
         ) : (
-          <p className="text-xs text-ink-400 italic">{t('assessments.notYetTaken')}</p>
+          <p className="text-xs text-ink-quaternary italic">{t('assessments.notYetTaken')}</p>
         )}
       </div>
 
@@ -231,10 +231,10 @@ function AssessmentsInner({ locale }: { locale: string }) {
       <div className="space-y-6">
         {/* Page header */}
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
             {t('nav.assessments')}
           </h1>
-          <p className="mt-1 text-sm text-ink-500">{t('assessments.subtitle')}</p>
+          <p className="mt-1 text-sm text-ink-tertiary">{t('assessments.subtitle')}</p>
         </header>
 
         {/* Instruments grid */}
@@ -256,11 +256,11 @@ function AssessmentsInner({ locale }: { locale: string }) {
 
         {/* Clinical disclaimer — required */}
         <aside
-          className="rounded-xl border border-surface-200 bg-surface-50 px-5 py-4"
+          className="rounded-xl border border-border-subtle bg-surface-primary px-5 py-4"
           role="note"
           aria-label="Clinical disclaimer"
         >
-          <p className="text-xs leading-relaxed text-ink-500">{t('assessments.disclaimer')}</p>
+          <p className="text-xs leading-relaxed text-ink-tertiary">{t('assessments.disclaimer')}</p>
         </aside>
       </div>
     </Layout>

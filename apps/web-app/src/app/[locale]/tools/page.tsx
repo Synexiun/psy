@@ -91,7 +91,7 @@ function ToolCard({ tool, locale }: { tool: CopingTool; locale: string }) {
   return (
     <a
       href={`/${locale}/tools/${tool.id}`}
-      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded-xl group"
+      className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded-xl group"
       aria-label={`Open ${t(`tools.items.${tool.catalogKey}.name`)}`}
     >
       <Card hover className="h-full">
@@ -103,15 +103,15 @@ function ToolCard({ tool, locale }: { tool: CopingTool; locale: string }) {
             {tool.featured && (
               <Badge tone="calm">{t('tools.startHereLabel')}</Badge>
             )}
-            <span className="text-xs text-ink-400 tabular-nums">
+            <span className="text-xs text-ink-quaternary tabular-nums">
               {t(`tools.items.${tool.catalogKey}.duration`)} {t('tools.minutesSuffix')}
             </span>
           </div>
         </div>
-        <h3 className="mt-3 text-sm font-semibold text-ink-900 group-hover:text-brand-700 transition-colors">
+        <h3 className="mt-3 text-sm font-semibold text-ink-primary group-hover:text-accent-bronze transition-colors">
           {t(`tools.items.${tool.catalogKey}.name`)}
         </h3>
-        <p className="mt-1 text-xs leading-relaxed text-ink-500 line-clamp-3">
+        <p className="mt-1 text-xs leading-relaxed text-ink-tertiary line-clamp-3">
           {t(`tools.items.${tool.catalogKey}.description`)}
         </p>
         <div className="mt-3">
@@ -139,10 +139,10 @@ function ToolsInner({ locale }: { locale: string }) {
       <div className="space-y-6">
         {/* Page header */}
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
             {t('nav.tools')}
           </h1>
-          <p className="mt-1 text-sm text-ink-500">{t('tools.subtitle')}</p>
+          <p className="mt-1 text-sm text-ink-tertiary">{t('tools.subtitle')}</p>
         </header>
 
         {/* Featured tool */}
@@ -150,13 +150,13 @@ function ToolsInner({ locale }: { locale: string }) {
           <section aria-labelledby="featured-tool-heading">
             <h2
               id="featured-tool-heading"
-              className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400"
+              className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary"
             >
               {t('tools.startHereLabel')}
             </h2>
             <a
               href={`/${locale}/tools/${featured.id}`}
-              className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded-xl group"
+              className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded-xl group"
               aria-label={`Open ${t(`tools.items.${featured.catalogKey}.name`)}`}
             >
               <Card tone="calm" hover className="flex gap-4 items-start">
@@ -165,18 +165,18 @@ function ToolsInner({ locale }: { locale: string }) {
                 </span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-base font-semibold text-ink-900 group-hover:text-brand-700 transition-colors">
+                    <h3 className="text-base font-semibold text-ink-primary group-hover:text-accent-bronze transition-colors">
                       {t(`tools.items.${featured.catalogKey}.name`)}
                     </h3>
                     <Badge tone="calm">{t('tools.startHereLabel')}</Badge>
-                    <span className="text-xs text-ink-400">
+                    <span className="text-xs text-ink-quaternary">
                       {t(`tools.items.${featured.catalogKey}.duration`)} {t('tools.minutesSuffix')}
                     </span>
                   </div>
-                  <p className="mt-1.5 text-sm leading-relaxed text-ink-600">
+                  <p className="mt-1.5 text-sm leading-relaxed text-ink-secondary">
                     {t(`tools.items.${featured.catalogKey}.description`)}
                   </p>
-                  <p className="mt-2 text-xs text-ink-500">{t('tools.featuredDescription')}</p>
+                  <p className="mt-2 text-xs text-ink-tertiary">{t('tools.featuredDescription')}</p>
                 </div>
               </Card>
             </a>
@@ -187,7 +187,7 @@ function ToolsInner({ locale }: { locale: string }) {
         <section aria-labelledby="all-tools-heading">
           <h2
             id="all-tools-heading"
-            className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary"
           >
             {t('tools.sectionAll')}
           </h2>

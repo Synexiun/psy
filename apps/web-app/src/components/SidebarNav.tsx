@@ -33,11 +33,11 @@ function NavItem({
 
   const stateClasses = crisis
     ? active
-      ? 'bg-crisis-50 text-crisis-700'
-      : 'text-crisis-600 hover:bg-crisis-50 hover:text-crisis-700'
+      ? 'bg-signal-crisis/10 text-signal-crisis'
+      : 'text-signal-crisis hover:bg-signal-crisis/10 hover:text-signal-crisis'
     : active
-      ? 'bg-brand-50 text-brand-700'
-      : 'text-ink-600 hover:bg-surface-100 hover:text-ink-900';
+      ? 'bg-accent-bronze/10 text-accent-bronze'
+      : 'text-ink-secondary hover:bg-surface-tertiary hover:text-ink-primary';
 
   return (
     <a
@@ -131,7 +131,7 @@ export function SidebarNav({ locale }: SidebarNavProps) {
       </ul>
 
       {/* Crisis link — always visible, separated, styled distinctly */}
-      <div className="mt-auto border-t border-surface-200 pt-4">
+      <div className="mt-auto border-t border-border-subtle pt-4">
         <NavItem
           href={crisisItem.href}
           label={crisisItem.label}

@@ -13,10 +13,10 @@ export function Layout({ children, locale }: LayoutProps) {
   const t = useTranslations();
 
   return (
-    <div className="flex min-h-screen bg-surface-50">
-      <aside aria-label="Main navigation" className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-surface-200 lg:bg-surface-0">
+    <div className="flex min-h-screen bg-surface-primary">
+      <aside aria-label="Main navigation" className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-border-subtle lg:bg-surface-secondary">
         <div className="flex h-16 items-center px-6">
-          <span className="text-lg font-semibold tracking-tight text-ink-900">
+          <span className="text-lg font-semibold tracking-tight text-ink-primary">
             {t('app.name')}
           </span>
         </div>
@@ -24,13 +24,13 @@ export function Layout({ children, locale }: LayoutProps) {
       </aside>
 
       <div className="flex flex-1 flex-col">
-        <header className="flex h-16 items-center justify-between border-b border-surface-200 bg-surface-0 px-4 sm:px-6 lg:hidden">
-          <span className="text-lg font-semibold tracking-tight text-ink-900">
+        <header className="flex h-16 items-center justify-between border-b border-border-subtle bg-surface-secondary px-4 sm:px-6 lg:hidden">
+          <span className="text-lg font-semibold tracking-tight text-ink-primary">
             {t('app.name')}
           </span>
           <a
             href={`/${locale}/crisis`}
-            className="inline-flex items-center rounded-lg bg-crisis-600 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-crisis-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crisis-300"
+            className="inline-flex items-center rounded-lg bg-signal-crisis px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-signal-crisis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30"
           >
             {t('crisis.cta.primary')}
           </a>

@@ -32,10 +32,10 @@ export default function LocaleError({ error, reset }: ErrorPageProps): React.JSX
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-crisis-100">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-signal-crisis/15">
         {/* Warning icon — inline SVG avoids external dep */}
         <svg
-          className="h-6 w-6 text-crisis-600"
+          className="h-6 w-6 text-signal-crisis"
           fill="none"
           viewBox="0 0 24 24"
           stroke="currentColor"
@@ -50,28 +50,28 @@ export default function LocaleError({ error, reset }: ErrorPageProps): React.JSX
         </svg>
       </div>
 
-      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink-900 sm:text-3xl">
+      <h1 className="mt-6 text-2xl font-semibold tracking-tight text-ink-primary sm:text-3xl">
         Something went wrong
       </h1>
 
-      <p className="mt-3 max-w-sm text-sm leading-relaxed text-ink-500">{userMessage}</p>
+      <p className="mt-3 max-w-sm text-sm leading-relaxed text-ink-tertiary">{userMessage}</p>
 
       {/* Digest is safe to surface — it's an opaque server-generated hash */}
       {error.digest && (
-        <p className="mt-2 font-mono text-xs text-ink-300">Error ID: {error.digest}</p>
+        <p className="mt-2 font-mono text-xs text-ink-quaternary">Error ID: {error.digest}</p>
       )}
 
       <div className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
         <button
           onClick={reset}
-          className="inline-flex h-10 items-center rounded-md bg-brand-500 px-5 text-sm font-medium text-white transition-colors hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2"
+          className="inline-flex h-10 items-center rounded-md bg-accent-bronze px-5 text-sm font-medium text-white transition-colors hover:bg-accent-bronze-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
         >
           Try again
         </button>
 
         <a
           href="/"
-          className="inline-flex h-10 items-center rounded-md border border-surface-200 bg-surface-0 px-5 text-sm font-medium text-ink-700 transition-colors hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2"
+          className="inline-flex h-10 items-center rounded-md border border-border-subtle bg-surface-secondary px-5 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
         >
           Go home
         </a>

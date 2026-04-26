@@ -25,11 +25,11 @@ function Toggle({ id, checked, onChange, label, description }: ToggleProps) {
   return (
     <div className="flex items-start justify-between gap-4 py-3">
       <div className="min-w-0">
-        <label htmlFor={id} className="block text-sm font-medium text-ink-900 cursor-pointer">
+        <label htmlFor={id} className="block text-sm font-medium text-ink-primary cursor-pointer">
           {label}
         </label>
         {description && (
-          <p className="mt-0.5 text-xs text-ink-500 leading-snug">{description}</p>
+          <p className="mt-0.5 text-xs text-ink-tertiary leading-snug">{description}</p>
         )}
       </div>
       <button
@@ -37,8 +37,8 @@ function Toggle({ id, checked, onChange, label, description }: ToggleProps) {
         role="switch"
         aria-checked={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2 min-h-[44px] min-w-[44px] justify-center ${
-          checked ? 'bg-brand-500' : 'bg-surface-300'
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 min-h-[44px] min-w-[44px] justify-center ${
+          checked ? 'bg-accent-bronze' : 'bg-border-emphasis'
         }`}
         aria-label={label}
       >
@@ -61,11 +61,11 @@ function Section({ title, children }: { title: string; children: React.ReactNode
     <section aria-labelledby={`section-${title.toLowerCase().replace(/\s+/g, '-')}`}>
       <h2
         id={`section-${title.toLowerCase().replace(/\s+/g, '-')}`}
-        className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-400"
+        className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary"
       >
         {title}
       </h2>
-      <Card className="divide-y divide-surface-200 p-0 overflow-hidden">
+      <Card className="divide-y divide-border-subtle p-0 overflow-hidden">
         {children}
       </Card>
     </section>
@@ -94,19 +94,19 @@ function DeleteDialog({ onClose, onConfirm, isDeleting, deleteError }: DeleteDia
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-surface-overlay p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="delete-dialog-title"
     >
-      <div className="w-full max-w-md rounded-2xl border border-surface-200 bg-surface-0 p-6 shadow-xl space-y-4">
+      <div className="w-full max-w-md rounded-2xl border border-border-subtle bg-surface-secondary p-6 shadow-xl space-y-4">
         <div className="flex items-start gap-3">
           <span className="text-2xl leading-none shrink-0" aria-hidden="true">⚠️</span>
           <div>
-            <h3 id="delete-dialog-title" className="text-base font-semibold text-ink-900">
+            <h3 id="delete-dialog-title" className="text-base font-semibold text-ink-primary">
               {t('settings.sections.privacy.deleteDialogTitle')}
             </h3>
-            <p className="mt-1 text-sm text-ink-600 leading-relaxed">
+            <p className="mt-1 text-sm text-ink-secondary leading-relaxed">
               {t('settings.sections.privacy.deleteDialogBody')}
             </p>
           </div>
@@ -115,7 +115,7 @@ function DeleteDialog({ onClose, onConfirm, isDeleting, deleteError }: DeleteDia
         <div>
           <label
             htmlFor="delete-confirm-input"
-            className="block text-sm font-medium text-ink-700 mb-1.5"
+            className="block text-sm font-medium text-ink-secondary mb-1.5"
           >
             {t('settings.sections.privacy.deleteConfirmLabel')}
           </label>
@@ -126,12 +126,12 @@ function DeleteDialog({ onClose, onConfirm, isDeleting, deleteError }: DeleteDia
             onChange={(e) => setConfirmText(e.target.value)}
             placeholder={t('settings.sections.privacy.deleteDialogConfirmPlaceholder')}
             autoComplete="off"
-            className="w-full rounded-lg border border-surface-200 bg-surface-50 px-3 py-2.5 text-sm font-mono text-ink-900 placeholder-ink-300 focus:border-crisis-400 focus:bg-surface-0 focus:outline-none focus:ring-2 focus:ring-crisis-300 transition-colors"
+            className="w-full rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm font-mono text-ink-primary placeholder-ink-quaternary focus:border-signal-crisis focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-signal-crisis/30 transition-colors"
           />
         </div>
 
         {deleteError !== null && (
-          <p role="alert" className="text-sm text-crisis-600">
+          <p role="alert" className="text-sm text-signal-crisis">
             {deleteError}
           </p>
         )}
@@ -251,7 +251,7 @@ function SettingsInner({ locale }: { locale: string }) {
       <div className="space-y-8">
         {/* Page header */}
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
             {t('nav.settings')}
           </h1>
         </header>
@@ -259,28 +259,28 @@ function SettingsInner({ locale }: { locale: string }) {
         {/* Account section */}
         <Section title={t('settings.sections.account.title')}>
           <SettingsRow>
-            <p className="text-xs font-medium text-ink-400 uppercase tracking-wide mb-1">
+            <p className="text-xs font-medium text-ink-quaternary uppercase tracking-wide mb-1">
               {t('settings.sections.account.displayName')}
             </p>
-            <p className="text-sm font-medium text-ink-900">
+            <p className="text-sm font-medium text-ink-primary">
               {user?.fullName ?? user?.firstName ?? '—'}
             </p>
           </SettingsRow>
           <SettingsRow>
-            <p className="text-xs font-medium text-ink-400 uppercase tracking-wide mb-1">
+            <p className="text-xs font-medium text-ink-quaternary uppercase tracking-wide mb-1">
               {t('settings.sections.account.email')}
             </p>
-            <p className="text-sm text-ink-900">
+            <p className="text-sm text-ink-primary">
               {user?.primaryEmailAddress?.emailAddress ?? '—'}
             </p>
-            <p className="mt-0.5 text-xs text-ink-400">{t('settings.sections.account.emailReadOnly')}</p>
+            <p className="mt-0.5 text-xs text-ink-quaternary">{t('settings.sections.account.emailReadOnly')}</p>
           </SettingsRow>
           <SettingsRow>
             <a
               href="https://accounts.discipline.app/user"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded min-h-[44px]"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-accent-bronze hover:text-accent-bronze/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded min-h-[44px]"
             >
               {t('settings.sections.account.manageAccount')}
               <span aria-hidden="true">↗</span>
@@ -314,12 +314,12 @@ function SettingsInner({ locale }: { locale: string }) {
         <Section title={t('settings.sections.privacy.title')}>
           <SettingsRow>
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium text-ink-900">
+              <p className="text-sm font-medium text-ink-primary">
                 {t('settings.sections.privacy.downloadData')}
               </p>
-              <p className="text-xs text-ink-500">{t('settings.sections.privacy.downloadDescription')}</p>
+              <p className="text-xs text-ink-tertiary">{t('settings.sections.privacy.downloadDescription')}</p>
               {downloadError && (
-                <p role="alert" className="text-xs text-crisis-600 mt-1">
+                <p role="alert" className="text-xs text-signal-crisis mt-1">
                   {t('settings.sections.privacy.downloadErrorGeneric')}
                 </p>
               )}
@@ -338,10 +338,10 @@ function SettingsInner({ locale }: { locale: string }) {
           </SettingsRow>
           <SettingsRow>
             <div className="flex flex-col gap-1">
-              <p className="text-sm font-medium text-crisis-700">
+              <p className="text-sm font-medium text-signal-crisis">
                 {t('settings.sections.privacy.deleteAccount')}
               </p>
-              <p className="text-xs text-ink-500">{t('settings.sections.privacy.deleteDescription')}</p>
+              <p className="text-xs text-ink-tertiary">{t('settings.sections.privacy.deleteDescription')}</p>
               <Button
                 variant="crisis"
                 size="sm"
@@ -358,15 +358,15 @@ function SettingsInner({ locale }: { locale: string }) {
         <Section title={t('settings.sections.about.title')}>
           <SettingsRow>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-ink-600">{t('settings.sections.about.version')}</span>
+              <span className="text-sm text-ink-secondary">{t('settings.sections.about.version')}</span>
               {/* Latin digits for version numbers */}
-              <span className="text-sm font-mono text-ink-400 tabular-nums">{APP_VERSION}</span>
+              <span className="text-sm font-mono text-ink-quaternary tabular-nums">{APP_VERSION}</span>
             </div>
           </SettingsRow>
           <SettingsRow>
             <a
               href={`/${locale}/privacy`}
-              className="block text-sm font-medium text-brand-600 hover:text-brand-700 min-h-[44px] flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded"
+              className="block text-sm font-medium text-accent-bronze hover:text-accent-bronze/80 min-h-[44px] flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
             >
               {t('settings.sections.about.privacyPolicy')}
             </a>
@@ -374,7 +374,7 @@ function SettingsInner({ locale }: { locale: string }) {
           <SettingsRow>
             <a
               href={`/${locale}/terms`}
-              className="block text-sm font-medium text-brand-600 hover:text-brand-700 min-h-[44px] flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded"
+              className="block text-sm font-medium text-accent-bronze hover:text-accent-bronze/80 min-h-[44px] flex items-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
             >
               {t('settings.sections.about.terms')}
             </a>

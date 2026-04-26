@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/primitives';
 
 function AssessmentCardSkeleton() {
   return (
-    <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm flex flex-col gap-4">
+    <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm flex flex-col gap-4">
       {/* Instrument name + progress ring row */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 space-y-2">
@@ -53,7 +53,7 @@ export default function AssessmentsLoading(): React.JSX.Element {
       </div>
 
       {/* Clinical disclaimer placeholder */}
-      <div className="rounded-xl border border-surface-200 bg-surface-50 px-5 py-4">
+      <div className="rounded-xl border border-border-subtle bg-surface-primary px-5 py-4">
         <Skeleton variant="text" width="100%" height="0.75rem" />
         <Skeleton variant="text" width="80%" height="0.75rem" className="mt-1.5" />
       </div>

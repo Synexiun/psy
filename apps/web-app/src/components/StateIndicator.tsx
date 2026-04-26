@@ -43,7 +43,7 @@ const stateConfig: Record<
 export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
   if (isLoading || !data) {
     return (
-      <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+      <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm">
         <Skeleton variant="text" height="1.25rem" width="30%" />
         <Skeleton variant="text" height="1rem" width="60%" className="mt-2" />
       </div>
@@ -58,30 +58,30 @@ export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
 
   return (
     <div
-      className="flex items-center justify-between gap-4 rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm"
+      className="flex items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm"
       role="img"
       aria-label={`Current state: ${config.label}`}
     >
       <div>
         <div className="flex items-center gap-2">
           <Badge tone={config.tone}>{config.label}</Badge>
-          <span className="text-xs text-ink-500 tabular-nums">
+          <span className="text-xs text-ink-tertiary tabular-nums">
             {formatPercentClinical(Math.round(data.confidence * 100))} confidence
           </span>
         </div>
-        <p className="mt-2 text-sm text-ink-600">{config.message}</p>
+        <p className="mt-2 text-sm text-ink-secondary">{config.message}</p>
       </div>
       <div
         className="hidden h-12 w-12 shrink-0 rounded-full sm:flex sm:items-center sm:justify-center"
         style={{
           backgroundColor:
             config.tone === 'calm'
-              ? 'var(--color-calm-50)'
+              ? 'var(--color-signal-stable)'
               : config.tone === 'warning'
-                ? 'var(--color-amber-100)'
+                ? 'var(--color-signal-warning)'
                 : config.tone === 'crisis'
-                  ? 'var(--color-crisis-50)'
-                  : 'var(--color-surface-100)',
+                  ? 'var(--color-signal-crisis)'
+                  : 'var(--color-surface-tertiary)',
         }}
         aria-hidden="true"
       >

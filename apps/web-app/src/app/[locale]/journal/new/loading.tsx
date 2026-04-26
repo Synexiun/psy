@@ -17,7 +17,7 @@ export default function JournalNewLoading(): React.JSX.Element {
       <Skeleton variant="text" width="10rem" height="1.75rem" />
 
       {/* Text editor card skeleton */}
-      <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm space-y-3">
+      <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm space-y-3">
         <Skeleton variant="text" width="5rem" height="1rem" />
         <Skeleton variant="rect" width="100%" height="13rem" />
         <div className="flex justify-between">
@@ -27,7 +27,7 @@ export default function JournalNewLoading(): React.JSX.Element {
       </div>
 
       {/* Mood tags card skeleton */}
-      <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm space-y-3">
+      <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm space-y-3">
         <Skeleton variant="text" width="8rem" height="1rem" />
         <div className="flex flex-wrap gap-2">
           {Array.from({ length: 6 }).map((_, i) => (

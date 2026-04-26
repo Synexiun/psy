@@ -58,7 +58,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref,
   ): React.ReactElement {
     const base =
-      'inline-flex items-center justify-center font-medium transition-all duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
+      'inline-flex items-center justify-center font-medium transition-all duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed';
 
     const sizing: Record<ButtonSize, string> = {
       sm: 'h-8 px-3 text-sm rounded-md gap-1.5',
@@ -69,13 +69,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     const variants: Record<ButtonVariant, string> = {
       primary:
-        'bg-brand-500 text-white hover:bg-brand-600 active:bg-brand-700 shadow-sm hover:shadow',
+        'bg-accent-bronze text-white hover:bg-accent-bronze-soft active:bg-accent-bronze-soft shadow-sm hover:shadow',
       secondary:
-        'bg-surface-100 text-ink-900 hover:bg-surface-200 active:bg-surface-300 border border-surface-200',
-      calm: 'bg-calm-500 text-white hover:bg-calm-600 active:bg-calm-700 shadow-sm hover:shadow',
-      ghost: 'bg-transparent text-ink-700 hover:bg-surface-100 active:bg-surface-200',
+        'bg-surface-tertiary text-ink-primary hover:bg-surface-tertiary active:bg-surface-tertiary border border-border-subtle',
+      calm: 'bg-signal-stable text-white hover:bg-signal-stable active:bg-signal-stable shadow-sm hover:shadow',
+      ghost: 'bg-transparent text-ink-secondary hover:bg-surface-tertiary active:bg-surface-tertiary',
       crisis:
-        'bg-crisis-500 text-white hover:bg-crisis-600 active:bg-crisis-700 shadow-sm hover:shadow',
+        'bg-signal-crisis text-white hover:bg-signal-crisis active:bg-signal-crisis shadow-sm hover:shadow',
     };
 
     return (
@@ -101,13 +101,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
 export const Card = React.forwardRef<HTMLDivElement, CardProps>(
   function Card({ tone = 'neutral', hover = false, className = '', children, ...props }, ref): React.ReactElement {
-    const base = 'rounded-xl border bg-surface-0 p-5 transition-all duration-base ease-standard';
+    const base = 'rounded-xl border bg-surface-secondary p-5 transition-all duration-base ease-standard';
 
     const tones: Record<string, string> = {
-      neutral: 'border-surface-200 shadow-sm',
-      calm: 'border-calm-200 bg-calm-50/40 shadow-sm',
-      warning: 'border-amber-200 bg-amber-50/40 shadow-sm',
-      crisis: 'border-crisis-200 bg-crisis-50/40 shadow-sm',
+      neutral: 'border-border-subtle shadow-sm',
+      calm: 'border-signal-stable/30 bg-signal-stable/5 shadow-sm',
+      warning: 'border-signal-warning/30 bg-signal-warning/5 shadow-sm',
+      crisis: 'border-signal-crisis/30 bg-signal-crisis/5 shadow-sm',
     };
 
     const hoverCls = hover ? 'hover:-translate-y-0.5 hover:shadow-md cursor-pointer' : '';
@@ -129,8 +129,8 @@ export function ProgressRing({
   max = 100,
   size = 120,
   strokeWidth = 10,
-  color = 'var(--color-brand-500)',
-  trackColor = 'var(--color-surface-200)',
+  color = 'var(--color-accent-bronze)',
+  trackColor = 'var(--color-border-subtle)',
   label,
   sublabel,
   ariaLabel,
@@ -167,8 +167,8 @@ export function ProgressRing({
       </svg>
       {(label || sublabel) && (
         <div className="text-center">
-          {label && <div className="text-2xl font-semibold text-ink-900">{label}</div>}
-          {sublabel && <div className="text-sm text-ink-500">{sublabel}</div>}
+          {label && <div className="text-2xl font-semibold text-ink-primary">{label}</div>}
+          {sublabel && <div className="text-sm text-ink-tertiary">{sublabel}</div>}
         </div>
       )}
     </div>
@@ -185,11 +185,11 @@ export const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
       'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors';
 
     const tones: Record<string, string> = {
-      neutral: 'bg-surface-200 text-ink-700',
-      calm: 'bg-calm-100 text-calm-700',
-      warning: 'bg-amber-100 text-amber-700',
-      crisis: 'bg-crisis-100 text-crisis-700',
-      success: 'bg-calm-100 text-calm-700',
+      neutral: 'bg-surface-tertiary text-ink-secondary',
+      calm: 'bg-signal-stable/15 text-signal-stable',
+      warning: 'bg-signal-warning/15 text-signal-warning',
+      crisis: 'bg-signal-crisis/15 text-signal-crisis',
+      success: 'bg-signal-stable/15 text-signal-stable',
     };
 
     return (
@@ -209,7 +209,7 @@ export const Skeleton = React.forwardRef<HTMLDivElement, SkeletonProps>(
     { variant = 'rect', width = '100%', height = '1rem', className = '', style, ...props },
     ref,
   ): React.ReactElement {
-    const base = 'animate-pulse bg-surface-200';
+    const base = 'animate-pulse bg-surface-tertiary';
 
     const variants: Record<string, string> = {
       text: 'rounded-md',
@@ -258,7 +258,7 @@ export function Tooltip({ tooltipContent, side = 'top', className = '', children
     <div className={`relative inline-flex ${className} group`}>
       {children}
       <span
-        className={`pointer-events-none absolute ${sideClasses[side]} z-50 w-max max-w-xs rounded-md bg-ink-900 px-2.5 py-1.5 text-xs text-white opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100`}
+        className={`pointer-events-none absolute ${sideClasses[side]} z-50 w-max max-w-xs rounded-md bg-ink-primary px-2.5 py-1.5 text-xs text-surface-primary opacity-0 transition-opacity duration-fast group-hover:opacity-100 group-focus-visible:opacity-100`}
         role="tooltip"
       >
         {tooltipContent}
@@ -284,7 +284,7 @@ export function Sparkline({
   data,
   width = 120,
   height = 40,
-  color = 'var(--color-brand-500)',
+  color = 'var(--color-accent-bronze)',
   strokeWidth = 2,
   ariaLabel,
 }: SparklineProps): React.ReactElement | null {

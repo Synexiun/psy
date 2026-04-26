@@ -30,11 +30,11 @@ function NavItem({
 }) {
   const colorClasses = crisis
     ? active
-      ? 'text-crisis-700'
-      : 'text-crisis-500 hover:text-crisis-700'
+      ? 'text-signal-crisis'
+      : 'text-signal-crisis hover:text-signal-crisis'
     : active
-      ? 'text-brand-600'
-      : 'text-ink-300 hover:text-ink-500';
+      ? 'text-accent-bronze'
+      : 'text-ink-quaternary hover:text-ink-tertiary';
 
   return (
     <a
@@ -96,7 +96,7 @@ export function BottomNav({ locale }: BottomNavProps) {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-surface-200 bg-surface-0/90 backdrop-blur-sm lg:hidden"
+      className="fixed inset-x-0 bottom-0 z-40 flex border-t border-border-subtle bg-surface-secondary/90 backdrop-blur-sm lg:hidden"
       aria-label="Main navigation"
     >
       {items.map((item) => (

@@ -6,7 +6,7 @@ import { Skeleton } from '@/components/primitives';
 
 function JournalEntryCardSkeleton() {
   return (
-    <div className="rounded-xl border border-surface-200 bg-surface-0 p-5 shadow-sm">
+    <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm">
       {/* Date + badge row */}
       <div className="flex items-start justify-between gap-3">
         <Skeleton variant="text" width="9rem" height="0.75rem" />

@@ -81,10 +81,10 @@ const BOX_PHASES: { phase: BoxPhase; label: string; duration: number }[] = [
 ];
 
 const BOX_PHASE_COLOR: Record<BoxPhase, string> = {
-  inhale: 'var(--color-calm-500)',
-  'hold-in': 'var(--color-brand-500)',
-  exhale: 'var(--color-ink-400)',
-  'hold-out': 'var(--color-brand-300)',
+  inhale: 'var(--color-signal-stable)',
+  'hold-in': 'var(--color-accent-bronze)',
+  exhale: 'var(--color-ink-quaternary)',
+  'hold-out': 'var(--color-accent-bronze-soft)',
 };
 
 // ---------------------------------------------------------------------------
@@ -123,10 +123,10 @@ function StepGuide({ steps, onComplete }: StepGuideProps) {
             key={i}
             className={`rounded-full transition-all duration-200 ${
               i === stepIdx
-                ? 'h-2.5 w-2.5 bg-brand-500'
+                ? 'h-2.5 w-2.5 bg-accent-bronze'
                 : i < stepIdx
-                ? 'h-2 w-2 bg-calm-400'
-                : 'h-2 w-2 bg-surface-300'
+                ? 'h-2 w-2 bg-signal-stable'
+                : 'h-2 w-2 bg-surface-tertiary'
             }`}
           />
         ))}
@@ -134,12 +134,12 @@ function StepGuide({ steps, onComplete }: StepGuideProps) {
 
       {/* Step card */}
       <Card tone="calm" className="min-h-36 flex flex-col justify-center items-center text-center gap-3">
-        <span className="text-xs font-semibold uppercase tracking-wide text-calm-600">
+        <span className="text-xs font-semibold uppercase tracking-wide text-signal-stable">
           Step {String(stepIdx + 1)} of {String(totalSteps)}
         </span>
-        <p className="text-lg font-semibold text-ink-900 leading-snug">{step.label}</p>
+        <p className="text-lg font-semibold text-ink-primary leading-snug">{step.label}</p>
         {step.detail && (
-          <p className="text-sm text-ink-600 leading-relaxed">{step.detail}</p>
+          <p className="text-sm text-ink-secondary leading-relaxed">{step.detail}</p>
         )}
       </Card>
 
@@ -198,10 +198,10 @@ function NumberedSteps({ steps, onComplete }: NumberedStepsProps) {
               <button
                 type="button"
                 onClick={() => toggle(i)}
-                className={`w-full text-start rounded-xl border p-4 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 ${
+                className={`w-full text-start rounded-xl border p-4 transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 ${
                   isChecked
-                    ? 'border-calm-300 bg-calm-50/50 opacity-70'
-                    : 'border-surface-200 bg-surface-0 hover:border-brand-200 hover:bg-brand-50/30'
+                    ? 'border-signal-stable/30 bg-signal-stable/10 opacity-70'
+                    : 'border-border-subtle bg-surface-secondary hover:border-accent-bronze/30 hover:bg-accent-bronze/5'
                 }`}
                 aria-pressed={isChecked}
               >
@@ -209,19 +209,19 @@ function NumberedSteps({ steps, onComplete }: NumberedStepsProps) {
                   <span
                     className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-bold transition-colors ${
                       isChecked
-                        ? 'bg-calm-500 text-white'
-                        : 'bg-surface-200 text-ink-500'
+                        ? 'bg-signal-stable text-white'
+                        : 'bg-surface-tertiary text-ink-tertiary'
                     }`}
                     aria-hidden="true"
                   >
                     {isChecked ? '✓' : String(i + 1)}
                   </span>
                   <div>
-                    <p className={`text-sm font-medium leading-snug ${isChecked ? 'line-through text-ink-400' : 'text-ink-900'}`}>
+                    <p className={`text-sm font-medium leading-snug ${isChecked ? 'line-through text-ink-quaternary' : 'text-ink-primary'}`}>
                       {step.label}
                     </p>
                     {step.detail && (
-                      <p className="mt-0.5 text-xs leading-relaxed text-ink-500">{step.detail}</p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-ink-tertiary">{step.detail}</p>
                     )}
                   </div>
                 </div>
@@ -253,21 +253,21 @@ function CompletionCard({ locale }: { locale: string }) {
     <Card tone="calm" className="flex flex-col items-center text-center gap-4 py-10">
       <span className="text-4xl" aria-hidden="true">🌿</span>
       <div>
-        <p className="text-lg font-semibold text-ink-900">You showed up. That matters.</p>
-        <p className="mt-2 text-sm leading-relaxed text-ink-600">
+        <p className="text-lg font-semibold text-ink-primary">You showed up. That matters.</p>
+        <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
           Taking a moment to care for yourself is never wasted. You can return to this tool any time.
         </p>
       </div>
       <div className="flex flex-col gap-2 w-full max-w-xs">
         <a
           href={`/${locale}/tools`}
-          className="inline-flex items-center justify-center rounded-lg border border-surface-200 bg-surface-0 px-4 py-2.5 text-sm font-medium text-ink-700 transition-colors hover:bg-surface-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          className="inline-flex items-center justify-center rounded-lg border border-border-subtle bg-surface-secondary px-4 py-2.5 text-sm font-medium text-ink-secondary transition-colors hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
         >
           Browse other tools
         </a>
         <a
           href={`/${locale}/check-in`}
-          className="inline-flex items-center justify-center rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          className="inline-flex items-center justify-center rounded-lg bg-accent-bronze px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-accent-bronze-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
         >
           Record a check-in
         </a>
@@ -450,7 +450,7 @@ function BoxBreathingWithCompletion({ onComplete }: { onComplete: () => void }) 
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="var(--color-surface-200)"
+            stroke="var(--color-surface-tertiary)"
             strokeWidth={strokeWidth}
           />
           <circle
@@ -468,24 +468,24 @@ function BoxBreathingWithCompletion({ onComplete }: { onComplete: () => void }) 
         </svg>
         <div className="absolute flex flex-col items-center gap-0.5">
           <span
-            className="text-5xl font-bold tabular-nums text-ink-900 leading-none"
+            className="text-5xl font-bold tabular-nums text-ink-primary leading-none"
             aria-live="polite"
             aria-atomic="true"
           >
             {String(secondsLeft)}
           </span>
-          <span className="text-sm font-medium text-ink-500 mt-1">{currentPhase.label}</span>
+          <span className="text-sm font-medium text-ink-tertiary mt-1">{currentPhase.label}</span>
         </div>
       </div>
 
       {/* Cycle counter */}
-      <p className="text-sm text-ink-400">
+      <p className="text-sm text-ink-quaternary">
         Cycle{' '}
-        <span className="font-semibold text-ink-700">
+        <span className="font-semibold text-ink-secondary">
           {String(Math.min(cycles + 1, TARGET_CYCLES))}
         </span>{' '}
         of{' '}
-        <span className="font-semibold text-ink-700">{String(TARGET_CYCLES)}</span>
+        <span className="font-semibold text-ink-secondary">{String(TARGET_CYCLES)}</span>
       </p>
 
       {/* Phase strip */}
@@ -502,11 +502,11 @@ function BoxBreathingWithCompletion({ onComplete }: { onComplete: () => void }) 
               className="h-1.5 w-12 rounded-full"
               style={{
                 backgroundColor:
-                  i === phaseIdx ? phaseColor : 'var(--color-surface-300)',
+                  i === phaseIdx ? phaseColor : 'var(--color-surface-tertiary)',
               }}
             />
-            <span className="text-xs text-ink-500">{bp.label}</span>
-            <span className="text-xs text-ink-400 tabular-nums">{String(bp.duration)}s</span>
+            <span className="text-xs text-ink-tertiary">{bp.label}</span>
+            <span className="text-xs text-ink-quaternary tabular-nums">{String(bp.duration)}s</span>
           </div>
         ))}
       </div>
@@ -552,7 +552,7 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
         <nav aria-label="Breadcrumb">
           <a
             href={`/${locale}/tools`}
-            className="inline-flex items-center gap-1.5 text-sm text-ink-500 hover:text-brand-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded"
+            className="inline-flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-accent-bronze transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
           >
             <span aria-hidden="true">←</span>
             {t('nav.tools')}
@@ -566,14 +566,14 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
           </span>
           <div className="min-w-0 space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-2xl font-semibold tracking-tight text-ink-900 leading-tight">
+              <h1 className="text-2xl font-semibold tracking-tight text-ink-primary leading-tight">
                 {t(`tools.items.${tool.catalogKey}.name`)}
               </h1>
               <Badge tone={badgeTone}>
                 {t(`tools.categories.${tool.category}`)}
               </Badge>
             </div>
-            <p className="text-sm text-ink-500">
+            <p className="text-sm text-ink-tertiary">
               <span className="tabular-nums">{t(`tools.items.${tool.catalogKey}.duration`)}</span>{' '}
               {t('tools.minutesSuffix')} &middot; {t(`tools.categories.${tool.category}`)}
             </p>
@@ -581,12 +581,12 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
         </header>
 
         {/* Description */}
-        <p className="text-sm leading-relaxed text-ink-600">
+        <p className="text-sm leading-relaxed text-ink-secondary">
           {t(`tools.items.${tool.catalogKey}.description`)}
         </p>
 
         {/* Divider */}
-        <div className="border-t border-surface-200" aria-hidden="true" />
+        <div className="border-t border-border-subtle" aria-hidden="true" />
 
         {/* Interactive guide or completion card */}
         {completed ? (
@@ -595,7 +595,7 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
           <section aria-labelledby="guide-heading">
             <h2
               id="guide-heading"
-              className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-400"
+              className="mb-4 text-sm font-semibold uppercase tracking-wide text-ink-quaternary"
             >
               {tool.id === 'box-breathing' ? 'Breathing exercise' : 'Guided steps'}
             </h2>
@@ -607,7 +607,7 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
         <footer className="pt-2 text-center">
           <a
             href={`/${locale}/crisis`}
-            className="text-xs text-ink-400 hover:text-crisis-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crisis-300 rounded"
+            className="text-xs text-ink-quaternary hover:text-signal-crisis transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 rounded"
           >
             Need immediate help? Get support →
           </a>

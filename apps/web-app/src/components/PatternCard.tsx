@@ -29,17 +29,17 @@ export function PatternCard({ pattern }: PatternCardProps) {
     <Card tone={tone} className="group relative">
       <div className="flex items-start justify-between gap-3">
         <Badge tone={tone}>{typeLabels[pattern.pattern_type] ?? pattern.pattern_type}</Badge>
-        <span className="text-xs text-ink-500 tabular-nums">
+        <span className="text-xs text-ink-tertiary tabular-nums">
           {formatPercentClinical(Math.round(pattern.confidence * 100))} confidence
         </span>
       </div>
-      <p className="mt-3 text-sm leading-relaxed text-ink-700">{pattern.description}</p>
+      <p className="mt-3 text-sm leading-relaxed text-ink-secondary">{pattern.description}</p>
       {pattern.metadata && Object.keys(pattern.metadata).length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {Object.entries(pattern.metadata).slice(0, 3).map(([key, value]) => (
             <span
               key={key}
-              className="inline-flex items-center rounded-md bg-surface-100 px-2 py-0.5 text-xs text-ink-700"
+              className="inline-flex items-center rounded-md bg-surface-tertiary px-2 py-0.5 text-xs text-ink-secondary"
             >
               {key}: {String(value).slice(0, 20)}
             </span>

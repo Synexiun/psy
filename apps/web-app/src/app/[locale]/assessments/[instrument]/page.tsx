@@ -447,10 +447,10 @@ function ProgressBar({ current, total }: ProgressBarProps): React.ReactElement {
       aria-valuemin={0}
       aria-valuemax={total}
       aria-label={`Question ${formatNumberClinical(current)} of ${formatNumberClinical(total)}`}
-      className="h-1.5 w-full overflow-hidden rounded-full bg-surface-200"
+      className="h-1.5 w-full overflow-hidden rounded-full bg-surface-tertiary"
     >
       <div
-        className="h-full rounded-full bg-brand-500 transition-all duration-base ease-standard"
+        className="h-full rounded-full bg-accent-bronze transition-all duration-base ease-standard"
         style={{ width: `${pct}%` }}
       />
     </div>
@@ -471,16 +471,16 @@ function ResponseButton({ option, selected, onSelect }: ResponseButtonProps): Re
       aria-pressed={selected}
       className={[
         'flex min-h-[52px] w-full items-center rounded-xl border px-4 py-3 text-start text-sm font-medium transition-all duration-fast',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2',
         selected
-          ? 'border-brand-500 bg-brand-50 text-brand-700'
-          : 'border-surface-200 bg-surface-0 text-ink-800 hover:border-brand-200 hover:bg-surface-50',
+          ? 'border-accent-bronze bg-accent-bronze/10 text-accent-bronze'
+          : 'border-border-subtle bg-surface-secondary text-ink-primary hover:border-accent-bronze/40 hover:bg-surface-primary',
       ].join(' ')}
     >
       <span
         className={[
           'me-3 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2',
-          selected ? 'border-brand-500 bg-brand-500' : 'border-surface-300',
+          selected ? 'border-accent-bronze bg-accent-bronze' : 'border-border-emphasis',
         ].join(' ')}
         aria-hidden="true"
       >
@@ -522,7 +522,7 @@ function SummaryView({
     <div className="space-y-6">
       {/* Thank-you message */}
       <Card tone="calm" className="text-center">
-        <p className="text-base font-medium text-ink-900">
+        <p className="text-base font-medium text-ink-primary">
           {t('assessments.session.thankYou')}
         </p>
       </Card>
@@ -531,18 +531,18 @@ function SummaryView({
       <Card>
         <div className="space-y-3">
           <div className="flex items-baseline justify-between">
-            <span className="text-sm font-medium text-ink-500">
+            <span className="text-sm font-medium text-ink-tertiary">
               {t('assessments.session.severityLabel')}
             </span>
             {band && (
-              <span className="rounded-full bg-surface-100 px-3 py-0.5 text-sm font-semibold text-ink-800">
+              <span className="rounded-full bg-surface-tertiary px-3 py-0.5 text-sm font-semibold text-ink-primary">
                 {band}
               </span>
             )}
           </div>
 
           {/* Score — always Latin digits */}
-          <p className="text-3xl font-bold tabular-nums clinical-number text-ink-900">
+          <p className="text-3xl font-bold tabular-nums clinical-number text-ink-primary">
             {/* i18n interpolation not used here — we build the string directly to guarantee
                 Latin digits regardless of locale. formatScoreWithMax enforces Latin digits. */}
             {t('assessments.session.yourScore', {
@@ -553,14 +553,14 @@ function SummaryView({
 
           {/* WHO-5 note: display score is raw × 4 */}
           {instrument.id === 'who-5' && (
-            <p className="text-xs text-ink-400">
+            <p className="text-xs text-ink-quaternary">
               Score shown as percentage (raw × 4). Range: 0–100.
             </p>
           )}
 
           {/* PSS-10 note: items 4, 5, 7, 8 are reverse-scored */}
           {instrument.id === 'pss-10' && (
-            <p className="text-xs text-ink-400">
+            <p className="text-xs text-ink-quaternary">
               Items 4, 5, 7, and 8 are reverse-scored per Cohen et al. (1983).
             </p>
           )}
@@ -571,12 +571,12 @@ function SummaryView({
       {showSafety && (
         <Card tone="crisis" role="alert" aria-live="assertive">
           <div className="space-y-3">
-            <p className="text-base font-medium text-ink-900">
+            <p className="text-base font-medium text-ink-primary">
               {t('assessments.session.safetyMessage')}
             </p>
             <a
               href={`/${locale}/crisis`}
-              className="inline-flex items-center rounded-lg bg-crisis-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-crisis-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crisis-300"
+              className="inline-flex items-center rounded-lg bg-signal-crisis px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-signal-crisis/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30"
             >
               {t('assessments.session.crisisLink')}
             </a>
@@ -586,18 +586,18 @@ function SummaryView({
 
       {/* Submit error (if POST failed but we still show results) */}
       {submitError && (
-        <p className="text-sm text-crisis-600" role="alert">
+        <p className="text-sm text-signal-crisis" role="alert">
           {t('assessments.session.submitError')}
         </p>
       )}
 
       {/* Clinical disclaimer — required by CLAUDE.md */}
       <aside
-        className="rounded-xl border border-surface-200 bg-surface-50 px-5 py-4"
+        className="rounded-xl border border-border-subtle bg-surface-primary px-5 py-4"
         role="note"
         aria-label="Clinical disclaimer"
       >
-        <p className="text-xs leading-relaxed text-ink-500">
+        <p className="text-xs leading-relaxed text-ink-tertiary">
           {t('assessments.session.clinicalDisclaimer')}
         </p>
       </aside>
@@ -605,7 +605,7 @@ function SummaryView({
       {/* Navigation */}
       <a
         href={`/${locale}/assessments`}
-        className="inline-flex items-center text-sm font-medium text-brand-600 hover:text-brand-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:rounded"
+        className="inline-flex items-center text-sm font-medium text-accent-bronze hover:text-accent-bronze/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:rounded"
       >
         &larr; {t('assessments.session.viewHistory')}
       </a>
@@ -741,14 +741,14 @@ function AssessmentSession({ instrument, locale }: SessionProps): React.ReactEle
     <div className="space-y-6">
       {/* Progress — Latin digit counter */}
       <div className="space-y-2">
-        <div className="flex items-center justify-between text-xs font-medium text-ink-500">
+        <div className="flex items-center justify-between text-xs font-medium text-ink-tertiary">
           <span className="clinical-number tabular-nums">
             {t('assessments.session.questionOf', {
               current: formatNumberClinical(currentIndex + 1),
               total: formatNumberClinical(totalQuestions),
             })}
           </span>
-          <span className="clinical-number tabular-nums text-ink-400">
+          <span className="clinical-number tabular-nums text-ink-quaternary">
             {formatNumberClinical(Math.round(((currentIndex) / totalQuestions) * 100))}%
           </span>
         </div>
@@ -757,7 +757,7 @@ function AssessmentSession({ instrument, locale }: SessionProps): React.ReactEle
 
       {/* Question card */}
       <Card>
-        <p className="text-base font-medium leading-relaxed text-ink-900">
+        <p className="text-base font-medium leading-relaxed text-ink-primary">
           {currentQuestion.text}
         </p>
       </Card>
@@ -785,7 +785,7 @@ function AssessmentSession({ instrument, locale }: SessionProps): React.ReactEle
 
       {/* Validation error */}
       {validationError && (
-        <p className="text-sm text-crisis-600" role="alert">
+        <p className="text-sm text-signal-crisis" role="alert">
           {t('assessments.session.answerRequired')}
         </p>
       )}
@@ -834,17 +834,17 @@ function PageHeader({ instrument, locale }: PageHeaderProps): React.ReactElement
       {/* Back link */}
       <a
         href={`/${locale}/assessments`}
-        className="inline-flex items-center text-sm text-ink-500 hover:text-ink-900 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:rounded"
+        className="inline-flex items-center text-sm text-ink-tertiary hover:text-ink-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:rounded"
       >
         &larr; {t('assessments.session.backToAssessments')}
       </a>
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
           {instrument.fullName}
         </h1>
-        <p className="mt-1 text-sm text-ink-500">{instrument.description}</p>
-        <p className="mt-1 text-xs text-ink-400">
+        <p className="mt-1 text-sm text-ink-tertiary">{instrument.description}</p>
+        <p className="mt-1 text-xs text-ink-quaternary">
           {t('assessments.session.estimatedTime', {
             minutes: instrument.estimatedMinutes,
           })}

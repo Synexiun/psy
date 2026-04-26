@@ -13,19 +13,19 @@ export default async function LocaleNotFound(): Promise<React.JSX.Element> {
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center">
-      <p className="text-sm font-semibold uppercase tracking-widest text-ink-400">404</p>
+      <p className="text-sm font-semibold uppercase tracking-widest text-ink-quaternary">404</p>
 
-      <h1 className="mt-4 text-3xl font-semibold tracking-tight text-ink-900 sm:text-4xl">
+      <h1 className="mt-4 text-3xl font-semibold tracking-tight text-ink-primary sm:text-4xl">
         Page not found
       </h1>
 
-      <p className="mt-4 max-w-sm text-sm leading-relaxed text-ink-500">
+      <p className="mt-4 max-w-sm text-sm leading-relaxed text-ink-tertiary">
         The page you&apos;re looking for doesn&apos;t exist or may have been moved.
       </p>
 
       <Link
         href={`/${locale}`}
-        className="mt-8 inline-flex h-10 items-center rounded-md bg-brand-500 px-5 text-sm font-medium text-white transition-colors hover:bg-brand-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 focus-visible:ring-offset-2"
+        className="mt-8 inline-flex h-10 items-center rounded-md bg-accent-bronze px-5 text-sm font-medium text-white transition-colors hover:bg-accent-bronze-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
       >
         Go home
       </Link>

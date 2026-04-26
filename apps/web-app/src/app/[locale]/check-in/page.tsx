@@ -39,9 +39,9 @@ type TriggerTag = TriggerKey;
 
 // Map intensity value (0-10) to a colour for the track fill
 function intensityColor(value: number): string {
-  if (value <= 3) return 'var(--color-calm-500)';
-  if (value <= 6) return 'var(--color-brand-500)';
-  return 'var(--color-crisis-500)';
+  if (value <= 3) return 'var(--color-signal-stable)';
+  if (value <= 6) return 'var(--color-accent-bronze)';
+  return 'var(--color-signal-crisis)';
 }
 
 // ---------------------------------------------------------------------------
@@ -105,17 +105,17 @@ function CheckInInner({ locale }: { locale: string }) {
       <div className="space-y-6">
         {/* Page header */}
         <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-ink-900">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
             {t('checkIn.title')}
           </h1>
-          <p className="mt-1 text-sm text-ink-500">{t('checkIn.pageSubtitle')}</p>
+          <p className="mt-1 text-sm text-ink-tertiary">{t('checkIn.pageSubtitle')}</p>
         </header>
 
         {/* Crisis shortcut -- always visible per spec */}
         <div className="flex justify-end">
           <a
             href={`/${locale}/crisis`}
-            className="text-xs font-medium text-crisis-600 underline underline-offset-2 hover:text-crisis-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-crisis-300 rounded"
+            className="text-xs font-medium text-signal-crisis underline underline-offset-2 hover:text-signal-crisis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 rounded"
           >
             {t('checkIn.needHelp')}
           </a>
@@ -125,8 +125,8 @@ function CheckInInner({ locale }: { locale: string }) {
           /* Post-submit compassion card */
           <Card tone="calm" className="text-center py-10 space-y-4">
             <p className="text-4xl" aria-hidden="true">{'🌊'}</p>
-            <h2 className="text-lg font-semibold text-ink-900">{t('checkIn.compassionHeadline')}</h2>
-            <p className="text-sm leading-relaxed text-ink-600 max-w-sm mx-auto">
+            <h2 className="text-lg font-semibold text-ink-primary">{t('checkIn.compassionHeadline')}</h2>
+            <p className="text-sm leading-relaxed text-ink-secondary max-w-sm mx-auto">
               {t('checkIn.compassionBody')}
             </p>
             <div className="flex flex-col items-center gap-3 pt-2">
@@ -156,7 +156,7 @@ function CheckInInner({ locale }: { locale: string }) {
             {/* Intensity slider */}
             <Card>
               <fieldset>
-                <legend className="text-sm font-medium text-ink-900">
+                <legend className="text-sm font-medium text-ink-primary">
                   {t('app.urge.intensityLabel')}
                 </legend>
                 <div className="mt-4 space-y-3">
@@ -172,13 +172,13 @@ function CheckInInner({ locale }: { locale: string }) {
                       aria-valuemin={0}
                       aria-valuemax={10}
                       aria-valuenow={intensity}
-                      className="w-full h-2 rounded-full appearance-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+                      className="w-full h-2 rounded-full appearance-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
                       style={{
-                        background: `linear-gradient(to right, ${intensityColor(intensity)} ${trackFill}%, var(--color-surface-200) ${trackFill}%)`,
+                        background: `linear-gradient(to right, ${intensityColor(intensity)} ${trackFill}%, var(--color-surface-tertiary) ${trackFill}%)`,
                       }}
                     />
                   </div>
-                  <div className="flex justify-between text-xs text-ink-400">
+                  <div className="flex justify-between text-xs text-ink-quaternary">
                     <span>{t('app.urge.intensityScaleMin')}</span>
                     <span
                       className="text-base font-bold tabular-nums"
@@ -196,7 +196,7 @@ function CheckInInner({ locale }: { locale: string }) {
             {/* Trigger tags */}
             <Card>
               <fieldset>
-                <legend className="text-sm font-medium text-ink-900">
+                <legend className="text-sm font-medium text-ink-primary">
                   {t('checkIn.triggersLabel')}
                 </legend>
                 <div
@@ -212,10 +212,10 @@ function CheckInInner({ locale }: { locale: string }) {
                         type="button"
                         onClick={() => toggleTrigger(key)}
                         aria-pressed={active}
-                        className={`min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 ${
+                        className={`min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 ${
                           active
-                            ? 'bg-brand-500 text-white shadow-sm'
-                            : 'bg-surface-100 text-ink-700 hover:bg-surface-200 border border-surface-200'
+                            ? 'bg-accent-bronze text-white shadow-sm'
+                            : 'bg-surface-tertiary text-ink-secondary hover:bg-surface-tertiary border border-border-subtle'
                         }`}
                       >
                         {t(`checkIn.triggers.${key}`)}
@@ -230,7 +230,7 @@ function CheckInInner({ locale }: { locale: string }) {
             <Card>
               <label
                 htmlFor="checkin-notes"
-                className="block text-sm font-medium text-ink-900"
+                className="block text-sm font-medium text-ink-primary"
               >
                 {t('checkIn.notesLabel')}
               </label>
@@ -245,10 +245,10 @@ function CheckInInner({ locale }: { locale: string }) {
                 placeholder={t('checkIn.notesPlaceholder')}
                 rows={3}
                 maxLength={COPY.notesMaxChars}
-                className="mt-2 w-full resize-none rounded-lg border border-surface-200 bg-surface-50 px-3 py-2.5 text-sm text-ink-900 placeholder-ink-300 focus:border-brand-400 focus:bg-surface-0 focus:outline-none focus:ring-2 focus:ring-brand-300 transition-colors"
+                className="mt-2 w-full resize-none rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm text-ink-primary placeholder-ink-quaternary focus:border-accent-bronze focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30 transition-colors"
               />
               <p
-                className={`mt-1 text-right text-xs ${charsLeft < 30 ? 'text-amber-600' : 'text-ink-400'}`}
+                className={`mt-1 text-right text-xs ${charsLeft < 30 ? 'text-signal-warning' : 'text-ink-quaternary'}`}
                 aria-live="polite"
               >
                 {charsLeft} chars left
