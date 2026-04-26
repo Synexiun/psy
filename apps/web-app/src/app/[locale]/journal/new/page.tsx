@@ -440,7 +440,7 @@ function JournalNewInner({ locale }: { locale: string }) {
                       className={`min-h-[44px] rounded-full px-4 py-2 text-sm font-medium transition-all duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 disabled:opacity-40 disabled:cursor-not-allowed ${
                         active
                           ? 'bg-accent-bronze text-white shadow-sm'
-                          : 'bg-surface-tertiary text-ink-secondary hover:bg-surface-tertiary border border-border-subtle'
+                          : 'bg-surface-tertiary text-ink-secondary hover:bg-border-subtle border border-border-subtle'
                       }`}
                     >
                       {mood}

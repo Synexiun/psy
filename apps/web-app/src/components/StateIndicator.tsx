@@ -76,11 +76,11 @@ export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
         style={{
           backgroundColor:
             config.tone === 'calm'
-              ? 'var(--color-signal-stable)'
+              ? 'color-mix(in oklab, var(--color-signal-stable) 15%, transparent)'
               : config.tone === 'warning'
-                ? 'var(--color-signal-warning)'
+                ? 'color-mix(in oklab, var(--color-signal-warning) 15%, transparent)'
                 : config.tone === 'crisis'
-                  ? 'var(--color-signal-crisis)'
+                  ? 'color-mix(in oklab, var(--color-signal-crisis) 15%, transparent)'
                   : 'var(--color-surface-tertiary)',
         }}
         aria-hidden="true"

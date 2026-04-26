@@ -13,7 +13,7 @@ export default async function SignInPage({
   return (
     <div
       lang={locale}
-      className="flex min-h-screen flex-col items-center justify-center bg-white px-4 py-12"
+      className="flex min-h-screen flex-col items-center justify-center bg-surface-secondary px-4 py-12"
     >
       <SignIn
         afterSignInUrl={`/${locale}`}

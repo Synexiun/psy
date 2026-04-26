@@ -12,7 +12,7 @@ export default async function LocaleNotFound(): Promise<React.JSX.Element> {
   const locale = await getLocale();
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-surface-secondary px-6 text-center">
       <p className="text-sm font-semibold uppercase tracking-widest text-ink-quaternary">404</p>
 
       <h1 className="mt-4 text-3xl font-semibold tracking-tight text-ink-primary sm:text-4xl">

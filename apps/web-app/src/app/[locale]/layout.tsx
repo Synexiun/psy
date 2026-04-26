@@ -77,7 +77,7 @@ export default async function LocaleLayout({
       dir={dir}
       className={`${inter.variable} ${plexArabic.variable} ${vazirmatn.variable}`}
     >
-      <body className="min-h-screen bg-white text-[hsl(222,47%,11%)] antialiased">
+      <body className="min-h-screen bg-surface-primary text-ink-primary antialiased">
         <NextIntlClientProvider messages={messages}>
           {children}
         </NextIntlClientProvider>

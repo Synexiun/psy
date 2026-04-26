@@ -40,7 +40,7 @@ function DashboardInner({ locale }: { locale: string }) {
           </div>
           <a
             href={`/${locale}/crisis`}
-            className="hidden items-center gap-2 rounded-lg bg-signal-crisis px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-signal-crisis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 lg:inline-flex"
+            className="hidden items-center gap-2 rounded-lg bg-signal-crisis px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-signal-crisis/90 active:bg-signal-crisis/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 lg:inline-flex"
           >
             <span aria-hidden="true">🚨</span>
             {t('crisis.cta.primary')}

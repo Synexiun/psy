@@ -71,11 +71,11 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       primary:
         'bg-accent-bronze text-white hover:bg-accent-bronze-soft active:bg-accent-bronze-soft shadow-sm hover:shadow',
       secondary:
-        'bg-surface-tertiary text-ink-primary hover:bg-surface-tertiary active:bg-surface-tertiary border border-border-subtle',
-      calm: 'bg-signal-stable text-white hover:bg-signal-stable active:bg-signal-stable shadow-sm hover:shadow',
-      ghost: 'bg-transparent text-ink-secondary hover:bg-surface-tertiary active:bg-surface-tertiary',
+        'bg-surface-tertiary text-ink-primary hover:bg-border-subtle active:bg-border-emphasis border border-border-subtle',
+      calm: 'bg-signal-stable text-white hover:bg-signal-stable/90 active:bg-signal-stable/80 shadow-sm hover:shadow',
+      ghost: 'bg-transparent text-ink-secondary hover:bg-surface-tertiary active:bg-border-subtle',
       crisis:
-        'bg-signal-crisis text-white hover:bg-signal-crisis active:bg-signal-crisis shadow-sm hover:shadow',
+        'bg-signal-crisis text-white hover:bg-signal-crisis/90 active:bg-signal-crisis/80 shadow-sm hover:shadow',
     };
 
     return (

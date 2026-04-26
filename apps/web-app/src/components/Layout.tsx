@@ -30,7 +30,7 @@ export function Layout({ children, locale }: LayoutProps) {
           </span>
           <a
             href={`/${locale}/crisis`}
-            className="inline-flex items-center rounded-lg bg-signal-crisis px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-signal-crisis focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30"
+            className="inline-flex items-center rounded-lg bg-signal-crisis px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-signal-crisis/90 active:bg-signal-crisis/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30"
           >
             {t('crisis.cta.primary')}
           </a>

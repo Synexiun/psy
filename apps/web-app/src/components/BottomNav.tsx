@@ -31,7 +31,7 @@ function NavItem({
   const colorClasses = crisis
     ? active
       ? 'text-signal-crisis'
-      : 'text-signal-crisis hover:text-signal-crisis'
+      : 'text-signal-crisis/70 hover:text-signal-crisis'
     : active
       ? 'text-accent-bronze'
       : 'text-ink-quaternary hover:text-ink-tertiary';

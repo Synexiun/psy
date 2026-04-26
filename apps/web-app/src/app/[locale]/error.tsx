@@ -31,7 +31,7 @@ export default function LocaleError({ error, reset }: ErrorPageProps): React.JSX
       : 'An unexpected error occurred. Please try again or return home.';
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-white px-6 text-center">
+    <main className="flex min-h-screen flex-col items-center justify-center bg-surface-secondary px-6 text-center">
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-signal-crisis/15">
         {/* Warning icon — inline SVG avoids external dep */}
         <svg
