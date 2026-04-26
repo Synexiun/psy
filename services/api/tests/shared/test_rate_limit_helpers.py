@@ -21,7 +21,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from discipline.shared.middleware.rate_limit import _key_func
+from discipline.shared.middleware.rate_limit import (
+    _key_func,
+    _rate_limit_exceeded_handler,
+)
 
 
 def _request(
@@ -78,3 +81,24 @@ class TestKeyFuncPreferenceChain:
         result = _key_func(req)
         assert result == "fallback-sub"
         assert result != "None"
+
+
+# ---------------------------------------------------------------------------
+# _rate_limit_exceeded_handler — non-RateLimitExceeded branch
+# ---------------------------------------------------------------------------
+
+
+class TestRateLimitExceededHandler:
+    def test_non_rate_limit_exception_returns_429(self) -> None:
+        req = MagicMock()
+        req.url.path = "/api/test"
+        response = _rate_limit_exceeded_handler(req, ValueError("unexpected"))
+        assert response.status_code == 429
+
+    def test_non_rate_limit_exception_body_is_json(self) -> None:
+        import json
+        req = MagicMock()
+        req.url.path = "/api/test"
+        response = _rate_limit_exceeded_handler(req, RuntimeError("other"))
+        body = json.loads(response.body)
+        assert "detail" in body
