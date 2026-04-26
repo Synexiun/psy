@@ -1,110 +1,111 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
-  --font-arabic: var(--font-plex-arabic), system-ui, sans-serif;
-  --font-persian: var(--font-vazirmatn), system-ui, sans-serif;
+  /* Surfaces — dark (primary) */
+  --color-surface-primary:   hsl(220 25% 8%);
+  --color-surface-secondary: hsl(220 22% 11%);
+  --color-surface-tertiary:  hsl(220 20% 14%);
+  --color-surface-overlay:   hsl(220 25% 8% / 0.85);
 
-  --color-brand-50: hsl(217 91% 97%);
-  --color-brand-100: hsl(217 91% 94%);
-  --color-brand-200: hsl(217 91% 87%);
-  --color-brand-300: hsl(217 91% 76%);
-  --color-brand-400: hsl(217 91% 68%);
-  --color-brand-500: hsl(217 91% 60%);
-  --color-brand-600: hsl(217 91% 52%);
-  --color-brand-700: hsl(217 91% 44%);
+  /* Ink */
+  --color-ink-primary:    hsl(28 15% 94%);
+  --color-ink-secondary:  hsl(28 10% 75%);
+  --color-ink-tertiary:   hsl(28 8%  55%);
+  --color-ink-quaternary: hsl(28 8%  35%);
 
-  --color-calm-50: hsl(173 58% 95%);
-  --color-calm-100: hsl(173 58% 90%);
-  --color-calm-200: hsl(173 58% 80%);
-  --color-calm-300: hsl(173 58% 65%);
-  --color-calm-400: hsl(173 58% 50%);
-  --color-calm-500: hsl(173 58% 39%);
-  --color-calm-600: hsl(173 58% 32%);
-  --color-calm-700: hsl(173 58% 25%);
+  /* Accents */
+  --color-accent-bronze:      hsl(28 65% 55%);
+  --color-accent-bronze-soft: hsl(28 45% 35%);
+  --color-accent-teal:        hsl(173 35% 45%);
+  --color-accent-teal-soft:   hsl(173 25% 25%);
 
-  --color-crisis-50: hsl(0 84% 97%);
-  --color-crisis-100: hsl(0 84% 94%);
-  --color-crisis-200: hsl(0 84% 87%);
-  --color-crisis-300: hsl(0 84% 76%);
-  --color-crisis-400: hsl(0 84% 68%);
-  --color-crisis-500: hsl(0 84% 60%);
-  --color-crisis-600: hsl(0 84% 50%);
-  --color-crisis-700: hsl(0 84% 46%);
+  /* Signals */
+  --color-signal-stable:  hsl(173 45% 50%);
+  --color-signal-warning: hsl(38 70% 55%);
+  --color-signal-crisis:  hsl(355 65% 48%);
 
-  --color-surface-0: hsl(0 0% 100%);
-  --color-surface-50: hsl(220 14% 98%);
-  --color-surface-100: hsl(220 14% 96%);
-  --color-surface-200: hsl(220 13% 91%);
-  --color-surface-300: hsl(220 9% 82%);
+  /* Borders */
+  --color-border-subtle:   hsl(220 15% 18%);
+  --color-border-emphasis: hsl(220 15% 28%);
 
-  --color-ink-900: hsl(222 47% 11%);
-  --color-ink-700: hsl(222 20% 30%);
-  --color-ink-500: hsl(215 16% 46%);
-  --color-ink-300: hsl(215 14% 68%);
-  --color-ink-200: hsl(215 14% 82%);
+  /* Typography */
+  --font-body:    'Inter', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+  --font-display: 'Fraunces', 'IBM Plex Sans Arabic', system-ui, serif;
+  --font-fa:      'Vazirmatn', system-ui, sans-serif;
 
-  --color-amber-500: hsl(38 92% 50%);
-  --color-amber-100: hsl(38 92% 93%);
+  --text-display-2xl: clamp(3rem, 6vw, 4.5rem);
+  --text-display-xl:  clamp(2.25rem, 4vw, 3.5rem);
+  --text-display-lg:  clamp(1.75rem, 3vw, 2.25rem);
+  --text-display-md:  1.5rem;
+  --text-body-lg:     1.125rem;
+  --text-body-md:     1rem;
+  --text-body-sm:     0.875rem;
+  --text-body-xs:     0.75rem;
 
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --radius-2xl: 1.25rem;
-  --radius-full: 9999px;
+  /* Motion */
+  --motion-instant:    75ms;
+  --motion-fast:       150ms;
+  --motion-base:       250ms;
+  --motion-slow:       400ms;
+  --motion-deliberate: 700ms;
+
+  --ease-default:    cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-decelerate: cubic-bezier(0, 0, 0.2, 1);
+  --ease-accelerate: cubic-bezier(0.4, 0, 1, 1);
+  --ease-organic:    cubic-bezier(0.5, 0.05, 0.2, 1);
 }
 
-html {
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
+:root {
+  color-scheme: dark;
+  background: var(--color-surface-primary);
+  color: var(--color-ink-primary);
+  font-family: var(--font-body);
+  font-feature-settings: 'cv11', 'ss01';
 }
 
-html[dir="rtl"] body {
-  font-family: var(--font-arabic), var(--font-sans);
+[data-theme="light"] {
+  color-scheme: light;
+  --color-surface-primary:   hsl(28 15% 97%);
+  --color-surface-secondary: hsl(28 12% 94%);
+  --color-surface-tertiary:  hsl(28 10% 90%);
+  --color-surface-overlay:   hsl(28 15% 97% / 0.92);
+  --color-ink-primary:       hsl(220 25% 12%);
+  --color-ink-secondary:     hsl(220 18% 32%);
+  --color-ink-tertiary:      hsl(220 12% 50%);
+  --color-ink-quaternary:    hsl(220 10% 65%);
+  --color-accent-bronze:     hsl(28 70% 42%);    /* darker for AA on light */
+  --color-accent-bronze-soft:hsl(28 55% 30%);
+  --color-accent-teal:       hsl(173 45% 35%);
+  --color-accent-teal-soft:  hsl(173 30% 25%);
+  --color-signal-stable:     hsl(173 50% 35%);
+  --color-signal-warning:    hsl(38 75% 42%);
+  --color-signal-crisis:     hsl(355 70% 42%);
+  --color-border-subtle:     hsl(28 10% 85%);
+  --color-border-emphasis:   hsl(28 12% 75%);
 }
 
-html[lang="fa"] body {
-  font-family: var(--font-persian), var(--font-sans);
+[lang="fa"] {
+  --font-body: var(--font-fa), system-ui, sans-serif;
 }
 
-/* ── RTL layout utilities ──────────────────────────────────────────────── */
-
-[dir="rtl"] {
-  text-align: right;
-}
-
-[dir="rtl"] .space-x-2 > * + * {
-  margin-right: 0.5rem;
-  margin-left: 0;
-}
-
-/* Flip chevrons and directional arrows in RTL contexts */
-[dir="rtl"] .rtl-flip {
-  transform: scaleX(-1);
-}
-
-/*
- * Clinical numbers (PHQ-9 totals, GAD-7, RCI deltas, streak days, etc.) must
- * always render in LTR regardless of document direction. Reason: Kroenke 2001 /
- * Spitzer 2006 reference totals are numeric and clinicians must read them
- * identically across all locales. Apply this class to every clinical score node.
- */
-/* Clinical numbers always render LTR with Latin digits, per Rule #9. */
+/* Clinical-number utility — Rule #9 */
 .clinical-number {
   direction: ltr;
-  display: inline-block;
+  unicode-bidi: embed;
   font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
 }
 
-/* ── Reduced motion ─────────────────────────────────────────────────────── */
-
+/* Reduced-motion respect — engine-level */
 @media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
+  *, *::before, *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* "Reduce ambient motion" Settings flag — applied via [data-ambient-motion="off"] on root */
+[data-ambient-motion="off"] .motion-ambient {
+  animation: none !important;
 }
