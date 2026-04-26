@@ -36,7 +36,7 @@ function classNameHasClinicalToken(node: TSESTree.JSXOpeningElement): boolean {
     }
     const value = attr.value;
     if (!value || value.type !== 'Literal' || typeof value.value !== 'string') {
-      return false;
+      return true;
     }
     const tokens = value.value.split(/\s+/);
     return tokens.includes('clinical-number');
@@ -45,11 +45,16 @@ function classNameHasClinicalToken(node: TSESTree.JSXOpeningElement): boolean {
 }
 
 function isFormatNumberClinicalCall(node: TSESTree.Expression): boolean {
-  return (
-    node.type === 'CallExpression' &&
-    node.callee.type === 'Identifier' &&
-    node.callee.name === 'formatNumberClinical'
-  );
+  if (node.type !== 'CallExpression') return false;
+  const { callee } = node;
+  if (callee.type === 'Identifier' && callee.name === 'formatNumberClinical') return true;
+  if (
+    callee.type === 'MemberExpression' &&
+    !callee.computed &&
+    callee.property.type === 'Identifier' &&
+    callee.property.name === 'formatNumberClinical'
+  ) return true;
+  return false;
 }
 
 export const rule = createRule({
@@ -68,6 +73,25 @@ export const rule = createRule({
   },
   defaultOptions: [],
   create(context) {
+    function enclosingJSXElementHasClinicalToken(node: TSESTree.Node): boolean {
+      let current: TSESTree.Node | undefined = node.parent as TSESTree.Node | undefined;
+      while (current !== undefined) {
+        if (current.type === 'JSXElement') {
+          if (classNameHasClinicalToken(current.openingElement)) return true;
+        }
+        if (
+          current.type === 'FunctionDeclaration' ||
+          current.type === 'FunctionExpression' ||
+          current.type === 'ArrowFunctionExpression' ||
+          current.type === 'Program'
+        ) {
+          return false;
+        }
+        current = current.parent as TSESTree.Node | undefined;
+      }
+      return false;
+    }
+
     return {
       JSXExpressionContainer(node) {
         const expression = node.expression;
@@ -77,13 +101,9 @@ export const rule = createRule({
           return;
         }
 
-        // Check parent JSX element for className escape hatch
-        const parent = node.parent;
-        if (parent.type === 'JSXElement') {
-          const openingElement = parent.openingElement;
-          if (classNameHasClinicalToken(openingElement)) {
-            return;
-          }
+        // Check ancestor JSX elements for className escape hatch
+        if (enclosingJSXElementHasClinicalToken(node)) {
+          return;
         }
 
         // Check for formatNumberClinical(...) call escape hatch

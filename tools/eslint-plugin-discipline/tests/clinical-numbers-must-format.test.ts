@@ -29,6 +29,10 @@ ruleTester.run('clinical-numbers-must-format', rule, {
     { code: '<div>{phq9Skipped}</div>' },
     // 6. Boolean suffix deny-list: auditCompleted matches ^auditC but has "Completed"
     { code: '<div>{auditCompleted}</div>' },
+    // 7. Wrapped clinical identifier in attribute value position
+    { code: '<input value={formatNumberClinical(phq9Score)} />' },
+    // 8. Computed member access is NOT flagged
+    { code: '<div>{data["phq9Score"]}</div>' },
   ],
   invalid: [
     // 1. Bare identifier matching ^phq9
@@ -80,6 +84,11 @@ ruleTester.run('clinical-numbers-must-format', rule, {
           data: { name: 'intensity' },
         },
       ],
+    },
+    // 6. Clinical identifier in attribute value position (must flag)
+    {
+      code: '<input value={phq9Score} />',
+      errors: [{ messageId: 'wrapClinicalNumber', data: { name: 'phq9Score' } }],
     },
   ],
 });
