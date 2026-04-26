@@ -29,9 +29,15 @@ from datetime import UTC, datetime, timezone, timedelta
 import pytest
 
 from discipline.reports.fhir_observation import (
+    CSSRS_ITEM_DISPLAYS,
+    CSSRS_RISK_LEVEL_DISPLAYS,
     LOINC_CODES,
     UnsupportedInstrumentError,
+    _category_block,
     _code_block,
+    _cssrs_code_block,
+    _cssrs_component_block,
+    _cssrs_value_block,
     _format_iso8601_z,
     _interpretation_block,
     _require_utc,
@@ -203,3 +209,122 @@ class TestInterpretationBlock:
     def test_false_returns_none_not_empty_list(self) -> None:
         result = _interpretation_block(False)
         assert result is None, "Must be None, not []"
+
+
+# ---------------------------------------------------------------------------
+# _category_block — always "survey"
+# ---------------------------------------------------------------------------
+
+
+class TestCategoryBlock:
+    def test_returns_list(self) -> None:
+        assert isinstance(_category_block(), list)
+
+    def test_single_entry(self) -> None:
+        assert len(_category_block()) == 1
+
+    def test_code_is_survey(self) -> None:
+        coding = _category_block()[0]["coding"][0]  # type: ignore[index]
+        assert coding["code"] == "survey"
+
+    def test_system_is_observation_category(self) -> None:
+        coding = _category_block()[0]["coding"][0]  # type: ignore[index]
+        assert "observation-category" in str(coding["system"])
+
+    def test_deterministic(self) -> None:
+        assert _category_block() == _category_block()
+
+
+# ---------------------------------------------------------------------------
+# _cssrs_code_block — Discipline-OS CodeSystem, no LOINC
+# ---------------------------------------------------------------------------
+
+
+class TestCssrsCodeBlock:
+    def test_returns_dict(self) -> None:
+        assert isinstance(_cssrs_code_block(), dict)
+
+    def test_coding_key_present(self) -> None:
+        assert "coding" in _cssrs_code_block()
+
+    def test_uses_disciplineos_system_not_loinc(self) -> None:
+        import json
+        serialized = json.dumps(_cssrs_code_block())
+        assert "disciplineos.com" in serialized
+        assert "loinc.org" not in serialized
+
+    def test_code_is_screen_risk(self) -> None:
+        coding = _cssrs_code_block()["coding"][0]  # type: ignore[index]
+        assert coding["code"] == "screen-risk"
+
+    def test_display_references_columbia(self) -> None:
+        coding = _cssrs_code_block()["coding"][0]  # type: ignore[index]
+        display = str(coding["display"])
+        assert "Columbia" in display or "CSSRS" in display.upper()
+
+
+# ---------------------------------------------------------------------------
+# _cssrs_value_block — risk level → coded concept
+# ---------------------------------------------------------------------------
+
+
+class TestCssrsValueBlock:
+    def test_all_four_risk_levels_succeed(self) -> None:
+        for level in ("none", "low", "moderate", "acute"):
+            result = _cssrs_value_block(level)
+            assert isinstance(result, dict)
+
+    def test_code_matches_risk_level(self) -> None:
+        for level in ("none", "low", "moderate", "acute"):
+            coding = _cssrs_value_block(level)["coding"][0]  # type: ignore[index]
+            assert coding["code"] == level
+
+    def test_display_matches_constant(self) -> None:
+        for level in ("none", "low", "moderate", "acute"):
+            coding = _cssrs_value_block(level)["coding"][0]  # type: ignore[index]
+            assert coding["display"] == CSSRS_RISK_LEVEL_DISPLAYS[level]
+
+    def test_disciplineos_risk_level_system_uri(self) -> None:
+        coding = _cssrs_value_block("low")["coding"][0]  # type: ignore[index]
+        assert "disciplineos.com" in str(coding["system"])
+        assert "cssrs-risk-level" in str(coding["system"])
+
+
+# ---------------------------------------------------------------------------
+# _cssrs_component_block — one entry per triggering item
+# ---------------------------------------------------------------------------
+
+
+class TestCssrsComponentBlock:
+    def test_empty_tuple_returns_empty_list(self) -> None:
+        assert _cssrs_component_block(()) == []
+
+    def test_single_item_returns_one_entry(self) -> None:
+        assert len(_cssrs_component_block((1,))) == 1
+
+    def test_multiple_items_count_matches(self) -> None:
+        assert len(_cssrs_component_block((1, 3, 5))) == 3
+
+    def test_order_preserved(self) -> None:
+        result = _cssrs_component_block((2, 5, 1))
+        codes = [e["code"]["coding"][0]["code"] for e in result]  # type: ignore[index]
+        assert codes == ["item-2", "item-5", "item-1"]
+
+    def test_item_code_format(self) -> None:
+        coding = _cssrs_component_block((3,))[0]["code"]["coding"][0]  # type: ignore[index]
+        assert coding["code"] == "item-3"
+
+    def test_value_boolean_true(self) -> None:
+        result = _cssrs_component_block((1,))
+        assert result[0]["valueBoolean"] is True
+
+    def test_display_matches_cssrs_item_displays(self) -> None:
+        coding = _cssrs_component_block((1,))[0]["code"]["coding"][0]  # type: ignore[index]
+        assert coding["display"] == CSSRS_ITEM_DISPLAYS[1]
+
+    def test_disciplineos_item_system_uri(self) -> None:
+        coding = _cssrs_component_block((2,))[0]["code"]["coding"][0]  # type: ignore[index]
+        assert "disciplineos.com" in str(coding["system"])
+
+    def test_all_six_items_valid(self) -> None:
+        assert len(_cssrs_component_block((1, 2, 3, 4, 5, 6))) == 6
