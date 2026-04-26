@@ -68,14 +68,17 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         ref={ref}
         className={`${base} ${sizing[size]} ${variants[variant]} ${className}`}
         disabled={disabled || loading}
-        aria-busy={loading}
+        aria-busy={loading || undefined}
         {...props}
       >
         {loading && (
-          <span
-            className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent opacity-80"
-            aria-hidden="true"
-          />
+          <>
+            <span
+              className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent opacity-80"
+              aria-hidden="true"
+            />
+            <span className="sr-only">Loading</span>
+          </>
         )}
         {children}
       </button>

@@ -135,9 +135,9 @@ describe('Button — loading prop', () => {
     expect(container.querySelector('span.animate-spin')).toBeNull();
   });
 
-  it('sets aria-busy="false" when not loading', () => {
+  it('omits aria-busy when not loading', () => {
     render(<Button>Save</Button>);
-    expect(screen.getByRole('button')).toHaveAttribute('aria-busy', 'false');
+    expect(screen.getByRole('button')).not.toHaveAttribute('aria-busy');
   });
 });
 
