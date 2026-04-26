@@ -36,9 +36,12 @@ export interface SliderProps {
   className?: string;
 }
 
+const THUMB_CLASS =
+  'block size-5 rounded-full border-2 border-accent-bronze bg-surface-primary shadow transition-colors duration-fast ease-default hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:pointer-events-none';
+
 export function Slider({
   value,
-  defaultValue = [0],
+  defaultValue,
   min = 0,
   max = 100,
   step = 1,
@@ -49,9 +52,12 @@ export function Slider({
   dir,
   className = '',
 }: SliderProps): React.ReactElement {
+  // Resolve the thumb count from whichever mode is active; fall back to [0].
+  const thumbValues = value ?? defaultValue ?? [0];
+
   return (
     <RadixSlider.Root
-      className={`relative flex w-full touch-none select-none items-center ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}
+      className={`relative flex w-full touch-none select-none items-center ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`.trim()}
       value={value}
       defaultValue={defaultValue}
       min={min}
@@ -60,13 +66,14 @@ export function Slider({
       disabled={disabled}
       onValueChange={onValueChange}
       onValueCommit={onValueCommit}
-      aria-label={ariaLabel}
       dir={dir}
     >
       <RadixSlider.Track className="relative h-1.5 w-full grow overflow-hidden rounded-full bg-surface-tertiary">
         <RadixSlider.Range className="absolute h-full bg-accent-bronze" />
       </RadixSlider.Track>
-      <RadixSlider.Thumb className="block size-5 rounded-full border-2 border-accent-bronze bg-surface-primary shadow transition-colors duration-fast ease-default hover:bg-surface-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 disabled:pointer-events-none" />
+      {thumbValues.map((_v, i) => (
+        <RadixSlider.Thumb key={i} aria-label={thumbValues.length === 1 ? ariaLabel : `${ariaLabel ?? 'Value'} ${i + 1}`} className={THUMB_CLASS} />
+      ))}
     </RadixSlider.Root>
   );
 }
