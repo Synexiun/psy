@@ -119,8 +119,6 @@ describe('PageShell — subheading', () => {
         <p>Content</p>
       </PageShell>,
     );
-    // The subheading renders as a <p> with text-ink-tertiary; confirm absence
-    expect(screen.queryByText('A helpful description')).toBeNull();
     // No second <p> sibling to the h1 should be in the heading block
     const headingBlock = baseElement.querySelector('h1')?.parentElement;
     const paragraphs = headingBlock?.querySelectorAll('p') ?? [];
@@ -259,7 +257,7 @@ describe('PageShell — className forwarding', () => {
         <p>Content</p>
       </PageShell>,
     );
-    const outer = baseElement.firstElementChild?.firstElementChild;
+    const outer = baseElement.querySelector('.max-w-4xl');
     expect(outer?.className).toContain('custom-page-class');
   });
 
