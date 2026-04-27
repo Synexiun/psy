@@ -9,6 +9,7 @@ import { Layout } from '@/components/Layout';
 import { Button, Card } from '@disciplineos/design-system';
 import { UrgeSlider } from '@disciplineos/design-system/clinical/UrgeSlider';
 import { submitCheckIn } from '@/lib/api';
+import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 
 // Non-display constants (not i18n strings)
 const COPY = {
@@ -54,8 +55,11 @@ function CheckInInner({ locale }: { locale: string }) {
   const [selectedTriggers, setSelectedTriggers] = useState<Set<TriggerTag>>(new Set());
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [offlineQueued, setOfflineQueued] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const { enqueue, queuedCount } = useOfflineQueue();
 
   function toggleTrigger(tag: TriggerTag) {
     setSelectedTriggers((prev) => {
@@ -83,7 +87,24 @@ function CheckInInner({ locale }: { locale: string }) {
       }
       setSubmitted(true);
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : t('errors.submitFailed'));
+      const isOffline =
+        !navigator.onLine ||
+        (err instanceof TypeError && err.message.toLowerCase().includes('fetch'));
+      if (isOffline) {
+        try {
+          await enqueue({
+            intensity,
+            triggerTags: Array.from(selectedTriggers),
+            notes: notes || undefined,
+          });
+          setOfflineQueued(true);
+          setSubmitted(true);
+        } catch {
+          setSubmitError(err instanceof Error ? err.message : t('errors.submitFailed'));
+        }
+      } else {
+        setSubmitError(err instanceof Error ? err.message : t('errors.submitFailed'));
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -94,6 +115,7 @@ function CheckInInner({ locale }: { locale: string }) {
     setSelectedTriggers(new Set());
     setNotes('');
     setSubmitted(false);
+    setOfflineQueued(false);
     setSubmitError(null);
   }
 
@@ -127,9 +149,18 @@ function CheckInInner({ locale }: { locale: string }) {
               <path d="M4 32c4-8 8-8 12 0s8 8 12 0 8-8 12 0" stroke="var(--color-signal-stable)" strokeWidth="3" strokeLinecap="round"/>
             </svg>
             <h2 className="text-lg font-semibold text-ink-primary">{t('checkIn.compassionHeadline')}</h2>
-            <p className="text-sm leading-relaxed text-ink-secondary max-w-sm mx-auto">
-              {t('checkIn.compassionBody')}
-            </p>
+            {offlineQueued ? (
+              <p
+                data-testid="submit-offline-queued"
+                className="text-sm leading-relaxed text-ink-secondary max-w-sm mx-auto"
+              >
+                {t('checkIn.offlineSaved')}
+              </p>
+            ) : (
+              <p className="text-sm leading-relaxed text-ink-secondary max-w-sm mx-auto">
+                {t('checkIn.compassionBody')}
+              </p>
+            )}
             <div className="flex flex-col items-center gap-3 pt-2">
               <Button
                 variant="calm"
@@ -236,6 +267,13 @@ function CheckInInner({ locale }: { locale: string }) {
               </p>
             </Card>
 
+            {/* Offline queue badge */}
+            {queuedCount > 0 && (
+              <p data-testid="check-in-queue-badge" className="text-xs text-ink-tertiary text-center">
+                {t('checkIn.offlineQueue', { count: queuedCount })}
+              </p>
+            )}
+
             {/* Submit */}
             <Button
               type="submit"
@@ -283,5 +321,7 @@ export default function CheckInPage({
  *   checkIn.openTool
  *   checkIn.logAnother
  *   checkIn.needHelp
+ *   checkIn.offlineQueue
+ *   checkIn.offlineSaved
  *   checkIn.triggers.stress / .boredom / .socialPressure / .loneliness / .anger / .anxiety / .celebration / .fatigue
  */

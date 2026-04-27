@@ -183,6 +183,8 @@
     "openTool": "__NEEDS_REVIEW__: Open a coping tool",
     "logAnother": "__NEEDS_REVIEW__: Log another check-in",
     "needHelp": "__NEEDS_REVIEW__: Need immediate help?",
+    "offlineQueue": "__NEEDS_REVIEW__: {count} check-in{count, plural, one {} other {s}} saved — will sync when online",
+    "offlineSaved": "__NEEDS_REVIEW__: Saved for later — will sync when you're back online",
     "triggers": {
       "stress": "__NEEDS_REVIEW__: Stress",
       "boredom": "__NEEDS_REVIEW__: Boredom",

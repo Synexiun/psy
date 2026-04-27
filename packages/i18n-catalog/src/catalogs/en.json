@@ -182,6 +182,8 @@
     "openTool": "Open a coping tool",
     "logAnother": "Log another check-in",
     "needHelp": "Need immediate help?",
+    "offlineQueue": "{count} check-in{count, plural, one {} other {s}} saved — will sync when online",
+    "offlineSaved": "Saved for later — will sync when you're back online",
     "triggers": {
       "stress": "Stress",
       "boredom": "Boredom",
