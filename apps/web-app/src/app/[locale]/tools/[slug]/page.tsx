@@ -7,43 +7,8 @@ import { notFound } from 'next/navigation';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, Badge, Button } from '@disciplineos/design-system';
-
-// ---------------------------------------------------------------------------
-// Tool catalogue — mirrors tools/page.tsx. Entirely static/deterministic.
-// No API call, works fully offline. Per CLAUDE.md: every tool must have a
-// deterministic fallback.
-// ---------------------------------------------------------------------------
-
-export type ToolCategory = 'breathing' | 'grounding' | 'body' | 'mindfulness';
-export type ToolCatalogKey =
-  | 'boxBreathing'
-  | 'grounding54321'
-  | 'pmr'
-  | 'coldWater'
-  | 'urgeSurfing'
-  | 'stopTechnique'
-  | 'compassionMeditation'
-  | 'delayDistract';
-
-export interface CopingTool {
-  id: string;
-  catalogKey: ToolCatalogKey;
-  category: ToolCategory;
-  featured?: boolean;
-}
-
-export const TOOLS: CopingTool[] = [
-  { id: 'box-breathing', catalogKey: 'boxBreathing', category: 'breathing', featured: true },
-  { id: '5-4-3-2-1-grounding', catalogKey: 'grounding54321', category: 'grounding' },
-  { id: 'progressive-muscle-relaxation', catalogKey: 'pmr', category: 'body' },
-  { id: 'cold-water-reset', catalogKey: 'coldWater', category: 'body' },
-  { id: 'urge-surfing', catalogKey: 'urgeSurfing', category: 'mindfulness' },
-  { id: 'stop-technique', catalogKey: 'stopTechnique', category: 'mindfulness' },
-  { id: 'compassion-meditation', catalogKey: 'compassionMeditation', category: 'mindfulness' },
-  { id: 'delay-and-distract', catalogKey: 'delayDistract', category: 'grounding' },
-];
-
-export const TOOL_IDS = TOOLS.map((t) => t.id);
+import type { ToolCategory, CopingTool } from '@/lib/tools-catalog';
+import { TOOLS, TOOL_IDS } from '@/lib/tools-catalog';
 
 function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElement {
   switch (category) {
@@ -73,6 +38,15 @@ function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElem
           <circle cx="12" cy="12" r="3"/>
         </svg>
       );
+    default: {
+      const _exhaustive: never = category;
+      void _exhaustive;
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-6 w-6" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+        </svg>
+      );
+    }
   }
 }
 

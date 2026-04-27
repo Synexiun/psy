@@ -5,67 +5,8 @@ import { use } from 'react';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
 import { Card, Badge } from '@disciplineos/design-system';
-
-// ---------------------------------------------------------------------------
-// Tool catalogue — entirely static / deterministic. No API call, works offline.
-// Every tool must have a deterministic fallback per CLAUDE.md.
-// ---------------------------------------------------------------------------
-
-type ToolCategory = 'breathing' | 'grounding' | 'body' | 'mindfulness';
-type ToolCatalogKey = 'boxBreathing' | 'grounding54321' | 'pmr' | 'coldWater' | 'urgeSurfing' | 'stopTechnique' | 'compassionMeditation' | 'delayDistract';
-
-interface CopingTool {
-  id: string;
-  /** Key into tools.items.* in the i18n catalog */
-  catalogKey: ToolCatalogKey;
-  /** Key into tools.categories.* in the i18n catalog */
-  category: ToolCategory;
-  featured?: boolean;
-}
-
-const TOOLS: CopingTool[] = [
-  {
-    id: 'box-breathing',
-    catalogKey: 'boxBreathing',
-    category: 'breathing',
-    featured: true,
-  },
-  {
-    id: '5-4-3-2-1-grounding',
-    catalogKey: 'grounding54321',
-    category: 'grounding',
-  },
-  {
-    id: 'progressive-muscle-relaxation',
-    catalogKey: 'pmr',
-    category: 'body',
-  },
-  {
-    id: 'cold-water-reset',
-    catalogKey: 'coldWater',
-    category: 'body',
-  },
-  {
-    id: 'urge-surfing',
-    catalogKey: 'urgeSurfing',
-    category: 'mindfulness',
-  },
-  {
-    id: 'stop-technique',
-    catalogKey: 'stopTechnique',
-    category: 'mindfulness',
-  },
-  {
-    id: 'compassion-meditation',
-    catalogKey: 'compassionMeditation',
-    category: 'mindfulness',
-  },
-  {
-    id: 'delay-and-distract',
-    catalogKey: 'delayDistract',
-    category: 'grounding',
-  },
-];
+import type { ToolCategory, CopingTool } from '@/lib/tools-catalog';
+import { TOOLS } from '@/lib/tools-catalog';
 
 function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElement {
   switch (category) {
@@ -95,6 +36,15 @@ function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElem
           <circle cx="12" cy="12" r="3"/>
         </svg>
       );
+    default: {
+      const _exhaustive: never = category;
+      void _exhaustive;
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} className="h-6 w-6" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+        </svg>
+      );
+    }
   }
 }
 
