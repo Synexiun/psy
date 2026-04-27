@@ -296,6 +296,23 @@
       }
     }
   },
+  "reports": {
+    "title": "Reports",
+    "subtitle": "Your progress over time, by period",
+    "periodsHeading": "Report periods",
+    "empty": "No reports yet — check back after your first assessment",
+    "scoreStart": "Start",
+    "scoreEnd": "End",
+    "resilience": "Resilience",
+    "resilienceDays": "Days",
+    "urgesHandled": "Urges handled",
+    "exportHeading": "Export data",
+    "exportDescription": "Download a FHIR R4 bundle for this period. Requires identity verification.",
+    "exportButton": "Export FHIR R4",
+    "exportStepUpRequired": "Identity verification required. Please re-authenticate.",
+    "exportError": "Export failed. Please try again.",
+    "notFound": "Report not found."
+  },
   "settings": {
     "title": "Settings",
     "sections": {

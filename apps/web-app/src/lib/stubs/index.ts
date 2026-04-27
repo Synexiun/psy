@@ -11,6 +11,7 @@
  */
 
 import type { CheckInStubs } from './check-in';
+import type { ReportsStubs } from './reports';
 
 // ---------------------------------------------------------------------------
 // Registry shape
@@ -18,6 +19,7 @@ import type { CheckInStubs } from './check-in';
 
 type StubRegistry = {
   'check-in': CheckInStubs;
+  'reports': ReportsStubs;
 };
 
 // ---------------------------------------------------------------------------

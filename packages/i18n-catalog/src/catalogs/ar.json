@@ -297,6 +297,23 @@
       }
     }
   },
+  "reports": {
+    "title": "__NEEDS_REVIEW__: Reports",
+    "subtitle": "__NEEDS_REVIEW__: Your progress over time, by period",
+    "periodsHeading": "__NEEDS_REVIEW__: Report periods",
+    "empty": "__NEEDS_REVIEW__: No reports yet — check back after your first assessment",
+    "scoreStart": "__NEEDS_REVIEW__: Start",
+    "scoreEnd": "__NEEDS_REVIEW__: End",
+    "resilience": "__NEEDS_REVIEW__: Resilience",
+    "resilienceDays": "__NEEDS_REVIEW__: Days",
+    "urgesHandled": "__NEEDS_REVIEW__: Urges handled",
+    "exportHeading": "__NEEDS_REVIEW__: Export data",
+    "exportDescription": "__NEEDS_REVIEW__: Download a FHIR R4 bundle for this period. Requires identity verification.",
+    "exportButton": "__NEEDS_REVIEW__: Export FHIR R4",
+    "exportStepUpRequired": "__NEEDS_REVIEW__: Identity verification required. Please re-authenticate.",
+    "exportError": "__NEEDS_REVIEW__: Export failed. Please try again.",
+    "notFound": "__NEEDS_REVIEW__: Report not found."
+  },
   "settings": {
     "title": "__NEEDS_REVIEW__: Settings",
     "sections": {

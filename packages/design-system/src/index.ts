@@ -36,3 +36,4 @@ export * from './primitives/RingChart';
 export * from './primitives/BarChart';
 export * from './primitives/Banner';
 export * from './primitives/EmptyState';
+export * from './clinical/RCIDelta';
