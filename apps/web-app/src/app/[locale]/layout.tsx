@@ -7,6 +7,7 @@ import { headers } from 'next/headers';
 import { ClerkProvider } from '@clerk/nextjs';
 import { isRtl, type Locale } from '@disciplineos/i18n-catalog';
 import { routing } from '@/i18n/routing';
+import { ThemeSync } from '@/components/ThemeSync';
 import '../globals.css';
 
 const inter = Inter({
@@ -81,6 +82,7 @@ export default async function LocaleLayout({
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-surface-primary text-ink-primary antialiased">
+        <ThemeSync />
         <NextIntlClientProvider messages={messages}>
           {children}
         </NextIntlClientProvider>
