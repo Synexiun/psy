@@ -34,7 +34,8 @@
     "./primitives/PageShell": "./src/primitives/PageShell.tsx",
     "./primitives/TopBar": "./src/primitives/TopBar.tsx",
     "./primitives/BottomNav": "./src/primitives/BottomNav.tsx",
-    "./primitives/WizardShell": "./src/primitives/WizardShell.tsx"
+    "./primitives/WizardShell": "./src/primitives/WizardShell.tsx",
+    "./primitives/Stat": "./src/primitives/Stat.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
