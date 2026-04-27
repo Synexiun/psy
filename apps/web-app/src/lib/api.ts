@@ -304,3 +304,22 @@ export async function requestAccountDeletion(
     body: JSON.stringify(reason !== undefined ? { reason } : {}),
   });
 }
+
+// ---------------------------------------------------------------------------
+// PHI Audit API
+// ---------------------------------------------------------------------------
+
+/**
+ * POST /api/audit/phi-read
+ * Fires a PHI read audit event. Called by usePhiAudit on every PHI route mount.
+ * The backend records this event in the audit log stream (6-year retention).
+ *
+ * Throws ApiError on non-2xx. The caller (usePhiAudit) catches all errors
+ * so audit failures are non-fatal to UX.
+ */
+export async function logPhiRead(token: string, routePath: string): Promise<void> {
+  await apiFetch<Record<string, unknown>>('/api/audit/phi-read', token, {
+    method: 'POST',
+    body: JSON.stringify({ route_path: routePath }),
+  });
+}
