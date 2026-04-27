@@ -16,6 +16,32 @@ vi.mock('@disciplineos/i18n-catalog', () => ({
   formatPercentClinical: (value: number) => `${value}%`,
 }));
 
+// next-intl requires NextIntlClientProvider context; mock for unit tests
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => (key: string, params?: Record<string, unknown>) => {
+    if (namespace === 'stateIndicator') {
+      const catalog: Record<string, string> = {
+        'stable.label': 'Stable',
+        'stable.message': 'You appear steady right now. A good moment to build habits.',
+        'baseline.label': 'Baseline',
+        'baseline.message': 'Resting state. Nothing urgent detected.',
+        'risingUrge.label': 'Rising urge',
+        'risingUrge.message': 'An urge is building. Try a coping tool or a short walk.',
+        'peakUrge.label': 'Peak urge',
+        'peakUrge.message': 'This is the hardest moment. Use a tool or reach out.',
+        'postUrge.label': 'Post urge',
+        'postUrge.message': 'The wave has passed. Be gentle with yourself.',
+        'fallback.message': 'State estimate available.',
+        'confidence': 'confidence',
+      };
+      if (key === 'fallback.label') return String(params?.state ?? key);
+      if (key === 'ariaLabel') return `Current state: ${String(params?.label ?? '')}`;
+      return catalog[key] ?? key;
+    }
+    return key;
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------

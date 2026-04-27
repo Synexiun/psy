@@ -7,9 +7,30 @@
  * reachable). All links must have accessible labels.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QuickActions } from '@/components/QuickActions';
+
+// next-intl requires NextIntlClientProvider context; mock for unit tests
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => (key: string) => {
+    if (namespace === 'quickActions') {
+      const catalog: Record<string, string> = {
+        'heading': 'Quick actions',
+        'checkIn.label': 'Check in',
+        'checkIn.description': 'Log how you feel right now',
+        'copingTool.label': 'Coping tool',
+        'copingTool.description': 'Open your toolkit',
+        'journal.label': 'Journal',
+        'journal.description': 'Write or speak',
+        'crisisHelp.label': 'Crisis help',
+        'crisisHelp.description': 'Get support now',
+      };
+      return catalog[key] ?? key;
+    }
+    return key;
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Tests

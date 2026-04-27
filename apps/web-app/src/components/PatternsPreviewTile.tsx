@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { Badge } from '@disciplineos/design-system';
 import type { PatternData } from '@/hooks/useDashboardData';
 
@@ -13,15 +14,8 @@ interface PatternsPreviewTileProps {
 }
 
 // ---------------------------------------------------------------------------
-// Type label + tone maps (mirrors PatternCard for consistency)
+// Tone map + known-type guard (mirrors PatternCard for consistency)
 // ---------------------------------------------------------------------------
-
-const typeLabels: Record<string, string> = {
-  temporal: 'Time pattern',
-  contextual: 'Context pattern',
-  physiological: 'Body signal',
-  compound: 'Compound signal',
-};
 
 const typeTones: Record<string, 'calm' | 'neutral' | 'warning'> = {
   temporal: 'calm',
@@ -29,6 +23,8 @@ const typeTones: Record<string, 'calm' | 'neutral' | 'warning'> = {
   physiological: 'warning',
   compound: 'warning',
 };
+
+const knownTypes = new Set(['temporal', 'contextual', 'physiological', 'compound']);
 
 // ---------------------------------------------------------------------------
 // Component
@@ -42,8 +38,11 @@ const typeTones: Record<string, 'calm' | 'neutral' | 'warning'> = {
  * (used on the dedicated Patterns page, Task 7.2).
  */
 export function PatternsPreviewTile({ pattern }: PatternsPreviewTileProps): React.ReactElement {
+  const t = useTranslations('patterns');
   const tone = typeTones[pattern.pattern_type] ?? 'neutral';
-  const label = typeLabels[pattern.pattern_type] ?? pattern.pattern_type;
+  const label = knownTypes.has(pattern.pattern_type)
+    ? t(`types.${pattern.pattern_type}`)
+    : pattern.pattern_type;
 
   return (
     <div

@@ -136,6 +136,12 @@
       "contextual": "__NEEDS_REVIEW__: Context pattern",
       "physiological": "__NEEDS_REVIEW__: Body signal",
       "compound": "__NEEDS_REVIEW__: Compound signal"
+    },
+    "types": {
+      "temporal": "__NEEDS_REVIEW__: Time pattern",
+      "contextual": "__NEEDS_REVIEW__: Context pattern",
+      "physiological": "__NEEDS_REVIEW__: Body signal",
+      "compound": "__NEEDS_REVIEW__: Compound signal"
     }
   },
   "privacy": {
@@ -485,5 +491,22 @@
     "patterns": {
       "empty": "__NEEDS_REVIEW__: No patterns detected yet. Keep checking in — insights appear with more data."
     }
+  },
+  "stateIndicator": {
+    "stable": { "label": "__NEEDS_REVIEW__: Stable", "message": "__NEEDS_REVIEW__: You appear steady right now. A good moment to build habits." },
+    "baseline": { "label": "__NEEDS_REVIEW__: Baseline", "message": "__NEEDS_REVIEW__: Resting state. Nothing urgent detected." },
+    "risingUrge": { "label": "__NEEDS_REVIEW__: Rising urge", "message": "__NEEDS_REVIEW__: An urge is building. Try a coping tool or a short walk." },
+    "peakUrge": { "label": "__NEEDS_REVIEW__: Peak urge", "message": "__NEEDS_REVIEW__: This is the hardest moment. Use a tool or reach out." },
+    "postUrge": { "label": "__NEEDS_REVIEW__: Post urge", "message": "__NEEDS_REVIEW__: The wave has passed. Be gentle with yourself." },
+    "fallback": { "label": "__NEEDS_REVIEW__: {state}", "message": "__NEEDS_REVIEW__: State estimate available." },
+    "confidence": "__NEEDS_REVIEW__: confidence",
+    "ariaLabel": "__NEEDS_REVIEW__: Current state: {label}"
+  },
+  "quickActions": {
+    "heading": "__NEEDS_REVIEW__: Quick actions",
+    "checkIn": { "label": "__NEEDS_REVIEW__: Check in", "description": "__NEEDS_REVIEW__: Log how you feel right now" },
+    "copingTool": { "label": "__NEEDS_REVIEW__: Coping tool", "description": "__NEEDS_REVIEW__: Open your toolkit" },
+    "journal": { "label": "__NEEDS_REVIEW__: Journal", "description": "__NEEDS_REVIEW__: Write or speak" },
+    "crisisHelp": { "label": "__NEEDS_REVIEW__: Crisis help", "description": "__NEEDS_REVIEW__: Get support now" }
   }
 }

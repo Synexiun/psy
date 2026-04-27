@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 
 interface QuickActionsProps {
   locale: string;
@@ -97,28 +98,30 @@ function IconCrisis(): React.ReactElement {
 // ---------------------------------------------------------------------------
 
 export function QuickActions({ locale }: QuickActionsProps): React.ReactElement {
+  const t = useTranslations('quickActions');
+
   const actions = [
     {
-      label: 'Check in',
-      description: 'Log how you feel right now',
+      label: t('checkIn.label'),
+      description: t('checkIn.description'),
       Icon: IconCheckIn,
       href: `/${locale}/check-in`,
     },
     {
-      label: 'Coping tool',
-      description: 'Open your toolkit',
+      label: t('copingTool.label'),
+      description: t('copingTool.description'),
       Icon: IconCopingTool,
       href: `/${locale}/tools`,
     },
     {
-      label: 'Journal',
-      description: 'Write or speak',
+      label: t('journal.label'),
+      description: t('journal.description'),
       Icon: IconJournal,
       href: `/${locale}/journal`,
     },
     {
-      label: 'Crisis help',
-      description: 'Get support now',
+      label: t('crisisHelp.label'),
+      description: t('crisisHelp.description'),
       Icon: IconCrisis,
       href: `/${locale}/crisis`,
     },
@@ -127,7 +130,7 @@ export function QuickActions({ locale }: QuickActionsProps): React.ReactElement 
   return (
     <section aria-labelledby="quick-actions" data-testid="quick-actions-section">
       <h2 id="quick-actions" className="sr-only">
-        Quick actions
+        {t('heading')}
       </h2>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {actions.map((action) => (

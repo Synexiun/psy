@@ -10,10 +10,26 @@
  * That is InsightCard's responsibility on the dedicated Patterns page.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { PatternsPreviewTile } from '@/components/PatternsPreviewTile';
 import type { PatternData } from '@/hooks/useDashboardData';
+
+// next-intl requires NextIntlClientProvider context; mock for unit tests
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => (key: string) => {
+    if (namespace === 'patterns') {
+      const catalog: Record<string, string> = {
+        'types.temporal': 'Time pattern',
+        'types.contextual': 'Context pattern',
+        'types.physiological': 'Body signal',
+        'types.compound': 'Compound signal',
+      };
+      return catalog[key] ?? key;
+    }
+    return key;
+  },
+}));
 
 // ---------------------------------------------------------------------------
 // Fixtures
