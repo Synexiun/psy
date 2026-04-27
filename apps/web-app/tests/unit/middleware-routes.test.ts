@@ -1,3 +1,4 @@
+'use client';
 /**
  * Unit tests for PUBLIC_ROUTES and buildCsp logic in src/middleware.ts.
  *
