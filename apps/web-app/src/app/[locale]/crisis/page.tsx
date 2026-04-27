@@ -2,7 +2,9 @@
  * /crisis route: POLISHED 2026-04-26 — was already a Server Component with inlined
  * hotline data from @disciplineos/safety-directory. Polish: replaced hardcoded hsl()
  * values with design tokens; ESLint discipline/no-llm-on-crisis-route passes.
- * SW precache: workbox-config.cjs glob `out/en/crisis/**\/*.html` covers this route.
+ * SW precache: workbox-config.cjs precaches `en/index.html`, `ar/index.html`, `fa/index.html`
+ * from apps/web-crisis/out/ — the web-crisis static export is single-page-per-locale
+ * (no crisis/ subdirectory), so the locale root IS the crisis page.
  */
 import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
