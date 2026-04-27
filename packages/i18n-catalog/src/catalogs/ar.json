@@ -182,6 +182,7 @@
     "triggersLabel": "__NEEDS_REVIEW__: What's triggering this?",
     "notesLabel": "__NEEDS_REVIEW__: Brief notes (optional)",
     "notesPlaceholder": "__NEEDS_REVIEW__: What's on your mind?",
+    "charsLeft": "__NEEDS_REVIEW__: {count} chars left",
     "submit": "__NEEDS_REVIEW__: Record Check-In",
     "compassionHeadline": "__NEEDS_REVIEW__: You showed up. That matters.",
     "compassionBody": "__NEEDS_REVIEW__: Recording how you feel is the first step. Would you like to try a coping tool?",

@@ -263,7 +263,7 @@ function CheckInInner({ locale }: { locale: string }) {
                 className={`mt-1 text-end text-xs ${charsLeft < 30 ? 'text-signal-warning' : 'text-ink-quaternary'}`}
                 aria-live="polite"
               >
-                {charsLeft} chars left
+                {t('checkIn.charsLeft', { count: charsLeft })}
               </p>
             </Card>
 

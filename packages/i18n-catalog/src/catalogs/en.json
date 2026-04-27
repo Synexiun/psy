@@ -181,6 +181,7 @@
     "triggersLabel": "What's triggering this?",
     "notesLabel": "Brief notes (optional)",
     "notesPlaceholder": "What's on your mind?",
+    "charsLeft": "{count} chars left",
     "submit": "Record Check-In",
     "compassionHeadline": "You showed up. That matters.",
     "compassionBody": "Recording how you feel is the first step. Would you like to try a coping tool?",
