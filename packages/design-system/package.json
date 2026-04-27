@@ -43,7 +43,8 @@
     "./clinical/BreathingPulse": "./src/clinical/BreathingPulse.tsx",
     "./clinical/ResilienceRing": "./src/clinical/ResilienceRing.tsx",
     "./clinical/UrgeSlider": "./src/clinical/UrgeSlider.tsx",
-    "./clinical/SeverityBand": "./src/clinical/SeverityBand.tsx"
+    "./clinical/SeverityBand": "./src/clinical/SeverityBand.tsx",
+    "./clinical/RCIDelta": "./src/clinical/RCIDelta.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
