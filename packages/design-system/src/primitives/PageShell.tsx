@@ -8,7 +8,7 @@
  * main content column rendered inside those outer chrome elements.
  *
  * Token mapping:
- *   Outer container  : w-full max-w-4xl px-4 py-6 sm:px-6  (logical padding)
+ *   Outer container  : w-full max-w-4xl ps-4 pe-4 py-6 sm:ps-6 sm:pe-6  (logical padding)
  *   Heading (h1)     : text-2xl font-semibold text-ink-primary
  *   Subheading (p)   : text-sm text-ink-tertiary
  *   Back link (a)    : inline-flex items-center gap-1 text-sm text-ink-tertiary
@@ -53,7 +53,7 @@ export function PageShell({
 }: PageShellProps): React.ReactElement {
   return (
     <div
-      className={`flex w-full max-w-4xl flex-col gap-6 px-4 py-6 sm:px-6 ${className}`.trim()}
+      className={`flex w-full max-w-4xl flex-col gap-6 ps-4 pe-4 py-6 sm:ps-6 sm:pe-6 ${className}`.trim()}
     >
       {backHref !== undefined && (
         <a
