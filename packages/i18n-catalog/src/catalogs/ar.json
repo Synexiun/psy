@@ -357,7 +357,8 @@
         "pushNotifications": "__NEEDS_REVIEW__: Push notifications",
         "pushDescription": "__NEEDS_REVIEW__: Get notified when patterns are detected and during high-risk windows",
         "weeklyInsights": "__NEEDS_REVIEW__: Weekly insights email",
-        "emailDescription": "__NEEDS_REVIEW__: Weekly summary of your progress"
+        "emailDescription": "__NEEDS_REVIEW__: Weekly summary of your progress",
+        "nudgeTitle": "__NEEDS_REVIEW__: Reminder frequency"
       },
       "privacy": {
         "title": "__NEEDS_REVIEW__: Privacy",
@@ -454,5 +455,16 @@
       "safetyResourcesExcerpt": "__NEEDS_REVIEW__: Free, confidential support lines available around the clock.",
       "safetyResourcesBody": "__NEEDS_REVIEW__: You are never alone in a crisis. The helplines listed in the Help tab are verified, free, and confidential. If you are in immediate danger, call emergency services."
     }
+  },
+  "notifications": {
+    "drawerTitle": "__NEEDS_REVIEW__: Notifications",
+    "empty": "__NEEDS_REVIEW__: No notifications yet",
+    "unreadCount": "__NEEDS_REVIEW__: {count} unread",
+    "nudgeSectionTitle": "__NEEDS_REVIEW__: Check-in reminders",
+    "nudgeSectionDesc": "__NEEDS_REVIEW__: How often we nudge you to check in when urges may be rising",
+    "nudgeFrequency": "__NEEDS_REVIEW__: Reminder frequency",
+    "nudgeFrequencyLow": "__NEEDS_REVIEW__: Rarely (crisis only)",
+    "nudgeFrequencyMedium": "__NEEDS_REVIEW__: Moderate (recommended)",
+    "nudgeFrequencyHigh": "__NEEDS_REVIEW__: Frequent"
   }
 }

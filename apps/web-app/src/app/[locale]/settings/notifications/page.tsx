@@ -1,11 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import { use, useState } from 'react';
+import { use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
 import { Card } from '@disciplineos/design-system';
+import { useNotifications } from '@/hooks/useNotifications';
+import type { NotificationPrefs } from '@/hooks/useNotifications';
 
 // ---------------------------------------------------------------------------
 // Toggle component
@@ -57,9 +59,7 @@ function Toggle({ id, checked, onChange, label, description }: ToggleProps): Rea
 function NotificationsInner({ locale }: { locale: string }): React.ReactElement {
   const t = useTranslations();
   const router = useRouter();
-
-  const [pushEnabled, setPushEnabled] = useState(false);
-  const [emailEnabled, setEmailEnabled] = useState(true);
+  const { prefs } = useNotifications();
 
   return (
     <Layout locale={locale}>
@@ -95,13 +95,13 @@ function NotificationsInner({ locale }: { locale: string }): React.ReactElement 
           </h1>
         </header>
 
-        {/* Notification toggles — API wiring deferred to Phase 5 Task 7.5 */}
+        {/* Notification toggles — API wiring deferred to Phase 5 */}
         <Card className="divide-y divide-border-subtle p-0 overflow-hidden">
           <div className="px-5">
             <Toggle
               id="toggle-push"
-              checked={pushEnabled}
-              onChange={setPushEnabled}
+              checked={prefs.pushEnabled}
+              onChange={prefs.setPushEnabled}
               label={t('settings.sections.notifications.pushNotifications')}
               description={t('settings.sections.notifications.pushDescription')}
             />
@@ -109,13 +109,45 @@ function NotificationsInner({ locale }: { locale: string }): React.ReactElement 
           <div className="px-5">
             <Toggle
               id="toggle-email"
-              checked={emailEnabled}
-              onChange={setEmailEnabled}
+              checked={prefs.emailEnabled}
+              onChange={prefs.setEmailEnabled}
               label={t('settings.sections.notifications.weeklyInsights')}
               description={t('settings.sections.notifications.emailDescription')}
             />
           </div>
         </Card>
+
+        {/* Nudge frequency section */}
+        <section aria-labelledby="nudge-section-heading">
+          <div className="mb-3">
+            <h2 id="nudge-section-heading" className="text-base font-semibold text-ink-primary">
+              {t('notifications.nudgeSectionTitle')}
+            </h2>
+            <p className="mt-0.5 text-sm text-ink-tertiary">
+              {t('notifications.nudgeSectionDesc')}
+            </p>
+          </div>
+          <Card className="p-5">
+            <label
+              htmlFor="nudge-frequency"
+              className="block text-sm font-medium text-ink-primary mb-2"
+            >
+              {t('notifications.nudgeFrequency')}
+            </label>
+            <select
+              id="nudge-frequency"
+              value={prefs.nudgeFrequency}
+              onChange={(e) =>
+                prefs.setNudgeFrequency(e.target.value as NotificationPrefs['nudgeFrequency'])
+              }
+              className="w-full rounded-lg border border-border-subtle bg-surface-primary px-3 py-2 text-sm text-ink-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
+            >
+              <option value="low">{t('notifications.nudgeFrequencyLow')}</option>
+              <option value="medium">{t('notifications.nudgeFrequencyMedium')}</option>
+              <option value="high">{t('notifications.nudgeFrequencyHigh')}</option>
+            </select>
+          </Card>
+        </section>
       </div>
     </Layout>
   );
@@ -139,4 +171,6 @@ export default function NotificationsPage({
  *   nav.settings
  *   settings.sections.notifications.title / .pushNotifications / .pushDescription
  *   settings.sections.notifications.weeklyInsights / .emailDescription
+ *   notifications.nudgeSectionTitle / .nudgeSectionDesc / .nudgeFrequency
+ *   notifications.nudgeFrequencyLow / .nudgeFrequencyMedium / .nudgeFrequencyHigh
  */

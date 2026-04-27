@@ -7,9 +7,10 @@
  *   - open=false  → children are NOT present in the DOM
  *   - open=true   → children ARE present in the DOM (queried via screen)
  *
- * STUB_NOTIFICATIONS is hardcoded (3 items), so the empty-state branch
- * ("No notifications") is unreachable through props alone. Tests assert
- * this invariant explicitly — the else-branch text must NOT appear.
+ * useNotifications() pulls from notificationsStubs (3 items, 1 unread).
+ * The empty-state branch ("No notifications yet") is unreachable through
+ * props alone since the stub is non-empty. Tests assert this invariant
+ * explicitly — the empty-state text must NOT appear.
  *
  * Coverage paths:
  *   1.  open=false → dialog not rendered in DOM
@@ -17,12 +18,10 @@
  *   3.  open=true  → dialog element rendered
  *   4.  open=true  → all 3 stub notification items rendered
  *   5.  open=true  → notification list has role="list"
- *   6.  open=true  → "No notifications" empty-state NOT in DOM (STUB non-empty)
+ *   6.  open=true  → empty-state NOT in DOM (stub non-empty)
  *   7.  open=true  → drawer title "Notifications" rendered
- *   8.  count > 0  → description "{count} unread" rendered
- *   9.  count = 0  → no description element rendered (default)
- *  10.  count omitted → no description element rendered
- *  11.  Close button click → onClose callback called exactly once
+ *   8.  open=true  → "1 unread" description rendered (stub has 1 unread item)
+ *   9.  Close button click → onClose callback called exactly once
  *  (+axe): open drawer has no critical a11y violations
  *
  * axe rules disabled:
@@ -78,7 +77,7 @@ describe('NotificationsDrawer — closed state', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 3–7. Open state — structure and stub notifications
+// 3–8. Open state — structure and stub notifications
 // ---------------------------------------------------------------------------
 
 describe('NotificationsDrawer — open state', () => {
@@ -109,40 +108,25 @@ describe('NotificationsDrawer — open state', () => {
     expect(screen.getByRole('list')).toBeInTheDocument();
   });
 
-  it('does not render "No notifications" empty-state when stub items exist', () => {
+  it('does not render empty-state when stub items exist', () => {
     renderDrawer();
-    expect(screen.queryByText('No notifications')).toBeNull();
+    expect(screen.queryByText('No notifications yet')).toBeNull();
   });
 
   it('renders the drawer title "Notifications"', () => {
     renderDrawer();
     expect(screen.getByText('Notifications')).toBeInTheDocument();
   });
-});
 
-// ---------------------------------------------------------------------------
-// 8–10. count prop — description text
-// ---------------------------------------------------------------------------
-
-describe('NotificationsDrawer — count prop', () => {
-  it('renders "{count} unread" description when count > 0', () => {
-    renderDrawer({ count: 3 });
-    expect(screen.getByText('3 unread')).toBeInTheDocument();
-  });
-
-  it('does not render a description when count is 0', () => {
-    renderDrawer({ count: 0 });
-    expect(screen.queryByText(/unread/)).toBeNull();
-  });
-
-  it('does not render a description when count is omitted', () => {
+  it('renders "1 unread" description (stub has 1 unread item)', () => {
     renderDrawer();
-    expect(screen.queryByText(/unread/)).toBeNull();
+    // notificationsStubs has 1 unread item (n1), so unreadCount === 1
+    expect(screen.getByText(/1 unread/)).toBeInTheDocument();
   });
 });
 
 // ---------------------------------------------------------------------------
-// 11. Close button → onClose callback
+// 9. Close button → onClose callback
 // ---------------------------------------------------------------------------
 
 describe('NotificationsDrawer — close callback', () => {
@@ -160,14 +144,8 @@ describe('NotificationsDrawer — close callback', () => {
 // ---------------------------------------------------------------------------
 
 describe('NotificationsDrawer — axe accessibility', () => {
-  it('open drawer with no count has no critical a11y violations', async () => {
+  it('open drawer has no critical a11y violations', async () => {
     renderDrawer();
-    const results = await axe(document.body);
-    expect(results).toHaveNoViolations();
-  });
-
-  it('open drawer with count > 0 has no critical a11y violations', async () => {
-    renderDrawer({ count: 5 });
     const results = await axe(document.body);
     expect(results).toHaveNoViolations();
   });

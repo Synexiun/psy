@@ -356,7 +356,8 @@
         "pushNotifications": "Push notifications",
         "pushDescription": "Get notified when patterns are detected and during high-risk windows",
         "weeklyInsights": "Weekly insights email",
-        "emailDescription": "Weekly summary of your progress"
+        "emailDescription": "Weekly summary of your progress",
+        "nudgeTitle": "Reminder frequency"
       },
       "privacy": {
         "title": "Privacy",
@@ -453,5 +454,16 @@
       "safetyResourcesExcerpt": "Free, confidential support lines available around the clock.",
       "safetyResourcesBody": "You are never alone in a crisis. The helplines listed in the Help tab are verified, free, and confidential. If you are in immediate danger, call emergency services."
     }
+  },
+  "notifications": {
+    "drawerTitle": "Notifications",
+    "empty": "No notifications yet",
+    "unreadCount": "{count} unread",
+    "nudgeSectionTitle": "Check-in reminders",
+    "nudgeSectionDesc": "How often we nudge you to check in when urges may be rising",
+    "nudgeFrequency": "Reminder frequency",
+    "nudgeFrequencyLow": "Rarely (crisis only)",
+    "nudgeFrequencyMedium": "Moderate (recommended)",
+    "nudgeFrequencyHigh": "Frequent"
   }
 }

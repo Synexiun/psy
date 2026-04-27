@@ -54,7 +54,6 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
       <NotificationsDrawer
         open={notifOpen}
         onClose={() => setNotifOpen(false)}
-        count={count}
       />
     </div>
   );
