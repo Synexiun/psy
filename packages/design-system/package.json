@@ -37,7 +37,8 @@
     "./primitives/WizardShell": "./src/primitives/WizardShell.tsx",
     "./primitives/Stat": "./src/primitives/Stat.tsx",
     "./primitives/Trend": "./src/primitives/Trend.tsx",
-    "./primitives/RingChart": "./src/primitives/RingChart.tsx"
+    "./primitives/RingChart": "./src/primitives/RingChart.tsx",
+    "./primitives/BarChart": "./src/primitives/BarChart.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
