@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import type { CheckInHistory } from '@/lib/api';
 import { Sparkline, Skeleton } from '@disciplineos/design-system';
 
@@ -11,6 +12,8 @@ interface MoodSparklineProps {
 const MOOD_STUB = [3, 4, 3, 5, 4, 6, 5, 7, 6, 8, 7, 6, 8, 9, 8, 7, 8, 9, 8, 7];
 
 export function MoodSparkline({ data, isLoading }: MoodSparklineProps) {
+  const t = useTranslations('moodSparkline');
+
   if (isLoading) {
     return (
       <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm">
@@ -28,8 +31,8 @@ export function MoodSparkline({ data, isLoading }: MoodSparklineProps) {
   return (
     <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-ink-primary">Mood trend</p>
-        <span className="text-xs text-ink-tertiary">Last {intensities.length} check-ins</span>
+        <p className="text-sm font-medium text-ink-primary">{t('heading')}</p>
+        <span className="text-xs text-ink-tertiary">{t('subtitle', { count: intensities.length })}</span>
       </div>
       <div className="mt-4 flex items-end gap-4">
         <Sparkline
@@ -38,7 +41,7 @@ export function MoodSparkline({ data, isLoading }: MoodSparklineProps) {
           height={48}
           color="var(--color-accent-bronze)"
           strokeWidth={2}
-          ariaLabel={`Mood trend over last ${intensities.length} check-ins`}
+          ariaLabel={t('ariaLabel', { count: intensities.length })}
         />
         <div className="mb-1 text-end">
           <p className="text-2xl font-semibold text-ink-primary tabular-nums">

@@ -277,6 +277,7 @@
     "lastCompleted": "Last completed",
     "score": "Score",
     "notYetTaken": "Not yet taken",
+    "noScoreYet": "{name} — no score yet",
     "disclaimer": "Scores are for self-monitoring only and not a diagnosis. Consult a healthcare professional.",
     "instruments": {
       "phq9": {
@@ -555,5 +556,10 @@
       "urgesHandled": "{count} urges handled",
       "ariaLabel": "Resilience streak: {days} days"
     }
+  },
+  "moodSparkline": {
+    "heading": "Mood trend",
+    "subtitle": "Last {count} check-ins",
+    "ariaLabel": "Mood trend over last {count} check-ins"
   }
 }

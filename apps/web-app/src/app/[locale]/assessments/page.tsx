@@ -150,7 +150,7 @@ function AssessmentCard({
           ) : (
             <div
               className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-dashed border-border-subtle"
-              aria-label={`${instrument.name} — no score yet`}
+              aria-label={t('assessments.noScoreYet', { name: instrument.name })}
             >
               <span className="text-xs text-ink-quaternary">—</span>
             </div>
@@ -297,4 +297,5 @@ export default function AssessmentsPage({
  *
  *   assessments.score
  *   assessments.lastCompleted
+ *   assessments.noScoreYet
  */

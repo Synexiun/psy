@@ -12,6 +12,22 @@ import { render, screen } from '@testing-library/react';
 import { MoodSparkline } from '@/components/MoodSparkline';
 import type { CheckInHistory } from '@/lib/api';
 
+// next-intl requires NextIntlClientProvider context; mock for unit tests.
+vi.mock('next-intl', () => ({
+  useTranslations: (namespace: string) => (key: string, params?: Record<string, unknown>) => {
+    if (namespace === 'moodSparkline') {
+      const count = params?.['count'] as number | undefined;
+      const catalog: Record<string, string> = {
+        heading: 'Mood trend',
+        subtitle: `Last ${count ?? '{count}'} check-ins`,
+        ariaLabel: `Mood trend over last ${count ?? '{count}'} check-ins`,
+      };
+      return catalog[key] ?? key;
+    }
+    return key;
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

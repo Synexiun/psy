@@ -278,6 +278,7 @@
     "lastCompleted": "__NEEDS_REVIEW__: Last completed",
     "score": "__NEEDS_REVIEW__: Score",
     "notYetTaken": "__NEEDS_REVIEW__: Not yet taken",
+    "noScoreYet": "__NEEDS_REVIEW__: {name} — no score yet",
     "disclaimer": "__NEEDS_REVIEW__: Scores are for self-monitoring only and not a diagnosis. Consult a healthcare professional.",
     "instruments": {
       "phq9": {
@@ -556,5 +557,10 @@
       "urgesHandled": "__NEEDS_REVIEW__: {count} envies gérées",
       "ariaLabel": "__NEEDS_REVIEW__: Série de résilience : {days} jours"
     }
+  },
+  "moodSparkline": {
+    "heading": "__NEEDS_REVIEW__: Mood trend",
+    "subtitle": "__NEEDS_REVIEW__: Last {count} check-ins",
+    "ariaLabel": "__NEEDS_REVIEW__: Mood trend over last {count} check-ins"
   }
 }
