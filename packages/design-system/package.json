@@ -44,7 +44,8 @@
     "./clinical/ResilienceRing": "./src/clinical/ResilienceRing.tsx",
     "./clinical/UrgeSlider": "./src/clinical/UrgeSlider.tsx",
     "./clinical/SeverityBand": "./src/clinical/SeverityBand.tsx",
-    "./clinical/RCIDelta": "./src/clinical/RCIDelta.tsx"
+    "./clinical/RCIDelta": "./src/clinical/RCIDelta.tsx",
+    "./clinical/InsightCard": "./src/clinical/InsightCard.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
