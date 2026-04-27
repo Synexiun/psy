@@ -24,6 +24,9 @@ function getDb(): Promise<IDBPDatabase> {
           db.createObjectStore(STORE_NAME, { keyPath: 'id', autoIncrement: true });
         }
       },
+    }).catch((err: unknown) => {
+      dbPromise = null;
+      throw err;
     });
   }
   return dbPromise;

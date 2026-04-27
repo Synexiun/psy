@@ -13,6 +13,7 @@ export interface UseOfflineQueueResult {
 export function useOfflineQueue(): UseOfflineQueueResult {
   const [queuedCount, setQueuedCount] = React.useState(0);
   const [isFlushing, setIsFlushing] = React.useState(false);
+  const isFlushingRef = React.useRef(false);
 
   // Load initial count on mount
   React.useEffect(() => {
@@ -42,16 +43,21 @@ export function useOfflineQueue(): UseOfflineQueueResult {
   }
 
   async function flush(getToken: () => Promise<string | null>): Promise<void> {
-    if (isFlushing) return;
+    if (isFlushingRef.current) return;
+    isFlushingRef.current = true;
     setIsFlushing(true);
     try {
       const items = await getAllQueued();
       for (const item of items) {
+        if (item.id === undefined) {
+          // IDB record has no key — skip it (shouldn't happen, but defensive)
+          continue;
+        }
         const token = await getToken();
         if (!token) break; // auth lost mid-flush — stop, leave rest in queue
         try {
           await submitCheckIn(token, item.intensity, item.triggerTags, item.notes);
-          await dequeueCheckIn(item.id!);
+          await dequeueCheckIn(item.id);
           setQueuedCount((c) => Math.max(0, c - 1));
         } catch {
           // Network still unavailable for this item — leave in queue
@@ -59,6 +65,7 @@ export function useOfflineQueue(): UseOfflineQueueResult {
         }
       }
     } finally {
+      isFlushingRef.current = false;
       setIsFlushing(false);
     }
   }
