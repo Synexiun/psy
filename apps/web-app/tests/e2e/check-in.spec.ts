@@ -111,7 +111,7 @@ test.describe('Check-in page per locale', () => {
       });
 
       test('compassion card is NOT visible before submit', async ({ page }) => {
-        // The compassion card contains a wave emoji and is only shown post-submit
+        // The compassion card contains an inline SVG wave icon and is only shown post-submit
         const compassionCard = page.locator('h2').filter({ hasText: /well done|aware|logged|check/i });
         // The form should be visible (not the compassion card)
         const form = page.locator('form');

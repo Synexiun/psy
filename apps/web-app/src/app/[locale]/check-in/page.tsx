@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { use, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
