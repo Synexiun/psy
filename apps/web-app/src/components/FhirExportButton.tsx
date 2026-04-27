@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { ApiError } from '@disciplineos/api-client';
 
@@ -15,20 +15,32 @@ interface FhirExportButtonProps {
 export function FhirExportButton({ periodId, locale: _locale, label, stepUpLabel, errorLabel }: FhirExportButtonProps): React.ReactElement {
   const { getToken } = useAuth();
   const [status, setStatus] = useState<'idle' | 'loading' | 'step-up-required' | 'error'>('idle');
+  const cancelledRef = useRef(false);
+
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+    };
+  }, []);
 
   async function handleExport(): Promise<void> {
     setStatus('loading');
     try {
       const token = await getToken();
+      if (cancelledRef.current) return;
       if (!token) { setStatus('error'); return; }
+      const controller = new AbortController();
       const res = await globalThis.fetch('/api/exports/fhir-r4', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({ period_id: periodId }),
       });
+      if (cancelledRef.current) return;
       if (res.status === 401) {
         // Clerk step-up required — surface the step-up UI message.
         // When Clerk step-up API is fully wired (Phase 5), this triggers
@@ -43,6 +55,7 @@ export function FhirExportButton({ periodId, locale: _locale, label, stepUpLabel
       }
       // Download the blob
       const blob = await res.blob();
+      if (cancelledRef.current) return;
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -52,7 +65,10 @@ export function FhirExportButton({ periodId, locale: _locale, label, stepUpLabel
       a.remove();
       URL.revokeObjectURL(url);
       setStatus('idle');
-    } catch {
+    } catch (err) {
+      if (cancelledRef.current) return;
+      // AbortError is not a real error — component unmounted mid-fetch
+      if (err instanceof Error && err.name === 'AbortError') return;
       setStatus('error');
     }
   }

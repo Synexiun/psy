@@ -1,5 +1,3 @@
-'use client';
-
 import { registerStubs } from './index';
 
 export type ReportPeriod = {
