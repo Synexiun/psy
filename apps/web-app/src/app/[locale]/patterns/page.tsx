@@ -11,6 +11,17 @@ import { usePatterns } from '@/hooks/usePatterns';
 import { formatPercentClinical } from '@disciplineos/i18n-catalog';
 
 // ---------------------------------------------------------------------------
+// Pattern type guard
+// ---------------------------------------------------------------------------
+
+const KNOWN_PATTERN_TYPES = ['temporal', 'contextual', 'physiological', 'compound'] as const;
+type KnownPatternType = typeof KNOWN_PATTERN_TYPES[number];
+
+function isKnownPatternType(v: string): v is KnownPatternType {
+  return (KNOWN_PATTERN_TYPES as readonly string[]).includes(v);
+}
+
+// ---------------------------------------------------------------------------
 // Inner component (client)
 // ---------------------------------------------------------------------------
 
@@ -81,7 +92,9 @@ function PatternsInner({ locale }: { locale: string }) {
                   <InsightCard
                     id={pattern.pattern_id}
                     headline={
-                      t(`patterns.typeLabels.${pattern.pattern_type}`) +
+                      (isKnownPatternType(pattern.pattern_type)
+                        ? t(`patterns.typeLabels.${pattern.pattern_type}`)
+                        : pattern.pattern_type) +
                       ' — ' +
                       formatPercentClinical(Math.round(pattern.confidence * 100)) +
                       ' ' +

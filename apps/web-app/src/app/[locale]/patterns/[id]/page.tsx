@@ -24,6 +24,17 @@ const TYPE_TONES = {
 } as const satisfies Record<string, 'calm' | 'neutral' | 'warning'>;
 
 // ---------------------------------------------------------------------------
+// Pattern type guard
+// ---------------------------------------------------------------------------
+
+const KNOWN_PATTERN_TYPES = ['temporal', 'contextual', 'physiological', 'compound'] as const;
+type KnownPatternType = typeof KNOWN_PATTERN_TYPES[number];
+
+function isKnownPatternType(v: string): v is KnownPatternType {
+  return (KNOWN_PATTERN_TYPES as readonly string[]).includes(v);
+}
+
+// ---------------------------------------------------------------------------
 // Inner component (client)
 // ---------------------------------------------------------------------------
 
@@ -31,7 +42,7 @@ function PatternDetailInner({ locale, patternId }: { locale: string; patternId: 
   usePhiAudit('/patterns/[id]');
   const t = useTranslations();
   const router = useRouter();
-  const { data: patterns } = usePatterns();
+  const { data: patterns, isLoading } = usePatterns();
 
   const pattern = (patterns ?? []).find((p) => p.pattern_id === patternId);
 
@@ -39,7 +50,9 @@ function PatternDetailInner({ locale, patternId }: { locale: string; patternId: 
     return (
       <Layout locale={locale}>
         <div className="space-y-6 max-w-2xl mx-auto">
-          <p className="text-sm text-ink-tertiary">{t('reports.notFound')}</p>
+          <p className="text-sm text-ink-tertiary">
+            {isLoading ? '' : t('patterns.notFound')}
+          </p>
         </div>
       </Layout>
     );
@@ -80,9 +93,15 @@ function PatternDetailInner({ locale, patternId }: { locale: string; patternId: 
         <header>
           <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
-              {t(`patterns.typeLabels.${pattern.pattern_type}`)}
+              {isKnownPatternType(pattern.pattern_type)
+                ? t(`patterns.typeLabels.${pattern.pattern_type}`)
+                : pattern.pattern_type}
             </h1>
-            <Badge tone={tone}>{t(`patterns.typeLabels.${pattern.pattern_type}`)}</Badge>
+            <Badge tone={tone}>
+              {isKnownPatternType(pattern.pattern_type)
+                ? t(`patterns.typeLabels.${pattern.pattern_type}`)
+                : pattern.pattern_type}
+            </Badge>
           </div>
           <p className="mt-1 text-sm text-ink-quaternary">
             {t('patterns.confidenceLabel')}:{' '}
@@ -95,7 +114,11 @@ function PatternDetailInner({ locale, patternId }: { locale: string; patternId: 
         {/* Full insight card */}
         <InsightCard
           id={pattern.pattern_id}
-          headline={t(`patterns.typeLabels.${pattern.pattern_type}`)}
+          headline={
+            isKnownPatternType(pattern.pattern_type)
+              ? t(`patterns.typeLabels.${pattern.pattern_type}`)
+              : pattern.pattern_type
+          }
           body={pattern.description}
           locale={locale}
         />

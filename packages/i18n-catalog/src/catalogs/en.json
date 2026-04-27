@@ -128,6 +128,7 @@
     "confidenceLabel": "Confidence",
     "detectedLabel": "Detected signals",
     "viewDetails": "View details",
+    "notFound": "Pattern not found.",
     "typeLabels": {
       "temporal": "Time pattern",
       "contextual": "Context pattern",

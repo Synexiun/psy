@@ -129,6 +129,7 @@
     "confidenceLabel": "__NEEDS_REVIEW__: Confidence",
     "detectedLabel": "__NEEDS_REVIEW__: Detected signals",
     "viewDetails": "__NEEDS_REVIEW__: View details",
+    "notFound": "__NEEDS_REVIEW__: Pattern not found.",
     "typeLabels": {
       "temporal": "__NEEDS_REVIEW__: Time pattern",
       "contextual": "__NEEDS_REVIEW__: Context pattern",
