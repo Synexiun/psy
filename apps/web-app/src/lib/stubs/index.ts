@@ -12,6 +12,7 @@
 
 import type { CheckInStubs } from './check-in';
 import type { CompanionStubs } from './companion';
+import type { LibraryStubs } from './library';
 import type { NotificationsStubs } from './notifications';
 import type { ReportsStubs } from './reports';
 
@@ -22,6 +23,7 @@ import type { ReportsStubs } from './reports';
 type StubRegistry = {
   'check-in': CheckInStubs;
   'companion': CompanionStubs;
+  'library': LibraryStubs;
   'notifications': NotificationsStubs;
   'reports': ReportsStubs;
 };

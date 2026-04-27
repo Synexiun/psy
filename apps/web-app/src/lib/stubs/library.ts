@@ -7,6 +7,8 @@
  * In Phase 5 this will be replaced by a backend API call.
  */
 
+import { registerStubs } from './index';
+
 export interface LibraryArticle {
   slug: string;
   categorySlug: string;
@@ -176,3 +178,5 @@ export const libraryStubs: LibraryStubs = {
     },
   ],
 };
+
+registerStubs('library', libraryStubs);
