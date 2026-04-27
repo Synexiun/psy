@@ -1,5 +1,6 @@
 'use client';
 
+import { useTranslations } from 'next-intl';
 import { formatPercentClinical } from '@disciplineos/i18n-catalog';
 import { Card, Badge } from '@disciplineos/design-system';
 import type { PatternData } from '@/hooks/useDashboardData';
@@ -8,12 +9,7 @@ interface PatternCardProps {
   pattern: PatternData;
 }
 
-const typeLabels: Record<string, string> = {
-  temporal: 'Time pattern',
-  contextual: 'Context pattern',
-  physiological: 'Body signal',
-  compound: 'Compound signal',
-};
+const KNOWN_PATTERN_TYPES = new Set(['temporal', 'contextual', 'physiological', 'compound']);
 
 const typeTones: Record<string, 'calm' | 'neutral' | 'warning'> = {
   temporal: 'calm',
@@ -23,14 +19,18 @@ const typeTones: Record<string, 'calm' | 'neutral' | 'warning'> = {
 };
 
 export function PatternCard({ pattern }: PatternCardProps) {
+  const t = useTranslations('patterns');
   const tone = typeTones[pattern.pattern_type] ?? 'neutral';
+  const typeLabel = KNOWN_PATTERN_TYPES.has(pattern.pattern_type)
+    ? t(`typeLabels.${pattern.pattern_type}`)
+    : pattern.pattern_type;
 
   return (
     <Card tone={tone} className="group relative">
       <div className="flex items-start justify-between gap-3">
-        <Badge tone={tone}>{typeLabels[pattern.pattern_type] ?? pattern.pattern_type}</Badge>
+        <Badge tone={tone}>{typeLabel}</Badge>
         <span className="text-xs text-ink-tertiary tabular-nums">
-          {formatPercentClinical(Math.round(pattern.confidence * 100))} confidence
+          {formatPercentClinical(Math.round(pattern.confidence * 100))} {t('confidenceLabel')}
         </span>
       </div>
       <p className="mt-3 text-sm leading-relaxed text-ink-secondary">{pattern.description}</p>

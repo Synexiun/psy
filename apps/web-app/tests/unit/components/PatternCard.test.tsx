@@ -20,6 +20,19 @@ vi.mock('@disciplineos/i18n-catalog', () => ({
   formatPercentClinical: (value: number) => `${value}%`,
 }));
 
+vi.mock('next-intl', () => ({
+  useTranslations: (_ns: string) => (key: string) => {
+    const map: Record<string, string> = {
+      'typeLabels.temporal': 'Time pattern',
+      'typeLabels.contextual': 'Context pattern',
+      'typeLabels.physiological': 'Body signal',
+      'typeLabels.compound': 'Compound signal',
+      'confidenceLabel': 'Confidence',
+    };
+    return map[key] ?? key;
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
