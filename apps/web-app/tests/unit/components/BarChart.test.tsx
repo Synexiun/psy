@@ -103,6 +103,15 @@ describe('BarChart — empty data', () => {
     const svg = container.querySelector('svg');
     expect(svg).toBeNull();
   });
+
+  it('applies ariaLabel to empty-state root', () => {
+    const { container } = render(
+      <BarChart data={[]} ariaLabel="Empty chart" />,
+    );
+    const root = container.firstElementChild;
+    expect(root?.getAttribute('role')).toBe('img');
+    expect(root?.getAttribute('aria-label')).toBe('Empty chart');
+  });
 });
 
 // ---------------------------------------------------------------------------

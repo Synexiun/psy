@@ -72,6 +72,8 @@ export function BarChart({
   if (data.length === 0) {
     return (
       <div
+        role="img"
+        {...(ariaLabel !== undefined && { 'aria-label': ariaLabel })}
         className={['text-ink-tertiary text-sm flex items-center justify-center', className]
           .filter(Boolean)
           .join(' ')}
