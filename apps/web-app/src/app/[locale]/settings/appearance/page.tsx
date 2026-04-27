@@ -9,6 +9,50 @@ import { Layout } from '@/components/Layout';
 import { Card } from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
+// Toggle component (mirrors notifications/page.tsx)
+// ---------------------------------------------------------------------------
+
+interface ToggleProps {
+  id: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+  description?: string;
+}
+
+function Toggle({ id, checked, onChange, label, description }: ToggleProps): React.ReactElement {
+  return (
+    <div className="flex items-start justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <label htmlFor={id} className="block text-sm font-medium text-ink-primary cursor-pointer">
+          {label}
+        </label>
+        {description !== undefined && (
+          <p className="mt-0.5 text-xs text-ink-tertiary leading-snug">{description}</p>
+        )}
+      </div>
+      <button
+        type="button"
+        id={id}
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors duration-base focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2 min-h-[44px] min-w-[44px] justify-center ${
+          checked ? 'bg-accent-bronze' : 'bg-border-emphasis'
+        }`}
+        aria-label={label}
+      >
+        <span
+          className={`pointer-events-none h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-base ${
+            checked ? 'translate-x-2.5 rtl:-translate-x-2.5' : '-translate-x-2.5 rtl:translate-x-2.5'
+          }`}
+        />
+      </button>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Locale options
 // ---------------------------------------------------------------------------
 
@@ -81,6 +125,23 @@ function AppearanceInner({ locale }: { locale: string }): React.ReactElement {
 
   // Default theme is dark; treat undefined as dark
   const isDark = theme !== 'light';
+
+  // Motion state — seeded from localStorage with SSR guard
+  const [ambientMotionOff, setAmbientMotionOff] = React.useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('ambientMotion') === 'off';
+  });
+
+  // Sync motion state → DOM attribute + localStorage
+  React.useEffect(() => {
+    if (ambientMotionOff) {
+      document.documentElement.setAttribute('data-ambient-motion', 'off');
+      localStorage.setItem('ambientMotion', 'off');
+    } else {
+      document.documentElement.removeAttribute('data-ambient-motion');
+      localStorage.removeItem('ambientMotion');
+    }
+  }, [ambientMotionOff]);
 
   function handleLocaleChange(newLocale: string): void {
     // Strip existing locale prefix (e.g. /en/settings/appearance -> /settings/appearance)
@@ -212,6 +273,27 @@ function AppearanceInner({ locale }: { locale: string }): React.ReactElement {
             ))}
           </Card>
         </section>
+
+        {/* Motion section */}
+        <section aria-labelledby="motion-section-heading" data-testid="motion-reduce-section">
+          <h2
+            id="motion-section-heading"
+            className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary"
+          >
+            {t('settings.sections.appearance.motion')}
+          </h2>
+          <Card className="divide-y divide-border-subtle p-0 overflow-hidden">
+            <div className="px-5">
+              <Toggle
+                id="toggle-ambient-motion"
+                checked={ambientMotionOff}
+                onChange={setAmbientMotionOff}
+                label={t('settings.sections.appearance.motionReduceLabel')}
+                description={t('settings.sections.appearance.motionReduceDesc')}
+              />
+            </div>
+          </Card>
+        </section>
       </div>
     </Layout>
   );
@@ -236,4 +318,5 @@ export default function AppearancePage({
  *   settings.sections.appearance.title / .theme / .themeDescription
  *   settings.sections.appearance.themeDark / .themeLight
  *   settings.sections.appearance.language / .languageDescription
+ *   settings.sections.appearance.motion / .motionReduceLabel / .motionReduceDesc
  */

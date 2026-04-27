@@ -85,6 +85,43 @@ test.describe('Settings appearance sub-page', () => {
   test('breadcrumb back to settings is visible', async ({ page }) => {
     await expect(page.locator('nav[aria-label="Breadcrumb"] button')).toBeVisible();
   });
+
+  test('motion section heading is visible', async ({ page }) => {
+    await page.goto('/en/settings/appearance');
+    const section = page.locator('section[aria-labelledby="motion-section-heading"]');
+    await expect(section).toBeVisible();
+  });
+
+  test('reduce ambient motion toggle is present', async ({ page }) => {
+    await page.goto('/en/settings/appearance');
+    const toggle = page.locator('[id="toggle-ambient-motion"]');
+    await expect(toggle).toBeVisible();
+  });
+
+  test('reduce ambient motion toggle is toggleable', async ({ page }) => {
+    await page.goto('/en/settings/appearance');
+    const toggle = page.locator('[id="toggle-ambient-motion"]');
+    const initialState = await toggle.getAttribute('aria-checked');
+    await toggle.click();
+    const newState = await toggle.getAttribute('aria-checked');
+    expect(newState).not.toBe(initialState);
+  });
+
+  test('toggling sets data-ambient-motion attribute on html', async ({ page }) => {
+    await page.goto('/en/settings/appearance');
+    // Initial state: no attribute (motion ON)
+    const htmlEl = page.locator('html');
+    let attr = await htmlEl.getAttribute('data-ambient-motion');
+    expect(attr).toBeNull();
+    // Toggle to OFF
+    await page.locator('[id="toggle-ambient-motion"]').click();
+    attr = await htmlEl.getAttribute('data-ambient-motion');
+    expect(attr).toBe('off');
+    // Toggle back to ON
+    await page.locator('[id="toggle-ambient-motion"]').click();
+    attr = await htmlEl.getAttribute('data-ambient-motion');
+    expect(attr).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

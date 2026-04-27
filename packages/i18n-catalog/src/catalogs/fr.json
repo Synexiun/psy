@@ -383,7 +383,10 @@
         "themeDark": "__NEEDS_REVIEW__: Dark",
         "themeLight": "__NEEDS_REVIEW__: Light",
         "language": "__NEEDS_REVIEW__: Language",
-        "languageDescription": "__NEEDS_REVIEW__: Choose your preferred language"
+        "languageDescription": "__NEEDS_REVIEW__: Choose your preferred language",
+        "motion": "__NEEDS_REVIEW__: Motion",
+        "motionReduceLabel": "__NEEDS_REVIEW__: Reduce ambient motion",
+        "motionReduceDesc": "__NEEDS_REVIEW__: Disables breathing animations and ambient transitions. Does not affect OS-level reduced-motion."
       },
       "about": {
         "title": "__NEEDS_REVIEW__: About",

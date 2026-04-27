@@ -382,7 +382,10 @@
         "themeDark": "Dark",
         "themeLight": "Light",
         "language": "Language",
-        "languageDescription": "Choose your preferred language"
+        "languageDescription": "Choose your preferred language",
+        "motion": "Motion",
+        "motionReduceLabel": "Reduce ambient motion",
+        "motionReduceDesc": "Disables breathing animations and ambient transitions. Does not affect OS-level reduced-motion."
       },
       "about": {
         "title": "About",
