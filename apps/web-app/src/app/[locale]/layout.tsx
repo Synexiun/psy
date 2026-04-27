@@ -82,7 +82,6 @@ export default async function LocaleLayout({
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-surface-primary text-ink-primary antialiased">
-        <ThemeSync />
         <NextIntlClientProvider messages={messages}>
           {children}
         </NextIntlClientProvider>
@@ -96,7 +95,19 @@ export default async function LocaleLayout({
 
   return (
     <ClerkProvider publishableKey={clerkKey} nonce={nonce}>
-      {shell}
+      <html
+        lang={locale}
+        dir={dir}
+        className={fontVars}
+        suppressHydrationWarning
+      >
+        <body className="min-h-screen bg-surface-primary text-ink-primary antialiased">
+          <ThemeSync />
+          <NextIntlClientProvider messages={messages}>
+            {children}
+          </NextIntlClientProvider>
+        </body>
+      </html>
     </ClerkProvider>
   );
 }

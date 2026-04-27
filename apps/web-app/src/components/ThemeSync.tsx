@@ -23,7 +23,8 @@ export function ThemeSync(): null {
     if (!user || resolvedTheme === undefined) return;
 
     // Guard: metadata already matches — skip the unnecessary write.
-    if (user.unsafeMetadata['theme'] === resolvedTheme) return;
+    const storedTheme = user.unsafeMetadata['theme'];
+    if (typeof storedTheme === 'string' && storedTheme === resolvedTheme) return;
 
     // Fire-and-forget: theme preference is non-critical UI state.
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
