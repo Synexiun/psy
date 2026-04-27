@@ -118,7 +118,7 @@ export function RingChart({
   return (
     <div
       role="img"
-      aria-label={ariaLabel}
+      {...(ariaLabel !== undefined && { 'aria-label': ariaLabel })}
       className={['relative inline-flex items-center justify-center', className]
         .filter(Boolean)
         .join(' ')}
