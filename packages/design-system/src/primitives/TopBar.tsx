@@ -285,7 +285,7 @@ export function TopBar({
               themeLabel={themeLabel}
             />
           )}
-          {avatar !== undefined && avatar}
+          {avatar != null && avatar}
         </div>
       </div>
     </header>

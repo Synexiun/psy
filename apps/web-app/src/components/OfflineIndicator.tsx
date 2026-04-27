@@ -8,9 +8,7 @@ import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 // ---------------------------------------------------------------------------
 
 export function useIsOnline(): boolean {
-  const [isOnline, setIsOnline] = React.useState<boolean>(() =>
-    typeof window === 'undefined' ? true : navigator.onLine,
-  );
+  const [isOnline, setIsOnline] = React.useState<boolean>(true);
 
   React.useEffect(() => {
     const handleOnline = () => setIsOnline(true);
