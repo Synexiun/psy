@@ -30,7 +30,11 @@
     "./primitives/TabNav": "./src/primitives/TabNav.tsx",
     "./primitives/Dialog": "./src/primitives/Dialog.tsx",
     "./primitives/Sheet": "./src/primitives/Sheet.tsx",
-    "./primitives/Toast": "./src/primitives/Toast.tsx"
+    "./primitives/Toast": "./src/primitives/Toast.tsx",
+    "./primitives/PageShell": {
+      "types": "./src/primitives/PageShell.tsx",
+      "default": "./src/primitives/PageShell.tsx"
+    }
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
