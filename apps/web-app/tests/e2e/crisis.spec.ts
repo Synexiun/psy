@@ -1,7 +1,8 @@
+'use client';
 /**
  * E2E tests for the crisis page inside the authenticated app.
  *
- * The crisis path is public (no auth gate) per AGENTS.md non-negotiable rule.
+ * The crisis path is public (no auth gate) per CLAUDE.md non-negotiable rule.
  */
 
 import { expect, test } from '@playwright/test';
@@ -56,5 +57,34 @@ test.describe('Crisis page accessibility', () => {
     const { default: AxeBuilder } = await import('@axe-core/playwright');
     const results = await new AxeBuilder({ page }).analyze();
     expect(results.violations).toEqual([]);
+  });
+});
+
+test.describe('Crisis page — JavaScript disabled', () => {
+  test('tel: anchor renders and is visible without JavaScript', async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto('/en/crisis');
+    const telLink = page.locator('a[href^="tel:"]').first();
+    await expect(telLink).toBeVisible();
+    await context.close();
+  });
+
+  test('h1 renders without JavaScript (server-rendered HTML)', async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto('/en/crisis');
+    const h1 = page.locator('h1');
+    await expect(h1).toBeVisible();
+    await context.close();
+  });
+
+  test('emergency section renders without JavaScript', async ({ browser }) => {
+    const context = await browser.newContext({ javaScriptEnabled: false });
+    const page = await context.newPage();
+    await page.goto('/en/crisis');
+    const section = page.locator('section[aria-labelledby="emergency"]');
+    await expect(section).toBeVisible();
+    await context.close();
   });
 });
