@@ -194,6 +194,17 @@
       "fatigue": "__NEEDS_REVIEW__: Fatigue"
     }
   },
+  "companion": {
+    "headline": "__NEEDS_REVIEW__: I slipped. Now what?",
+    "subheadline": "__NEEDS_REVIEW__: A slip doesn't erase your progress. Take one step at a time.",
+    "nextStepsHeading": "__NEEDS_REVIEW__: Next steps",
+    "stepCheckIn": "__NEEDS_REVIEW__: Log this moment",
+    "stepCheckInDesc": "__NEEDS_REVIEW__: Record what happened and how you're feeling",
+    "stepRead": "__NEEDS_REVIEW__: Read: After a Lapse",
+    "stepReadDesc": "__NEEDS_REVIEW__: A compassion-first guide for this moment",
+    "stepCrisis": "__NEEDS_REVIEW__: Talk to someone",
+    "stepCrisisDesc": "__NEEDS_REVIEW__: Free, confidential support available now"
+  },
   "tools": {
     "title": "__NEEDS_REVIEW__: Coping Tools",
     "subtitle": "__NEEDS_REVIEW__: Evidence-based techniques for managing urges.",

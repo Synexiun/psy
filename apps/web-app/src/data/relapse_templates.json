@@ -1,0 +1,58 @@
+{
+  "_meta": {
+    "schemaVersion": "1.0.0",
+    "reviewedBy": null,
+    "status": "draft",
+    "note": "CLINICAL QA SIGN-OFF REQUIRED before production. Templates must be reviewed by a licensed clinician. No template may contain failure framing ('you failed', 'streak reset', 'you lost'). See CLAUDE.md Rule #4."
+  },
+  "templates": [
+    {
+      "id": "compassion-001",
+      "text": "You're here. That matters. When you're ready, we can look at today together.",
+      "tags": ["gentle", "present-moment"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-002",
+      "text": "This moment doesn't define your journey. Compassion for yourself is the next step.",
+      "tags": ["reframe", "journey"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-003",
+      "text": "It's okay to struggle. Reach out when you're ready — we're here.",
+      "tags": ["normalise", "support"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-004",
+      "text": "One moment at a time. You are not alone in this.",
+      "tags": ["present-moment", "connection"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-005",
+      "text": "Be gentle with yourself. Recovery is not a straight line.",
+      "tags": ["self-compassion", "reframe"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-006",
+      "text": "Every step forward — no matter how small — is still a step. We're glad you're here.",
+      "tags": ["encouragement", "present-moment"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-007",
+      "text": "Hard moments are part of the path. You don't have to navigate this alone.",
+      "tags": ["normalise", "connection"],
+      "status": "draft"
+    },
+    {
+      "id": "compassion-008",
+      "text": "Take a breath. You reached out, and that is the first courageous step.",
+      "tags": ["courage", "gentle"],
+      "status": "draft"
+    }
+  ]
+}

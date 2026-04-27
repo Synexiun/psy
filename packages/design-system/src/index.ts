@@ -38,3 +38,4 @@ export * from './primitives/Banner';
 export * from './primitives/EmptyState';
 export * from './clinical/RCIDelta';
 export * from './clinical/InsightCard';
+export * from './clinical/CompassionTemplate';

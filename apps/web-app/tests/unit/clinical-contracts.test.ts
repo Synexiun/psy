@@ -161,7 +161,16 @@ describe('CRITICAL clinical contracts (per CLAUDE.md non-negotiables)', () => {
       expect(source.toLowerCase()).not.toContain(pattern.toLowerCase());
     }
   });
-  it.todo('companionRoute: zero-llm-imports-route-level (Chunk 7)');
+  it('companionRoute: zero-llm-imports-route-level [ACTIVE]', async () => {
+    const { readFileSync } = await import('fs');
+    const { resolve } = await import('path');
+    const companionRoute = resolve(process.cwd(), 'src/app/[locale]/companion/page.tsx');
+    const source = readFileSync(companionRoute, 'utf-8');
+    const llmPatterns = ['@disciplineos/llm-client', '@anthropic-ai/', 'openai', 'claude-sdk'];
+    for (const pattern of llmPatterns) {
+      expect(source.toLowerCase()).not.toContain(pattern.toLowerCase());
+    }
+  });
 
   // -------------------------------------------------------------------------
   // DEFERRED — PHI boundary (Chunk 6 middleware)

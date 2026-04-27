@@ -193,6 +193,17 @@
       "fatigue": "Fatigue"
     }
   },
+  "companion": {
+    "headline": "I slipped. Now what?",
+    "subheadline": "A slip doesn't erase your progress. Take one step at a time.",
+    "nextStepsHeading": "Next steps",
+    "stepCheckIn": "Log this moment",
+    "stepCheckInDesc": "Record what happened and how you're feeling",
+    "stepRead": "Read: After a Lapse",
+    "stepReadDesc": "A compassion-first guide for this moment",
+    "stepCrisis": "Talk to someone",
+    "stepCrisisDesc": "Free, confidential support available now"
+  },
   "tools": {
     "title": "Coping Tools",
     "subtitle": "Evidence-based techniques for managing urges.",
