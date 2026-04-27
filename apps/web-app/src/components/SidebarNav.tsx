@@ -72,6 +72,14 @@ function PatternsIcon(): React.ReactElement {
   );
 }
 
+function LibraryIcon(): React.ReactElement {
+  return (
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
+      <path d="M3 3h5v12H3zM10 3h5v12h-5z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function SettingsIcon(): React.ReactElement {
   return (
     <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -171,6 +179,11 @@ export function SidebarNav({ locale }: SidebarNavProps): React.ReactElement {
       href: `/${locale}/patterns`,
       label: t('patterns'),
       icon: <PatternsIcon />,
+    },
+    {
+      href: `/${locale}/library`,
+      label: t('library'),
+      icon: <LibraryIcon />,
     },
     {
       href: `/${locale}/settings`,
