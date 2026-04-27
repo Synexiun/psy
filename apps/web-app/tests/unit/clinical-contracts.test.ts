@@ -151,18 +151,61 @@ describe('CRITICAL clinical contracts (per CLAUDE.md non-negotiables)', () => {
   // -------------------------------------------------------------------------
 
   it.todo('CrisisCard: no-llm-call-component-level (Task 5.9 — v1.1)');
-  it.todo('crisisRoute: zero-llm-imports-route-level (Chunk 6)');
+  it('crisisRoute: zero-llm-imports-route-level [ACTIVE]', async () => {
+    const { readFileSync } = await import('fs');
+    const { resolve } = await import('path');
+    const crisisRoute = resolve(process.cwd(), 'src/app/[locale]/crisis/page.tsx');
+    const source = readFileSync(crisisRoute, 'utf-8');
+    const llmPatterns = ['@disciplineos/llm-client', '@anthropic-ai/', 'openai', 'claude-sdk'];
+    for (const pattern of llmPatterns) {
+      expect(source.toLowerCase()).not.toContain(pattern.toLowerCase());
+    }
+  });
   it.todo('companionRoute: zero-llm-imports-route-level (Chunk 7)');
 
   // -------------------------------------------------------------------------
   // DEFERRED — PHI boundary (Chunk 6 middleware)
   // -------------------------------------------------------------------------
 
-  it.todo('phi-routes: emit-x-phi-boundary-1-header (Chunk 6)');
+  it('phi-routes: emit-x-phi-boundary-1-header [ACTIVE]', async () => {
+    const { readFileSync } = await import('fs');
+    const { resolve } = await import('path');
+    const middlewareSrc = readFileSync(
+      resolve(process.cwd(), 'src/middleware.ts'),
+      'utf-8',
+    );
+    // Middleware must set X-Phi-Boundary: 1 on PHI routes
+    expect(middlewareSrc).toContain('X-Phi-Boundary');
+    // Must cover canonical PHI paths from spec §7.6
+    for (const path of ['/reports', '/journal', '/assessments/history', '/patterns']) {
+      expect(middlewareSrc).toContain(path);
+    }
+  });
 
   // -------------------------------------------------------------------------
   // DEFERRED — Locale-fallback / no machine translation (Chunk 7)
   // -------------------------------------------------------------------------
 
-  it.todo('localeFallback: draft-key-falls-back-to-en-silently (Chunk 7)');
+  it('localeFallback: draft-key-falls-back-to-en-silently [ACTIVE]', async () => {
+    // loadCatalog must replace __NEEDS_REVIEW__: values with en fallbacks
+    // so draft translations never surface their review marker to end users.
+    const { loadCatalog } = await import('@disciplineos/i18n-catalog');
+
+    function assertNoDraftPrefix(obj: unknown, path = ''): void {
+      if (typeof obj === 'string') {
+        expect(obj, `Draft prefix visible at key "${path}"`).not.toContain('__NEEDS_REVIEW__:');
+        return;
+      }
+      if (obj !== null && typeof obj === 'object' && !Array.isArray(obj)) {
+        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+          assertNoDraftPrefix(v, path ? `${path}.${k}` : k);
+        }
+      }
+    }
+
+    for (const locale of ['fr', 'ar', 'fa'] as const) {
+      const catalog = await loadCatalog(locale);
+      assertNoDraftPrefix(catalog, locale);
+    }
+  });
 });

@@ -29,10 +29,36 @@ const loaders: Record<Locale, () => Promise<{ default: Catalog }>> = {
   fa: () => import('./catalogs/fa.json') as unknown as Promise<{ default: Catalog }>,
 };
 
+/**
+ * applyEnFallback deep-walks a target-locale catalog and replaces any string
+ * value that starts with "__NEEDS_REVIEW__:" with the corresponding English
+ * value. This ensures draft-marker strings never surface to end users — the
+ * raw JSON keeps the marker so the locale-review queue can track pending keys.
+ */
+function applyEnFallback(target: unknown, enValue: unknown): unknown {
+  if (typeof target === 'string') {
+    return target.startsWith('__NEEDS_REVIEW__:') ? enValue : target;
+  }
+  if (target !== null && typeof target === 'object' && !Array.isArray(target)) {
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(target as Record<string, unknown>)) {
+      out[key] = applyEnFallback(
+        (target as Record<string, unknown>)[key],
+        enValue !== null && typeof enValue === 'object'
+          ? (enValue as Record<string, unknown>)[key]
+          : undefined,
+      );
+    }
+    return out;
+  }
+  return target;
+}
+
 export const loadCatalog = async (locale: Locale): Promise<Catalog> => {
   const loader = loaders[locale];
   const mod = await loader();
-  return mod.default;
+  if (locale === 'en') return mod.default;
+  return applyEnFallback(mod.default, en) as Catalog;
 };
 
 export const getEnglishCatalog = (): Catalog => en as Catalog;
