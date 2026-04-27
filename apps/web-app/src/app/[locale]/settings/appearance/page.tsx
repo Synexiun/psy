@@ -9,6 +9,12 @@ import { Layout } from '@/components/Layout';
 import { Card } from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const AMBIENT_MOTION_KEY = 'ambientMotion';
+
+// ---------------------------------------------------------------------------
 // Toggle component (mirrors notifications/page.tsx)
 // ---------------------------------------------------------------------------
 
@@ -129,17 +135,17 @@ function AppearanceInner({ locale }: { locale: string }): React.ReactElement {
   // Motion state — seeded from localStorage with SSR guard
   const [ambientMotionOff, setAmbientMotionOff] = React.useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
-    return localStorage.getItem('ambientMotion') === 'off';
+    return localStorage.getItem(AMBIENT_MOTION_KEY) === 'off';
   });
 
   // Sync motion state → DOM attribute + localStorage
   React.useEffect(() => {
     if (ambientMotionOff) {
       document.documentElement.setAttribute('data-ambient-motion', 'off');
-      localStorage.setItem('ambientMotion', 'off');
+      localStorage.setItem(AMBIENT_MOTION_KEY, 'off');
     } else {
       document.documentElement.removeAttribute('data-ambient-motion');
-      localStorage.removeItem('ambientMotion');
+      localStorage.removeItem(AMBIENT_MOTION_KEY);
     }
   }, [ambientMotionOff]);
 

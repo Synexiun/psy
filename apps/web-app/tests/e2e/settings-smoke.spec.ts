@@ -87,19 +87,16 @@ test.describe('Settings appearance sub-page', () => {
   });
 
   test('motion section heading is visible', async ({ page }) => {
-    await page.goto('/en/settings/appearance');
     const section = page.locator('section[aria-labelledby="motion-section-heading"]');
     await expect(section).toBeVisible();
   });
 
   test('reduce ambient motion toggle is present', async ({ page }) => {
-    await page.goto('/en/settings/appearance');
     const toggle = page.locator('[id="toggle-ambient-motion"]');
     await expect(toggle).toBeVisible();
   });
 
   test('reduce ambient motion toggle is toggleable', async ({ page }) => {
-    await page.goto('/en/settings/appearance');
     const toggle = page.locator('[id="toggle-ambient-motion"]');
     const initialState = await toggle.getAttribute('aria-checked');
     await toggle.click();
@@ -108,7 +105,6 @@ test.describe('Settings appearance sub-page', () => {
   });
 
   test('toggling sets data-ambient-motion attribute on html', async ({ page }) => {
-    await page.goto('/en/settings/appearance');
     // Initial state: no attribute (motion ON)
     const htmlEl = page.locator('html');
     let attr = await htmlEl.getAttribute('data-ambient-motion');
