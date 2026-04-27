@@ -574,5 +574,27 @@
     "pendingCount": "{count} check-in(s) pending",
     "dismiss": "Dismiss",
     "dismissAriaLabel": "Dismiss offline status panel"
+  },
+  "journalNew": {
+    "draftRestored": "Restored unsaved draft",
+    "editorAriaLabel": "Journal entry",
+    "placeholder": "What's on your mind?",
+    "wordSingular": "{count} word",
+    "wordPlural": "{count} words",
+    "autoSaved": "Saved",
+    "charLimitError": "Entry exceeds {max} characters. Please shorten before saving.",
+    "moodLegend": "How are you feeling?",
+    "moodOptionalHint": "(optional, up to {max})",
+    "moodGroupAriaLabel": "Mood tags",
+    "discard": "Discard",
+    "saveEntry": "Save entry",
+    "mood": {
+      "reflective": "Reflective",
+      "grateful": "Grateful",
+      "anxious": "Anxious",
+      "hopeful": "Hopeful",
+      "frustrated": "Frustrated",
+      "neutral": "Neutral"
+    }
   }
 }

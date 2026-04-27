@@ -575,5 +575,27 @@
     "pendingCount": "__NEEDS_REVIEW__: {count} check-in(s) pending",
     "dismiss": "__NEEDS_REVIEW__: Dismiss",
     "dismissAriaLabel": "__NEEDS_REVIEW__: Dismiss offline status panel"
+  },
+  "journalNew": {
+    "draftRestored": "__NEEDS_REVIEW__: Restored unsaved draft",
+    "editorAriaLabel": "__NEEDS_REVIEW__: Journal entry",
+    "placeholder": "__NEEDS_REVIEW__: What's on your mind?",
+    "wordSingular": "__NEEDS_REVIEW__: {count} word",
+    "wordPlural": "__NEEDS_REVIEW__: {count} words",
+    "autoSaved": "__NEEDS_REVIEW__: Saved",
+    "charLimitError": "__NEEDS_REVIEW__: Entry exceeds {max} characters. Please shorten before saving.",
+    "moodLegend": "__NEEDS_REVIEW__: How are you feeling?",
+    "moodOptionalHint": "__NEEDS_REVIEW__: (optional, up to {max})",
+    "moodGroupAriaLabel": "__NEEDS_REVIEW__: Mood tags",
+    "discard": "__NEEDS_REVIEW__: Discard",
+    "saveEntry": "__NEEDS_REVIEW__: Save entry",
+    "mood": {
+      "reflective": "__NEEDS_REVIEW__: Reflective",
+      "grateful": "__NEEDS_REVIEW__: Grateful",
+      "anxious": "__NEEDS_REVIEW__: Anxious",
+      "hopeful": "__NEEDS_REVIEW__: Hopeful",
+      "frustrated": "__NEEDS_REVIEW__: Frustrated",
+      "neutral": "__NEEDS_REVIEW__: Neutral"
+    }
   }
 }

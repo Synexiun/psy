@@ -72,6 +72,7 @@ function latinDigits(n: number): string {
 
 function JournalNewInner({ locale }: { locale: string }) {
   const t = useTranslations();
+  const tj = useTranslations('journalNew');
   const router = useRouter();
   const { getToken } = useAuth();
 
@@ -324,7 +325,7 @@ function JournalNewInner({ locale }: { locale: string }) {
                 strokeLinejoin="round"
               />
             </svg>
-            Restored unsaved draft
+            {tj('draftRestored')}
           </div>
         )}
 
@@ -340,10 +341,10 @@ function JournalNewInner({ locale }: { locale: string }) {
 
             <textarea
               id="journal-entry-text"
-              aria-label="Journal entry"
+              aria-label={tj('editorAriaLabel')}
               value={content}
               onChange={handleContentChange}
-              placeholder="What's on your mind?"
+              placeholder={tj('placeholder')}
               rows={8}
               maxLength={MAX_CHARS}
               className="mt-3 w-full resize-y rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm text-ink-primary placeholder-ink-quaternary focus:border-accent-bronze focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30 transition-colors"
@@ -360,7 +361,9 @@ function JournalNewInner({ locale }: { locale: string }) {
                   className="text-xs text-ink-quaternary"
                   aria-live="polite"
                 >
-                  {latinDigits(wordCount)} {wordCount === 1 ? 'word' : 'words'}
+                  {wordCount === 1
+                    ? tj('wordSingular', { count: latinDigits(wordCount) })
+                    : tj('wordPlural', { count: latinDigits(wordCount) })}
                 </p>
 
                 {/* Auto-save status */}
@@ -386,7 +389,7 @@ function JournalNewInner({ locale }: { locale: string }) {
                         strokeLinejoin="round"
                       />
                     </svg>
-                    Saved
+                    {tj('autoSaved')}
                   </span>
                 )}
               </div>
@@ -410,7 +413,7 @@ function JournalNewInner({ locale }: { locale: string }) {
             {/* Over-limit warning */}
             {isOverLimit && (
               <p role="alert" className="mt-2 text-xs font-medium text-signal-crisis">
-                Entry exceeds {latinDigits(MAX_CHARS)} characters. Please shorten before saving.
+                {tj('charLimitError', { max: latinDigits(MAX_CHARS) })}
               </p>
             )}
           </Card>
@@ -419,13 +422,13 @@ function JournalNewInner({ locale }: { locale: string }) {
           <Card>
             <fieldset>
               <legend className="text-sm font-medium text-ink-primary">
-                How are you feeling?{' '}
-                <span className="font-normal text-ink-quaternary">(optional, up to {latinDigits(MAX_MOOD_TAGS)})</span>
+                {tj('moodLegend')}{' '}
+                <span className="font-normal text-ink-quaternary">{tj('moodOptionalHint', { max: latinDigits(MAX_MOOD_TAGS) })}</span>
               </legend>
               <div
                 className="mt-3 flex flex-wrap gap-2"
                 role="group"
-                aria-label="Mood tags"
+                aria-label={tj('moodGroupAriaLabel')}
               >
                 {MOOD_TAGS.map((mood) => {
                   const active = selectedMoods.has(mood);
@@ -443,7 +446,7 @@ function JournalNewInner({ locale }: { locale: string }) {
                           : 'bg-surface-tertiary text-ink-secondary hover:bg-border-subtle border border-border-subtle'
                       }`}
                     >
-                      {mood}
+                      {tj(`mood.${mood.toLowerCase() as Lowercase<MoodTag>}`)}
                     </button>
                   );
                 })}
@@ -472,7 +475,7 @@ function JournalNewInner({ locale }: { locale: string }) {
               onClick={handleDiscard}
               disabled={isSubmitting}
             >
-              Discard
+              {tj('discard')}
             </Button>
             <Button
               type="submit"
@@ -482,7 +485,7 @@ function JournalNewInner({ locale }: { locale: string }) {
               disabled={isSaveDisabled}
               className="min-h-[44px] sm:w-auto w-full"
             >
-              Save entry
+              {tj('saveEntry')}
             </Button>
           </div>
         </form>
@@ -508,15 +511,5 @@ export default function JournalNewPage({
  * i18n keys used from en.json:
  *   nav.journal          — "Journal" (back-link label)
  *   journal.newEntry     — "New entry" (page heading + textarea label)
- *
- * Hardcoded strings (not yet in catalog — add when native review is done):
- *   "What's on your mind?"          (textarea placeholder)
- *   "Restored unsaved draft"        (draft-restore banner)
- *   "Saved"                         (auto-save indicator)
- *   "How are you feeling?"          (mood fieldset legend)
- *   "(optional, up to 3)"           (mood fieldset hint)
- *   "Discard"                       (secondary action)
- *   "Save entry"                    (primary action)
- *   mood tag labels (6)             (Reflective, Grateful, Anxious, Hopeful, Frustrated, Neutral)
- *   character-limit warning copy
+ *   journalNew.*         — all other strings on this page (see journalNew namespace)
  */
