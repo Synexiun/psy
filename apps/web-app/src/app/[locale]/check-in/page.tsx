@@ -3,9 +3,9 @@
 import { use, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
-import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
 import { Button, Card } from '@disciplineos/design-system';
+import { UrgeSlider } from '@disciplineos/design-system/clinical/UrgeSlider';
 import { submitCheckIn } from '@/lib/api';
 
 // Non-display constants (not i18n strings)
@@ -36,13 +36,6 @@ const TRIGGER_KEYS: TriggerKey[] = [
 ];
 
 type TriggerTag = TriggerKey;
-
-// Map intensity value (0-10) to a colour for the track fill
-function intensityColor(value: number): string {
-  if (value <= 3) return 'var(--color-signal-stable)';
-  if (value <= 6) return 'var(--color-accent-bronze)';
-  return 'var(--color-signal-crisis)';
-}
 
 // ---------------------------------------------------------------------------
 // Inner component (all interactivity lives here)
@@ -98,7 +91,6 @@ function CheckInInner({ locale }: { locale: string }) {
   }
 
   const charsLeft = COPY.notesMaxChars - notes.length;
-  const trackFill = (intensity / 10) * 100;
 
   return (
     <Layout locale={locale}>
@@ -124,7 +116,9 @@ function CheckInInner({ locale }: { locale: string }) {
         {submitted ? (
           /* Post-submit compassion card */
           <Card tone="calm" className="text-center py-10 space-y-4">
-            <p className="text-4xl" aria-hidden="true">{'🌊'}</p>
+            <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+              <path d="M4 32c4-8 8-8 12 0s8 8 12 0 8-8 12 0" stroke="var(--color-signal-stable)" strokeWidth="3" strokeLinecap="round"/>
+            </svg>
             <h2 className="text-lg font-semibold text-ink-primary">{t('checkIn.compassionHeadline')}</h2>
             <p className="text-sm leading-relaxed text-ink-secondary max-w-sm mx-auto">
               {t('checkIn.compassionBody')}
@@ -159,36 +153,12 @@ function CheckInInner({ locale }: { locale: string }) {
                 <legend className="text-sm font-medium text-ink-primary">
                   {t('app.urge.intensityLabel')}
                 </legend>
-                <div className="mt-4 space-y-3">
-                  <div className="relative">
-                    <input
-                      type="range"
-                      min={0}
-                      max={10}
-                      step={1}
-                      value={intensity}
-                      onChange={(e) => setIntensity(Number(e.target.value))}
-                      aria-label={t('app.urge.intensityLabel')}
-                      aria-valuemin={0}
-                      aria-valuemax={10}
-                      aria-valuenow={intensity}
-                      className="clinical-number w-full h-2 rounded-full appearance-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
-                      style={{
-                        background: `linear-gradient(to right, ${intensityColor(intensity)} ${trackFill}%, var(--color-surface-tertiary) ${trackFill}%)`,
-                      }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs text-ink-quaternary">
-                    <span>{t('app.urge.intensityScaleMin')}</span>
-                    <span
-                      className="text-base font-bold tabular-nums"
-                      style={{ color: intensityColor(intensity) }}
-                      aria-live="polite"
-                    >
-                      {formatNumberClinical(intensity)}
-                    </span>
-                    <span>{t('app.urge.intensityScaleMax')}</span>
-                  </div>
+                <div className="mt-4">
+                  <UrgeSlider
+                    value={intensity}
+                    onValueChange={setIntensity}
+                    ariaLabel={t('app.urge.intensityLabel')}
+                  />
                 </div>
               </fieldset>
             </Card>

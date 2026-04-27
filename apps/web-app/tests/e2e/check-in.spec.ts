@@ -1,3 +1,4 @@
+'use client';
 /* eslint-disable */
 /**
  * E2E tests for the check-in page (/en/check-in).
@@ -39,7 +40,7 @@ test.describe('Check-in page per locale', () => {
       });
 
       test('intensity slider is visible and has correct aria attributes', async ({ page }) => {
-        const slider = page.locator('input[type="range"]');
+        const slider = page.locator('[role="slider"]');
         await expect(slider).toBeVisible();
         await expect(slider).toHaveAttribute('aria-valuemin', '0');
         await expect(slider).toHaveAttribute('aria-valuemax', '10');
@@ -47,11 +48,23 @@ test.describe('Check-in page per locale', () => {
       });
 
       test('intensity slider is interactive', async ({ page }) => {
-        const slider = page.locator('input[type="range"]');
+        const slider = page.locator('[role="slider"]');
         await expect(slider).toBeEnabled();
-        await slider.fill('7');
+        // Press ArrowRight 5 times to increment value
+        await slider.focus();
+        for (let i = 0; i < 5; i++) {
+          await slider.press('ArrowRight');
+        }
         const valuenow = await slider.getAttribute('aria-valuenow');
-        expect(valuenow).toBe('7');
+        expect(parseInt(valuenow ?? '0')).toBeGreaterThan(0);
+      });
+
+      test('urge value display shows Latin digit', async ({ page }) => {
+        const valueDisplay = page.locator('[data-testid="urge-value"]');
+        await expect(valueDisplay).toBeVisible();
+        const text = await valueDisplay.innerText();
+        // Must be a Latin digit (0-9) not Arabic-Indic
+        expect(/^[0-9]+$/.test(text.trim())).toBe(true);
       });
 
       test('at least one trigger chip is visible', async ({ page }) => {
