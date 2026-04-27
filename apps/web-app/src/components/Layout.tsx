@@ -8,6 +8,7 @@ import { SidebarNav } from './SidebarNav';
 import { BottomNav } from './BottomNav';
 import { WordmarkSvg } from './WordmarkSvg';
 import { NotificationsDrawer } from './NotificationsDrawer';
+import { OfflineIndicator, useIsOnline } from './OfflineIndicator';
 import { useNotificationCount } from '@/hooks/useNotificationCount';
 import * as React from 'react';
 
@@ -27,6 +28,7 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
   useTranslations();
   const [notifOpen, setNotifOpen] = useState<boolean>(false);
   const { count } = useNotificationCount();
+  const isOnline = useIsOnline();
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-primary">
@@ -36,6 +38,8 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
         localeOptions={LOCALE_OPTIONS}
         bellCount={count}
         onBellClick={() => setNotifOpen(true)}
+        isOffline={!isOnline}
+        avatar={<OfflineIndicator />}
       />
       <div className="flex flex-1">
         <aside
