@@ -22,6 +22,25 @@ vi.mock('@disciplineos/i18n-catalog', () => ({
   formatPercentClinical: (value: number) => `${value}%`,
 }));
 
+vi.mock('next-intl', () => ({
+  useTranslations: (_ns: string) => (key: string, params?: Record<string, unknown>) => {
+    const map: Record<string, string> = {
+      'continuous.sublabel': 'Continuous',
+      'continuous.heading': 'Continuous streak',
+      'continuous.zeroMotivation': 'Every day is a fresh start.',
+      'continuous.daysStrong': `${params?.days ?? ''} days strong.`,
+      'continuous.since': `Since ${params?.date ?? ''}`,
+      'continuous.ariaLabel': `Continuous streak: ${params?.days ?? ''} days`,
+      'resilience.heading': 'Resilience streak',
+      'resilience.zeroMotivation': 'Building resilience, one moment at a time.',
+      'resilience.daysGrowth': `${params?.days ?? ''} days of growth.`,
+      'resilience.urgesHandled': `${params?.count ?? ''} urges handled`,
+      'resilience.ariaLabel': `Resilience streak: ${params?.days ?? ''} days`,
+    };
+    return map[key] ?? key;
+  },
+}));
+
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------

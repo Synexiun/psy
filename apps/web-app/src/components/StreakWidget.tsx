@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { ProgressRing, Skeleton } from '@disciplineos/design-system';
 import { ResilienceRing } from '@disciplineos/design-system/clinical/ResilienceRing';
@@ -12,6 +13,8 @@ interface StreakWidgetProps {
 }
 
 export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
+  const t = useTranslations('streak');
+
   if (isLoading || !data) {
     return (
       <div className="flex items-center gap-6 rounded-xl border border-border-subtle bg-surface-secondary p-6 shadow-sm">
@@ -38,19 +41,19 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
           strokeWidth={8}
           color="var(--color-accent-bronze)"
           label={formatNumberClinical(data.continuous_days)}
-          sublabel="Continuous"
-          ariaLabel={`Continuous streak: ${formatNumberClinical(data.continuous_days)} days`}
+          sublabel={t('continuous.sublabel')}
+          ariaLabel={t('continuous.ariaLabel', { days: formatNumberClinical(data.continuous_days) })}
         />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink-primary">Continuous streak</p>
+          <p className="text-sm font-medium text-ink-primary">{t('continuous.heading')}</p>
           <p className="mt-0.5 text-sm text-ink-tertiary">
             {data.continuous_days === 0
-              ? 'Every day is a fresh start.'
-              : `${formatNumberClinical(data.continuous_days)} days strong.`}
+              ? t('continuous.zeroMotivation')
+              : t('continuous.daysStrong', { days: formatNumberClinical(data.continuous_days) })}
           </p>
           {data.continuous_streak_start && (
             <p className="mt-1 text-xs text-ink-tertiary">
-              Since {new Date(data.continuous_streak_start).toLocaleDateString()}
+              {t('continuous.since', { date: new Date(data.continuous_streak_start).toLocaleDateString() })}
             </p>
           )}
         </div>
@@ -61,17 +64,17 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
           value={data.resilience_days}
           max={resilienceMax}
           size={100}
-          ariaLabel={`Resilience streak: ${formatNumberClinical(data.resilience_days)} days`}
+          ariaLabel={t('resilience.ariaLabel', { days: formatNumberClinical(data.resilience_days) })}
         />
         <div className="min-w-0">
-          <p className="text-sm font-medium text-ink-primary">Resilience streak</p>
+          <p className="text-sm font-medium text-ink-primary">{t('resilience.heading')}</p>
           <p className="mt-0.5 text-sm text-ink-tertiary">
             {data.resilience_days === 0
-              ? 'Building resilience, one moment at a time.'
-              : `${formatNumberClinical(data.resilience_days)} days of growth.`}
+              ? t('resilience.zeroMotivation')
+              : t('resilience.daysGrowth', { days: formatNumberClinical(data.resilience_days) })}
           </p>
           <p className="mt-1 text-xs text-ink-tertiary">
-            {formatNumberClinical(data.resilience_urges_handled_total)} urges handled
+            {t('resilience.urgesHandled', { count: formatNumberClinical(data.resilience_urges_handled_total) })}
           </p>
         </div>
       </div>

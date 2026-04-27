@@ -9,124 +9,124 @@
   },
   "app": {
     "welcome": {
-      "title": "خوش آمدید",
-      "body": "با یک وضعیت‌سنجی شروع کنید یا ابزاری را باز کنید."
+      "title": "ط®ظˆط´ ط¢ظ…ط¯غŒط¯",
+      "body": "ط¨ط§ غŒع© ظˆط¶ط¹غŒطھâ€Œط³ظ†ط¬غŒ ط´ط±ظˆط¹ ع©ظ†غŒط¯ غŒط§ ط§ط¨ط²ط§ط±غŒ ط±ط§ ط¨ط§ط² ع©ظ†غŒط¯."
     },
     "urge": {
-      "intensityLabel": "شدت میل در همین لحظه چقدر است؟",
-      "intensityScaleMin": "تقریباً ناچیز",
-      "intensityScaleMax": "طاقت‌فرسا"
+      "intensityLabel": "ط´ط¯طھ ظ…غŒظ„ ط¯ط± ظ‡ظ…غŒظ† ظ„ط­ط¸ظ‡ ع†ظ‚ط¯ط± ط§ط³طھطں",
+      "intensityScaleMin": "طھظ‚ط±غŒط¨ط§ظ‹ ظ†ط§ع†غŒط²",
+      "intensityScaleMax": "ط·ط§ظ‚طھâ€Œظپط±ط³ط§"
     },
     "name": "Discipline OS"
   },
   "common": {
     "action": {
-      "save": "ذخیره",
-      "cancel": "لغو",
-      "close": "بستن",
-      "back": "بازگشت",
-      "next": "بعدی",
-      "continue": "ادامه",
-      "skip": "رد کردن",
-      "retry": "تلاش دوباره",
-      "delete": "حذف"
+      "save": "ط°ط®غŒط±ظ‡",
+      "cancel": "ظ„ط؛ظˆ",
+      "close": "ط¨ط³طھظ†",
+      "back": "ط¨ط§ط²ع¯ط´طھ",
+      "next": "ط¨ط¹ط¯غŒ",
+      "continue": "ط§ط¯ط§ظ…ظ‡",
+      "skip": "ط±ط¯ ع©ط±ط¯ظ†",
+      "retry": "طھظ„ط§ط´ ط¯ظˆط¨ط§ط±ظ‡",
+      "delete": "ط­ط°ظپ"
     },
     "state": {
-      "loading": "در حال بارگذاری",
-      "saving": "در حال ذخیره",
-      "offline": "آفلاین",
-      "online": "آنلاین",
-      "error": "مشکلی پیش آمد"
+      "loading": "ط¯ط± ط­ط§ظ„ ط¨ط§ط±ع¯ط°ط§ط±غŒ",
+      "saving": "ط¯ط± ط­ط§ظ„ ط°ط®غŒط±ظ‡",
+      "offline": "ط¢ظپظ„ط§غŒظ†",
+      "online": "ط¢ظ†ظ„ط§غŒظ†",
+      "error": "ظ…ط´ع©ظ„غŒ ظ¾غŒط´ ط¢ظ…ط¯"
     }
   },
   "nav": {
-    "home": "خانه",
+    "home": "ط®ط§ظ†ظ‡",
     "checkIn": "Check-in",
-    "assessments": "ارزیابی‌ها",
-    "journal": "دفترچه",
-    "patterns": "الگوها",
-    "tools": "ابزارها",
-    "settings": "تنظیمات",
+    "assessments": "ط§ط±ط²غŒط§ط¨غŒâ€Œظ‡ط§",
+    "journal": "ط¯ظپطھط±ع†ظ‡",
+    "patterns": "ط§ظ„ع¯ظˆظ‡ط§",
+    "tools": "ط§ط¨ط²ط§ط±ظ‡ط§",
+    "settings": "طھظ†ط¸غŒظ…ط§طھ",
     "crisis": "Get Help",
-    "help": "راهنما",
+    "help": "ط±ط§ظ‡ظ†ظ…ط§",
     "library": "__NEEDS_REVIEW__: Library",
-    "signIn": "ورود",
-    "signOut": "خروج"
+    "signIn": "ظˆط±ظˆط¯",
+    "signOut": "ط®ط±ظˆط¬"
   },
   "crisis": {
     "cta": {
-      "primary": "همین حالا به کمک نیاز دارم",
-      "secondary": "مشاهده‌ی منابع ایمنی"
+      "primary": "ظ‡ظ…غŒظ† ط­ط§ظ„ط§ ط¨ظ‡ ع©ظ…ع© ظ†غŒط§ط² ط¯ط§ط±ظ…",
+      "secondary": "ظ…ط´ط§ظ‡ط¯ظ‡â€ŒغŒ ظ…ظ†ط§ط¨ط¹ ط§غŒظ…ظ†غŒ"
     },
-    "headline": "شما تنها نیستید.",
-    "body": "اگر در بحران هستید، لطفاً کمک بخواهید. شماره‌های زیر رایگان و محرمانه‌اند.",
-    "callHotline": "تماس با خط کمک",
-    "callLocal": "تماس با اورژانس",
-    "callContact": "تماس با مخاطب اضطراری",
-    "useCopingTool": "ابتدا یک ابزار مقابله را امتحان کنید"
+    "headline": "ط´ظ…ط§ طھظ†ظ‡ط§ ظ†غŒط³طھغŒط¯.",
+    "body": "ط§ع¯ط± ط¯ط± ط¨ط­ط±ط§ظ† ظ‡ط³طھغŒط¯طŒ ظ„ط·ظپط§ظ‹ ع©ظ…ع© ط¨ط®ظˆط§ظ‡غŒط¯. ط´ظ…ط§ط±ظ‡â€Œظ‡ط§غŒ ط²غŒط± ط±ط§غŒع¯ط§ظ† ظˆ ظ…ط­ط±ظ…ط§ظ†ظ‡â€Œط§ظ†ط¯.",
+    "callHotline": "طھظ…ط§ط³ ط¨ط§ ط®ط· ع©ظ…ع©",
+    "callLocal": "طھظ…ط§ط³ ط¨ط§ ط§ظˆط±عکط§ظ†ط³",
+    "callContact": "طھظ…ط§ط³ ط¨ط§ ظ…ط®ط§ط·ط¨ ط§ط¶ط·ط±ط§ط±غŒ",
+    "useCopingTool": "ط§ط¨طھط¯ط§ غŒع© ط§ط¨ط²ط§ط± ظ…ظ‚ط§ط¨ظ„ظ‡ ط±ط§ ط§ظ…طھط­ط§ظ† ع©ظ†غŒط¯"
   },
   "marketing": {
     "hero": {
-      "headline": "همراه شما در فاصله‌ی میان جلسات درمان.",
-      "sub": "ابزارهای مقابله‌ی مبتنی بر شواهد، با طراحی محرمانه، هر زمان که نیاز داشتید.",
-      "ctaPrimary": "دریافت اپلیکیشن",
-      "ctaSecondary": "چگونه کار می‌کند"
+      "headline": "ظ‡ظ…ط±ط§ظ‡ ط´ظ…ط§ ط¯ط± ظپط§طµظ„ظ‡â€ŒغŒ ظ…غŒط§ظ† ط¬ظ„ط³ط§طھ ط¯ط±ظ…ط§ظ†.",
+      "sub": "ط§ط¨ط²ط§ط±ظ‡ط§غŒ ظ…ظ‚ط§ط¨ظ„ظ‡â€ŒغŒ ظ…ط¨طھظ†غŒ ط¨ط± ط´ظˆط§ظ‡ط¯طŒ ط¨ط§ ط·ط±ط§ط­غŒ ظ…ط­ط±ظ…ط§ظ†ظ‡طŒ ظ‡ط± ط²ظ…ط§ظ† ع©ظ‡ ظ†غŒط§ط² ط¯ط§ط´طھغŒط¯.",
+      "ctaPrimary": "ط¯ط±غŒط§ظپطھ ط§ظ¾ظ„غŒع©غŒط´ظ†",
+      "ctaSecondary": "ع†ع¯ظˆظ†ظ‡ ع©ط§ط± ظ…غŒâ€Œع©ظ†ط¯"
     },
     "pricing": {
-      "title": "قیمت‌گذاری ساده و منصفانه",
-      "freeTitle": "رایگان",
-      "freeSub": "ابزارهای اصلی مقابله، مسیر بحران، نمای اولیه‌ی الگوها.",
-      "plusTitle": "پلاس",
-      "plusSub": "شخصی‌سازی، روندهای گسترده، دفترچه‌ی صوتی، اشتراک با درمانگر."
+      "title": "ظ‚غŒظ…طھâ€Œع¯ط°ط§ط±غŒ ط³ط§ط¯ظ‡ ظˆ ظ…ظ†طµظپط§ظ†ظ‡",
+      "freeTitle": "ط±ط§غŒع¯ط§ظ†",
+      "freeSub": "ط§ط¨ط²ط§ط±ظ‡ط§غŒ ط§طµظ„غŒ ظ…ظ‚ط§ط¨ظ„ظ‡طŒ ظ…ط³غŒط± ط¨ط­ط±ط§ظ†طŒ ظ†ظ…ط§غŒ ط§ظˆظ„غŒظ‡â€ŒغŒ ط§ظ„ع¯ظˆظ‡ط§.",
+      "plusTitle": "ظ¾ظ„ط§ط³",
+      "plusSub": "ط´ط®طµغŒâ€Œط³ط§ط²غŒطŒ ط±ظˆظ†ط¯ظ‡ط§غŒ ع¯ط³طھط±ط¯ظ‡طŒ ط¯ظپطھط±ع†ظ‡â€ŒغŒ طµظˆطھغŒطŒ ط§ط´طھط±ط§ع© ط¨ط§ ط¯ط±ظ…ط§ظ†ع¯ط±."
     }
   },
   "assessment": {
     "phq9": {
       "name": "PHQ-9",
-      "description": "غربالگری افسردگی"
+      "description": "ط؛ط±ط¨ط§ظ„ع¯ط±غŒ ط§ظپط³ط±ط¯ع¯غŒ"
     },
     "gad7": {
       "name": "GAD-7",
-      "description": "غربالگری اضطراب"
+      "description": "ط؛ط±ط¨ط§ظ„ع¯ط±غŒ ط§ط¶ط·ط±ط§ط¨"
     },
     "audit": {
       "name": "AUDIT",
-      "description": "غربالگری مصرف الکل"
+      "description": "ط؛ط±ط¨ط§ظ„ع¯ط±غŒ ظ…طµط±ظپ ط§ظ„ع©ظ„"
     },
     "auditC": {
       "name": "AUDIT-C",
-      "description": "غربالگری مختصر الکل"
+      "description": "ط؛ط±ط¨ط§ظ„ع¯ط±غŒ ظ…ط®طھطµط± ط§ظ„ع©ظ„"
     },
     "dast10": {
       "name": "DAST-10",
-      "description": "غربالگری مصرف مواد"
+      "description": "ط؛ط±ط¨ط§ظ„ع¯ط±غŒ ظ…طµط±ظپ ظ…ظˆط§ط¯"
     },
     "pss10": {
       "name": "PSS-10",
-      "description": "مقیاس استرس ادراک‌شده"
+      "description": "ظ…ظ‚غŒط§ط³ ط§ط³طھط±ط³ ط§ط¯ط±ط§ع©â€Œط´ط¯ظ‡"
     },
     "who5": {
       "name": "WHO-5",
-      "description": "شاخص بهزیستی"
+      "description": "ط´ط§ط®طµ ط¨ظ‡ط²غŒط³طھغŒ"
     },
     "dtcq8": {
       "name": "DTCQ-8",
-      "description": "وسوسه و خودکارآمدی"
+      "description": "ظˆط³ظˆط³ظ‡ ظˆ ط®ظˆط¯ع©ط§ط±ط¢ظ…ط¯غŒ"
     },
     "urica": {
       "name": "URICA",
-      "description": "آمادگی برای تغییر"
+      "description": "ط¢ظ…ط§ط¯ع¯غŒ ط¨ط±ط§غŒ طھط؛غŒغŒط±"
     },
     "cssrs": {
       "name": "C-SSRS",
-      "description": "ارزیابی خطر خودکشی"
+      "description": "ط§ط±ط²غŒط§ط¨غŒ ط®ط·ط± ط®ظˆط¯ع©ط´غŒ"
     }
   },
   "patterns": {
     "title": "__NEEDS_REVIEW__: Patterns",
     "subtitle": "__NEEDS_REVIEW__: Behavioral patterns detected from your check-ins",
     "activeHeading": "__NEEDS_REVIEW__: Active insights",
-    "empty": "__NEEDS_REVIEW__: No patterns detected yet — keep logging check-ins",
+    "empty": "__NEEDS_REVIEW__: No patterns detected yet â€” keep logging check-ins",
     "confidenceLabel": "__NEEDS_REVIEW__: Confidence",
     "detectedLabel": "__NEEDS_REVIEW__: Detected signals",
     "viewDetails": "__NEEDS_REVIEW__: View details",
@@ -153,11 +153,11 @@
     "body": "Discipline OS is not a crisis hotline replacement. If you are in immediate danger, use the crisis path or call your local emergency number."
   },
   "severity": {
-    "none": "هیچ",
-    "mild": "خفیف",
-    "moderate": "متوسط",
-    "moderatelySevere": "متوسط تا شدید",
-    "severe": "شدید"
+    "none": "ظ‡غŒع†",
+    "mild": "ط®ظپغŒظپ",
+    "moderate": "ظ…طھظˆط³ط·",
+    "moderatelySevere": "ظ…طھظˆط³ط· طھط§ ط´ط¯غŒط¯",
+    "severe": "ط´ط¯غŒط¯"
   },
   "journal": {
     "title": "__NEEDS_REVIEW__: Journal",
@@ -189,8 +189,8 @@
     "openTool": "__NEEDS_REVIEW__: Open a coping tool",
     "logAnother": "__NEEDS_REVIEW__: Log another check-in",
     "needHelp": "__NEEDS_REVIEW__: Need immediate help?",
-    "offlineQueue": "__NEEDS_REVIEW__: {count} check-in{count, plural, one {} other {s}} saved — will sync when online",
-    "offlineSaved": "__NEEDS_REVIEW__: Saved for later — will sync when you're back online",
+    "offlineQueue": "__NEEDS_REVIEW__: {count} check-in{count, plural, one {} other {s}} saved â€” will sync when online",
+    "offlineSaved": "__NEEDS_REVIEW__: Saved for later â€” will sync when you're back online",
     "triggers": {
       "stress": "__NEEDS_REVIEW__: Stress",
       "boredom": "__NEEDS_REVIEW__: Boredom",
@@ -249,7 +249,7 @@
       },
       "urgeSurfing": {
         "name": "__NEEDS_REVIEW__: Urge Surfing",
-        "description": "__NEEDS_REVIEW__: Observe the urge like a wave — it rises, peaks, and passes.",
+        "description": "__NEEDS_REVIEW__: Observe the urge like a wave â€” it rises, peaks, and passes.",
         "duration": "6"
       },
       "stopTechnique": {
@@ -264,7 +264,7 @@
       },
       "delayDistract": {
         "name": "__NEEDS_REVIEW__: Delay & Distract",
-        "description": "__NEEDS_REVIEW__: Commit to waiting 10 minutes — urges nearly always pass.",
+        "description": "__NEEDS_REVIEW__: Commit to waiting 10 minutes â€” urges nearly always pass.",
         "duration": "5"
       }
     }
@@ -281,23 +281,23 @@
     "instruments": {
       "phq9": {
         "name": "PHQ-9",
-        "fullName": "__NEEDS_REVIEW__: Patient Health Questionnaire – 9"
+        "fullName": "__NEEDS_REVIEW__: Patient Health Questionnaire â€“ 9"
       },
       "gad7": {
         "name": "GAD-7",
-        "fullName": "__NEEDS_REVIEW__: Generalized Anxiety Disorder – 7"
+        "fullName": "__NEEDS_REVIEW__: Generalized Anxiety Disorder â€“ 7"
       },
       "auditC": {
         "name": "AUDIT-C",
-        "fullName": "__NEEDS_REVIEW__: Alcohol Use Disorders Identification Test – Consumption"
+        "fullName": "__NEEDS_REVIEW__: Alcohol Use Disorders Identification Test â€“ Consumption"
       },
       "pss10": {
         "name": "PSS-10",
-        "fullName": "__NEEDS_REVIEW__: Perceived Stress Scale – 10"
+        "fullName": "__NEEDS_REVIEW__: Perceived Stress Scale â€“ 10"
       },
       "who5": {
         "name": "WHO-5",
-        "fullName": "__NEEDS_REVIEW__: World Health Organization Well-Being Index – 5"
+        "fullName": "__NEEDS_REVIEW__: World Health Organization Well-Being Index â€“ 5"
       }
     },
     "session": {
@@ -314,7 +314,7 @@
       "safetyMessage": "__NEEDS_REVIEW__: You mentioned thoughts of self-harm. You don't have to face this alone.",
       "crisisLink": "__NEEDS_REVIEW__: See crisis resources",
       "clinicalDisclaimer": "__NEEDS_REVIEW__: This assessment is not a substitute for professional clinical evaluation.",
-      "submitting": "__NEEDS_REVIEW__: Submitting…",
+      "submitting": "__NEEDS_REVIEW__: Submittingâ€¦",
       "submitError": "__NEEDS_REVIEW__: Something went wrong. Please try again.",
       "answerRequired": "__NEEDS_REVIEW__: Please select an answer before continuing.",
       "descriptions": {
@@ -325,11 +325,11 @@
         "pss-10": "__NEEDS_REVIEW__: Measures the degree to which situations in your life are perceived as stressful over the past month."
       },
       "estimatedMinutes": {
-        "phq-9": "2–3",
-        "gad-7": "2–3",
+        "phq-9": "2â€“3",
+        "gad-7": "2â€“3",
         "who-5": "2",
-        "audit-c": "1–2",
-        "pss-10": "3–5"
+        "audit-c": "1â€“2",
+        "pss-10": "3â€“5"
       }
     }
   },
@@ -337,7 +337,7 @@
     "title": "__NEEDS_REVIEW__: Reports",
     "subtitle": "__NEEDS_REVIEW__: Your progress over time, by period",
     "periodsHeading": "__NEEDS_REVIEW__: Report periods",
-    "empty": "__NEEDS_REVIEW__: No reports yet — check back after your first assessment",
+    "empty": "__NEEDS_REVIEW__: No reports yet â€” check back after your first assessment",
     "scoreStart": "__NEEDS_REVIEW__: Start",
     "scoreEnd": "__NEEDS_REVIEW__: End",
     "resilience": "__NEEDS_REVIEW__: Resilience",
@@ -428,7 +428,7 @@
     "articles": {
       "howItWorks": "__NEEDS_REVIEW__: How It Works",
       "howItWorksExcerpt": "__NEEDS_REVIEW__: A plain-language explanation of the urge-behavior cycle and how Discipline OS supports you.",
-      "howItWorksBody": "__NEEDS_REVIEW__: Urges are brief. They typically peak within 15–20 minutes and then subside — whether or not you act on them. The Discipline OS check-in captures that moment so you can learn your own patterns over time.",
+      "howItWorksBody": "__NEEDS_REVIEW__: Urges are brief. They typically peak within 15â€“20 minutes and then subside â€” whether or not you act on them. The Discipline OS check-in captures that moment so you can learn your own patterns over time.",
       "assessmentsExplained": "__NEEDS_REVIEW__: Assessments Explained",
       "assessmentsExplainedExcerpt": "__NEEDS_REVIEW__: What PHQ-9, GAD-7, and the other validated scales measure and why they matter.",
       "assessmentsExplainedBody": "__NEEDS_REVIEW__: Validated psychometric instruments give you and your care team an objective window into how you are doing. PHQ-9 measures depression severity; GAD-7 measures anxiety; WHO-5 measures wellbeing. Scores are always shown in standardized format so they can be compared with published research.",
@@ -436,10 +436,10 @@
       "afterALapseExcerpt": "__NEEDS_REVIEW__: A lapse is not a failure. Here is how to use it as information.",
       "afterALapseBody": "__NEEDS_REVIEW__: Slipping once does not erase your progress. Resilience is measured in days of effort, not in days without any urge. The compassion-first framing here is intentional: shame is a high-risk state, not a motivator.",
       "urgeSurfing": "__NEEDS_REVIEW__: Urge Surfing",
-      "urgeSurfingExcerpt": "__NEEDS_REVIEW__: Ride the wave rather than fighting it — a mindfulness-based urge technique.",
+      "urgeSurfingExcerpt": "__NEEDS_REVIEW__: Ride the wave rather than fighting it â€” a mindfulness-based urge technique.",
       "urgeSurfingBody": "__NEEDS_REVIEW__: Urge surfing treats an urge like an ocean wave: it rises, crests, and falls on its own. Instead of suppressing or acting on the urge, you observe it with curiosity. Notice where you feel it in your body. Name it. Watch it shift.",
       "cognitiveDefusion": "__NEEDS_REVIEW__: Cognitive Defusion",
-      "cognitiveDefusionExcerpt": "__NEEDS_REVIEW__: See thoughts as events, not facts — the core ACT technique.",
+      "cognitiveDefusionExcerpt": "__NEEDS_REVIEW__: See thoughts as events, not facts â€” the core ACT technique.",
       "cognitiveDefusionBody": "__NEEDS_REVIEW__: Cognitive defusion creates distance between you and your thoughts. Instead of 'I need to use,' you practice 'I am having the thought that I need to use.' That small shift weakens the thought's grip.",
       "implementationIntentions": "__NEEDS_REVIEW__: Implementation Intentions",
       "implementationIntentionsExcerpt": "__NEEDS_REVIEW__: If-then plans that make coping automatic when stress peaks.",
@@ -449,18 +449,18 @@
       "boxBreathingBody": "__NEEDS_REVIEW__: Inhale for 4 counts. Hold for 4. Exhale for 4. Hold for 4. Repeat 4 cycles. This activates the parasympathetic nervous system and reduces cortisol within minutes.",
       "bodyScan": "__NEEDS_REVIEW__: Body Scan",
       "bodyScanExcerpt": "__NEEDS_REVIEW__: A progressive relaxation technique that restores presence.",
-      "bodyScanBody": "__NEEDS_REVIEW__: Lie or sit comfortably. Starting at your feet, bring gentle attention to each area of your body — noticing sensation without judgment. Move slowly upward. This practice interrupts the anxiety loop that drives urges.",
+      "bodyScanBody": "__NEEDS_REVIEW__: Lie or sit comfortably. Starting at your feet, bring gentle attention to each area of your body â€” noticing sensation without judgment. Move slowly upward. This practice interrupts the anxiety loop that drives urges.",
       "selfCompassion": "__NEEDS_REVIEW__: Self-Compassion",
       "selfCompassionExcerpt": "__NEEDS_REVIEW__: Kristen Neff's three-component model applied to recovery.",
       "selfCompassionBody": "__NEEDS_REVIEW__: Self-compassion has three components: mindfulness (noticing suffering without exaggerating it), common humanity (recognizing that struggle is part of the shared human experience), and self-kindness (treating yourself as you would a good friend).",
       "gettingStarted": "__NEEDS_REVIEW__: Getting Started",
-      "gettingStartedExcerpt": "__NEEDS_REVIEW__: Your first week with Discipline OS — what to do and what to expect.",
-      "gettingStartedBody": "__NEEDS_REVIEW__: Start with one check-in per day. You do not need to log every urge — just log honestly when you do. The app learns your patterns from real data, not from perfect data.",
+      "gettingStartedExcerpt": "__NEEDS_REVIEW__: Your first week with Discipline OS â€” what to do and what to expect.",
+      "gettingStartedBody": "__NEEDS_REVIEW__: Start with one check-in per day. You do not need to log every urge â€” just log honestly when you do. The app learns your patterns from real data, not from perfect data.",
       "tippTechnique": "__NEEDS_REVIEW__: TIPP Technique",
-      "tippTechniqueExcerpt": "__NEEDS_REVIEW__: Temperature, Intense exercise, Paced breathing, Progressive relaxation — the DBT crisis toolkit.",
+      "tippTechniqueExcerpt": "__NEEDS_REVIEW__: Temperature, Intense exercise, Paced breathing, Progressive relaxation â€” the DBT crisis toolkit.",
       "tippTechniqueBody": "__NEEDS_REVIEW__: TIPP skills work by changing your physiology quickly. Cold water on the face activates the dive reflex. Intense exercise burns off adrenaline. Paced breathing slows the heart rate. Use TIPP when emotion is so high that cognitive skills cannot get traction.",
       "contactAHuman": "__NEEDS_REVIEW__: Contact a Human",
-      "contactAHumanExcerpt": "__NEEDS_REVIEW__: When to reach out — and how to make it easier before you need it.",
+      "contactAHumanExcerpt": "__NEEDS_REVIEW__: When to reach out â€” and how to make it easier before you need it.",
       "contactAHumanBody": "__NEEDS_REVIEW__: Identify one person you trust before you need them. Tell them you may call in a crisis. Rehearse the call in your head. The crisis resources in the Help section are also available 24/7.",
       "safetyResources": "__NEEDS_REVIEW__: Safety Resources",
       "safetyResourcesExcerpt": "__NEEDS_REVIEW__: Free, confidential support lines available around the clock.",
@@ -485,28 +485,75 @@
       "insights": "__NEEDS_REVIEW__: Insights",
       "allPatterns": "__NEEDS_REVIEW__: All patterns",
       "dailyTip": "__NEEDS_REVIEW__: Daily tip",
-      "dailyTipBody": "__NEEDS_REVIEW__: When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves — most pass within 3–5 minutes.",
+      "dailyTipBody": "__NEEDS_REVIEW__: When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves â€” most pass within 3â€“5 minutes.",
       "sidebarLabel": "__NEEDS_REVIEW__: Dashboard sidebar"
     },
     "patterns": {
-      "empty": "__NEEDS_REVIEW__: No patterns detected yet. Keep checking in — insights appear with more data."
+      "empty": "__NEEDS_REVIEW__: No patterns detected yet. Keep checking in â€” insights appear with more data."
     }
   },
   "stateIndicator": {
-    "stable": { "label": "__NEEDS_REVIEW__: Stable", "message": "__NEEDS_REVIEW__: You appear steady right now. A good moment to build habits." },
-    "baseline": { "label": "__NEEDS_REVIEW__: Baseline", "message": "__NEEDS_REVIEW__: Resting state. Nothing urgent detected." },
-    "risingUrge": { "label": "__NEEDS_REVIEW__: Rising urge", "message": "__NEEDS_REVIEW__: An urge is building. Try a coping tool or a short walk." },
-    "peakUrge": { "label": "__NEEDS_REVIEW__: Peak urge", "message": "__NEEDS_REVIEW__: This is the hardest moment. Use a tool or reach out." },
-    "postUrge": { "label": "__NEEDS_REVIEW__: Post urge", "message": "__NEEDS_REVIEW__: The wave has passed. Be gentle with yourself." },
-    "fallback": { "label": "__NEEDS_REVIEW__: {state}", "message": "__NEEDS_REVIEW__: State estimate available." },
+    "stable": {
+      "label": "__NEEDS_REVIEW__: Stable",
+      "message": "__NEEDS_REVIEW__: You appear steady right now. A good moment to build habits."
+    },
+    "baseline": {
+      "label": "__NEEDS_REVIEW__: Baseline",
+      "message": "__NEEDS_REVIEW__: Resting state. Nothing urgent detected."
+    },
+    "risingUrge": {
+      "label": "__NEEDS_REVIEW__: Rising urge",
+      "message": "__NEEDS_REVIEW__: An urge is building. Try a coping tool or a short walk."
+    },
+    "peakUrge": {
+      "label": "__NEEDS_REVIEW__: Peak urge",
+      "message": "__NEEDS_REVIEW__: This is the hardest moment. Use a tool or reach out."
+    },
+    "postUrge": {
+      "label": "__NEEDS_REVIEW__: Post urge",
+      "message": "__NEEDS_REVIEW__: The wave has passed. Be gentle with yourself."
+    },
+    "fallback": {
+      "label": "__NEEDS_REVIEW__: {state}",
+      "message": "__NEEDS_REVIEW__: State estimate available."
+    },
     "confidence": "__NEEDS_REVIEW__: confidence",
     "ariaLabel": "__NEEDS_REVIEW__: Current state: {label}"
   },
   "quickActions": {
     "heading": "__NEEDS_REVIEW__: Quick actions",
-    "checkIn": { "label": "__NEEDS_REVIEW__: Check in", "description": "__NEEDS_REVIEW__: Log how you feel right now" },
-    "copingTool": { "label": "__NEEDS_REVIEW__: Coping tool", "description": "__NEEDS_REVIEW__: Open your toolkit" },
-    "journal": { "label": "__NEEDS_REVIEW__: Journal", "description": "__NEEDS_REVIEW__: Write or speak" },
-    "crisisHelp": { "label": "__NEEDS_REVIEW__: Crisis help", "description": "__NEEDS_REVIEW__: Get support now" }
+    "checkIn": {
+      "label": "__NEEDS_REVIEW__: Check in",
+      "description": "__NEEDS_REVIEW__: Log how you feel right now"
+    },
+    "copingTool": {
+      "label": "__NEEDS_REVIEW__: Coping tool",
+      "description": "__NEEDS_REVIEW__: Open your toolkit"
+    },
+    "journal": {
+      "label": "__NEEDS_REVIEW__: Journal",
+      "description": "__NEEDS_REVIEW__: Write or speak"
+    },
+    "crisisHelp": {
+      "label": "__NEEDS_REVIEW__: Crisis help",
+      "description": "__NEEDS_REVIEW__: Get support now"
+    }
+  },
+  "streak": {
+    "continuous": {
+      "sublabel": "__NEEDS_REVIEW__: Continuous",
+      "heading": "__NEEDS_REVIEW__: Continuous streak",
+      "zeroMotivation": "__NEEDS_REVIEW__: Every day is a fresh start.",
+      "daysStrong": "__NEEDS_REVIEW__: {days} days strong.",
+      "since": "__NEEDS_REVIEW__: Since {date}",
+      "ariaLabel": "__NEEDS_REVIEW__: Continuous streak: {days} days"
+    },
+    "resilience": {
+      "heading": "__NEEDS_REVIEW__: Resilience streak",
+      "zeroMotivation": "__NEEDS_REVIEW__: Building resilience, one moment at a time.",
+      "daysGrowth": "__NEEDS_REVIEW__: {days} days of growth.",
+      "urgesHandled": "__NEEDS_REVIEW__: {count} urges handled",
+      "ariaLabel": "__NEEDS_REVIEW__: Resilience streak: {days} days"
+    }
   }
 }
