@@ -41,7 +41,9 @@
     "./primitives/Banner": "./src/primitives/Banner.tsx",
     "./primitives/EmptyState": "./src/primitives/EmptyState.tsx",
     "./clinical/BreathingPulse": "./src/clinical/BreathingPulse.tsx",
-    "./clinical/ResilienceRing": "./src/clinical/ResilienceRing.tsx"
+    "./clinical/ResilienceRing": "./src/clinical/ResilienceRing.tsx",
+    "./clinical/UrgeSlider": "./src/clinical/UrgeSlider.tsx",
+    "./clinical/SeverityBand": "./src/clinical/SeverityBand.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
