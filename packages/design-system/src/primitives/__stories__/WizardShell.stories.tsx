@@ -62,7 +62,7 @@ const PHQ9_STEPS_3: WizardStep[] = [
             (opt) => (
               <label
                 key={opt}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border-subtle px-4 py-3 hover:bg-surface-secondary"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border-subtle ps-4 pe-4 py-3 hover:bg-surface-secondary"
               >
                 <input type="radio" name="phq9-1" className="accent-bronze" />
                 <span className="text-sm text-ink-primary">{opt}</span>
@@ -89,7 +89,7 @@ const PHQ9_STEPS_3: WizardStep[] = [
             (opt) => (
               <label
                 key={opt}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border-subtle px-4 py-3 hover:bg-surface-secondary"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border-subtle ps-4 pe-4 py-3 hover:bg-surface-secondary"
               >
                 <input type="radio" name="phq9-2" className="accent-bronze" />
                 <span className="text-sm text-ink-primary">{opt}</span>
@@ -116,7 +116,7 @@ const PHQ9_STEPS_3: WizardStep[] = [
             (opt) => (
               <label
                 key={opt}
-                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border-subtle px-4 py-3 hover:bg-surface-secondary"
+                className="flex cursor-pointer items-center gap-3 rounded-lg border border-border-subtle ps-4 pe-4 py-3 hover:bg-surface-secondary"
               >
                 <input type="radio" name="phq9-3" className="accent-bronze" />
                 <span className="text-sm text-ink-primary">{opt}</span>

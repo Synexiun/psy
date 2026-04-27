@@ -196,7 +196,7 @@ export function WizardShell({
           type="button"
           onClick={handleBack}
           disabled={isFirst}
-          className="rounded-md px-4 py-2 text-sm font-medium text-ink-secondary transition-colors duration-fast ease-default hover:text-ink-primary disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
+          className="rounded-md ps-4 pe-4 py-2 text-sm font-medium text-ink-secondary transition-colors duration-fast ease-default hover:text-ink-primary disabled:cursor-not-allowed disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
         >
           {backLabel ?? 'Back'}
         </button>
@@ -207,7 +207,7 @@ export function WizardShell({
             <button
               type="button"
               onClick={handleSkip}
-              className="rounded-md px-4 py-2 text-sm font-medium text-ink-tertiary transition-colors duration-fast ease-default hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
+              className="rounded-md ps-4 pe-4 py-2 text-sm font-medium text-ink-tertiary transition-colors duration-fast ease-default hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
             >
               {skipLabel ?? 'Skip'}
             </button>
@@ -215,7 +215,7 @@ export function WizardShell({
           <button
             type="button"
             onClick={handleNext}
-            className="rounded-md bg-accent-bronze px-4 py-2 text-sm font-medium text-surface-primary transition-opacity duration-fast ease-default hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
+            className="rounded-md bg-accent-bronze ps-4 pe-4 py-2 text-sm font-medium text-surface-primary transition-opacity duration-fast ease-default hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 focus-visible:ring-offset-2"
           >
             {isLast ? (submitLabel ?? 'Submit') : (nextLabel ?? 'Next')}
           </button>
