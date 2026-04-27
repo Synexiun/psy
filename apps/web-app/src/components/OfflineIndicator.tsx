@@ -11,6 +11,7 @@ export function useIsOnline(): boolean {
   const [isOnline, setIsOnline] = React.useState<boolean>(true);
 
   React.useEffect(() => {
+    setIsOnline(navigator.onLine);
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
     window.addEventListener('online', handleOnline);
