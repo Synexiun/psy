@@ -33,6 +33,7 @@ function Toggle({ id, checked, onChange, label, description }: ToggleProps): Rea
         )}
       </div>
       <button
+        type="button"
         id={id}
         role="switch"
         aria-checked={checked}
@@ -44,7 +45,7 @@ function Toggle({ id, checked, onChange, label, description }: ToggleProps): Rea
       >
         <span
           className={`pointer-events-none h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-base ${
-            checked ? 'translate-x-2.5' : '-translate-x-2.5'
+            checked ? 'translate-x-2.5 rtl:-translate-x-2.5' : '-translate-x-2.5 rtl:translate-x-2.5'
           }`}
         />
       </button>

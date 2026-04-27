@@ -15,6 +15,7 @@ export interface NotificationPrefsState extends NotificationPrefs {
 export interface UseNotificationsResult {
   items: NotificationItem[];
   unreadCount: number;
+  markAllRead: () => void;
   prefs: NotificationPrefsState;
 }
 
@@ -26,17 +27,23 @@ export function useNotifications(): UseNotificationsResult {
   };
   const stubItems = getStub('notifications', 'items') ?? [];
 
+  const [items, setItems] = useState<NotificationItem[]>(stubItems);
   const [pushEnabled, setPushEnabled] = useState(stubPrefs.pushEnabled);
   const [emailEnabled, setEmailEnabled] = useState(stubPrefs.emailEnabled);
   const [nudgeFrequency, setNudgeFrequency] = useState<NotificationPrefs['nudgeFrequency']>(
     stubPrefs.nudgeFrequency,
   );
 
-  const unreadCount = stubItems.filter((item) => !item.read).length;
+  const unreadCount = items.filter((item) => !item.read).length;
+
+  function markAllRead(): void {
+    setItems((prev) => prev.map((item) => ({ ...item, read: true })));
+  }
 
   return {
-    items: stubItems,
+    items,
     unreadCount,
+    markAllRead,
     prefs: {
       pushEnabled,
       setPushEnabled,

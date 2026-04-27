@@ -11,7 +11,11 @@ export interface NotificationsDrawerProps {
 
 export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps): React.ReactElement {
   const t = useTranslations('notifications');
-  const { items, unreadCount } = useNotifications();
+  const { items, unreadCount, markAllRead } = useNotifications();
+
+  React.useEffect(() => {
+    if (open) markAllRead();
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <Sheet
@@ -21,7 +25,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
       {...(unreadCount > 0 && { description: t('unreadCount', { count: unreadCount }) })}
       side="right"
       size="sm"
-      closeLabel="Close notifications"
+      closeLabel={t('closeLabel')}
     >
       {items.length > 0 ? (
         <ul className="space-y-3" role="list">

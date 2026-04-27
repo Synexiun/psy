@@ -457,6 +457,7 @@
   },
   "notifications": {
     "drawerTitle": "Notifications",
+    "closeLabel": "Close notifications",
     "empty": "No notifications yet",
     "unreadCount": "{count} unread",
     "nudgeSectionTitle": "Check-in reminders",
