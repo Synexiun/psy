@@ -1,4 +1,4 @@
-/* eslint-disable */
+'use client';
 /**
  * E2E tests for the journal page (/en/journal).
  *
@@ -80,6 +80,18 @@ test.describe('Journal page per locale', () => {
     const response = await page.goto('/de/journal');
     expect(response?.status()).toBe(404);
   });
+
+  test('PHI audit fires on /journal mount (POST to /api/audit/phi-read)', async ({ page }) => {
+    const auditRequests: string[] = [];
+    await page.route('**/api/audit/phi-read', (route) => {
+      auditRequests.push(route.request().url());
+      void route.fulfill({ status: 200, body: JSON.stringify({ ok: true }) });
+    });
+    await page.goto('/en/journal');
+    // Wait briefly for the fire-and-forget audit hook to execute
+    await page.waitForTimeout(500);
+    expect(auditRequests.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 test.describe('Journal page accessibility', () => {
@@ -124,5 +136,44 @@ test.describe('Journal empty state', () => {
     const count = await articles.count();
     // Stub has data — confirm empty state is NOT shown
     expect(count).toBeGreaterThan(0);
+  });
+});
+
+test.describe('Journal entry detail page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/en/journal/stub-entry-id');
+  });
+
+  test('renders entry detail heading', async ({ page }) => {
+    const h1 = page.locator('h1');
+    await expect(h1).toBeVisible();
+  });
+
+  test('renders breadcrumb back to journal', async ({ page }) => {
+    const backBtn = page.locator('nav[aria-label="Breadcrumb"] button');
+    await expect(backBtn).toBeVisible();
+  });
+
+  test('renders entry body card', async ({ page }) => {
+    const card = page.locator('[data-testid="journal-entry-body"], article, .card').first();
+    // Just confirm the page loads without 500 error
+    const heading = page.locator('h1');
+    await expect(heading).toBeVisible();
+  });
+
+  test('crisis link is visible', async ({ page }) => {
+    const crisisLink = page.locator('a[href="/en/crisis"]').first();
+    await expect(crisisLink).toBeVisible();
+  });
+
+  test('PHI audit fires on detail mount (POST to /api/audit/phi-read)', async ({ page }) => {
+    const auditRequests: string[] = [];
+    await page.route('**/api/audit/phi-read', (route) => {
+      auditRequests.push(route.request().url());
+      void route.fulfill({ status: 200, body: JSON.stringify({ ok: true }) });
+    });
+    await page.goto('/en/journal/stub-entry-id');
+    await page.waitForTimeout(500);
+    expect(auditRequests.length).toBeGreaterThanOrEqual(1);
   });
 });

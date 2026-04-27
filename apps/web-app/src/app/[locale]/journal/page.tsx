@@ -1,10 +1,13 @@
 'use client';
 
+import * as React from 'react';
 import { use } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
 import { Button, Card, Badge } from '@disciplineos/design-system';
 import { useJournalEntries } from '@/hooks/useDashboardData';
+import { usePhiAudit } from '@/hooks/usePhiAudit';
 
 // ---------------------------------------------------------------------------
 // Local view model — maps the API shape to what the UI consumes.
@@ -40,7 +43,9 @@ function formatEntryDate(iso: string): string {
 // ---------------------------------------------------------------------------
 
 function JournalInner({ locale }: { locale: string }) {
+  usePhiAudit('/journal');
   const t = useTranslations();
+  const router = useRouter();
   const { data, isLoading } = useJournalEntries();
 
   // Map API items to the local view model.
@@ -69,8 +74,12 @@ function JournalInner({ locale }: { locale: string }) {
             size="md"
             className="min-h-[44px] self-start"
             aria-label={t('journal.newEntry')}
+            onClick={() => router.push(`/${locale}/journal/new`)}
           >
-            <span aria-hidden="true">✏️</span>
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
             {t('journal.newEntry')}
           </Button>
         </header>
@@ -103,29 +112,39 @@ function JournalInner({ locale }: { locale: string }) {
             <div className="space-y-3">
               {entries.map((entry) => (
                 <article key={entry.id}>
-                  <Card hover className="cursor-pointer">
-                    <div className="flex items-start justify-between gap-3">
-                      <time
-                        dateTime={entry.date}
-                        className="shrink-0 text-xs font-medium text-ink-quaternary"
-                      >
-                        {formatEntryDate(entry.date)}
-                      </time>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {entry.isVoice && (
-                          <Badge tone="calm" aria-label="Voice recording entry">
-                            🎙 {t('journal.voiceBadge')}
-                          </Badge>
-                        )}
-                        <span className="text-xs text-ink-quaternary">
-                          {entry.wordCount.toString()} {t('journal.wordCount')}
-                        </span>
+                  <a
+                    href={`/${locale}/journal/${entry.id}`}
+                    className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded-xl"
+                    aria-label={`Open journal entry from ${formatEntryDate(entry.date)}`}
+                  >
+                    <Card hover className="cursor-pointer">
+                      <div className="flex items-start justify-between gap-3">
+                        <time
+                          dateTime={entry.date}
+                          className="shrink-0 text-xs font-medium text-ink-quaternary"
+                        >
+                          {formatEntryDate(entry.date)}
+                        </time>
+                        <div className="flex shrink-0 items-center gap-2">
+                          {entry.isVoice && (
+                            <Badge tone="calm" aria-label="Voice recording entry">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-3 w-3" aria-hidden="true">
+                                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+                                <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8"/>
+                              </svg>
+                              {t('journal.voiceBadge')}
+                            </Badge>
+                          )}
+                          <span className="text-xs text-ink-quaternary">
+                            {entry.wordCount.toString()} {t('journal.wordCount')}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                    <p className="mt-3 text-sm leading-relaxed text-ink-secondary line-clamp-3">
-                      {entry.preview}
-                    </p>
-                  </Card>
+                      <p className="mt-3 text-sm leading-relaxed text-ink-secondary line-clamp-3">
+                        {entry.preview}
+                      </p>
+                    </Card>
+                  </a>
                 </article>
               ))}
             </div>

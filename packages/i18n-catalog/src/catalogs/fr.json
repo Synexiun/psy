@@ -145,6 +145,7 @@
     "emptyBody": "__NEEDS_REVIEW__: Your entries are private and only visible to you. Start writing to track your journey.",
     "wordCount": "__NEEDS_REVIEW__: words",
     "entriesHeading": "__NEEDS_REVIEW__: Your entries",
+    "entryDetailTitle": "__NEEDS_REVIEW__: Journal entry",
     "entry": {
       "dateLabel": "__NEEDS_REVIEW__: Written on"
     }

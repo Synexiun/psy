@@ -144,6 +144,7 @@
     "emptyBody": "Your entries are private and only visible to you. Start writing to track your journey.",
     "wordCount": "words",
     "entriesHeading": "Your entries",
+    "entryDetailTitle": "Journal entry",
     "entry": {
       "dateLabel": "Written on"
     }
