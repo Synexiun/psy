@@ -2,6 +2,7 @@
 
 import * as React from 'react';
 import { use, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { Layout } from '@/components/Layout';
@@ -47,12 +48,14 @@ const USE_STUBS = process.env['NEXT_PUBLIC_USE_STUBS'] === 'true';
 function CheckInInner({ locale }: { locale: string }) {
   const t = useTranslations();
   const { getToken } = useAuth();
+  const router = useRouter();
 
   const [intensity, setIntensity] = useState(0);
   const [selectedTriggers, setSelectedTriggers] = useState<Set<TriggerTag>>(new Set());
   const [notes, setNotes] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   function toggleTrigger(tag: TriggerTag) {
     setSelectedTriggers((prev) => {
@@ -66,19 +69,21 @@ function CheckInInner({ locale }: { locale: string }) {
     });
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       if (USE_STUBS) {
         await new Promise((r) => setTimeout(r, 600));
       } else {
         const token = await getToken();
-        if (token) {
-          await submitCheckIn(token, intensity, Array.from(selectedTriggers), notes || undefined);
-        }
+        if (!token) throw new Error(t('errors.sessionExpired'));
+        await submitCheckIn(token, intensity, Array.from(selectedTriggers), notes || undefined);
       }
       setSubmitted(true);
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : t('errors.submitFailed'));
     } finally {
       setIsSubmitting(false);
     }
@@ -89,6 +94,7 @@ function CheckInInner({ locale }: { locale: string }) {
     setSelectedTriggers(new Set());
     setNotes('');
     setSubmitted(false);
+    setSubmitError(null);
   }
 
   const charsLeft = COPY.notesMaxChars - notes.length;
@@ -129,9 +135,7 @@ function CheckInInner({ locale }: { locale: string }) {
                 variant="calm"
                 size="md"
                 className="min-h-[44px]"
-                onClick={() => {
-                  window.location.href = `/${locale}/tools`;
-                }}
+                onClick={() => router.push(`/${locale}/tools`)}
               >
                 {t('checkIn.openTool')}
               </Button>
@@ -148,6 +152,12 @@ function CheckInInner({ locale }: { locale: string }) {
         ) : (
           /* Check-in form */
           <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Error banner — shown when session token is null or submit fails */}
+            {submitError && (
+              <div role="alert" className="rounded-lg border border-signal-crisis/30 bg-signal-crisis/10 px-4 py-3 text-sm text-signal-crisis">
+                {submitError}
+              </div>
+            )}
             {/* Intensity slider */}
             <Card>
               <fieldset>

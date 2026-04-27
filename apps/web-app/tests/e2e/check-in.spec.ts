@@ -1,5 +1,4 @@
 'use client';
-/* eslint-disable */
 /**
  * E2E tests for the check-in page (/en/check-in).
  *
