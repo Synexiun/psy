@@ -120,6 +120,21 @@
       "description": "Suicide risk assessment"
     }
   },
+  "patterns": {
+    "title": "Patterns",
+    "subtitle": "Behavioral patterns detected from your check-ins",
+    "activeHeading": "Active insights",
+    "empty": "No patterns detected yet — keep logging check-ins",
+    "confidenceLabel": "Confidence",
+    "detectedLabel": "Detected signals",
+    "viewDetails": "View details",
+    "typeLabels": {
+      "temporal": "Time pattern",
+      "contextual": "Context pattern",
+      "physiological": "Body signal",
+      "compound": "Compound signal"
+    }
+  },
   "privacy": {
     "headline": "Privacy",
     "body": "Your data stays on your device unless you explicitly choose to share it. We do not sell data, run ads, or use behavioral fingerprinting."

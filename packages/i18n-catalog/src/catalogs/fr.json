@@ -121,6 +121,21 @@
       "description": "Évaluation du risque suicidaire"
     }
   },
+  "patterns": {
+    "title": "__NEEDS_REVIEW__: Patterns",
+    "subtitle": "__NEEDS_REVIEW__: Behavioral patterns detected from your check-ins",
+    "activeHeading": "__NEEDS_REVIEW__: Active insights",
+    "empty": "__NEEDS_REVIEW__: No patterns detected yet — keep logging check-ins",
+    "confidenceLabel": "__NEEDS_REVIEW__: Confidence",
+    "detectedLabel": "__NEEDS_REVIEW__: Detected signals",
+    "viewDetails": "__NEEDS_REVIEW__: View details",
+    "typeLabels": {
+      "temporal": "__NEEDS_REVIEW__: Time pattern",
+      "contextual": "__NEEDS_REVIEW__: Context pattern",
+      "physiological": "__NEEDS_REVIEW__: Body signal",
+      "compound": "__NEEDS_REVIEW__: Compound signal"
+    }
+  },
   "privacy": {
     "headline": "Confidentialité",
     "body": "Vos données restent sur votre appareil, sauf si vous choisissez explicitement de les partager. Nous ne vendons pas de données, ne diffusons pas de publicités et n'utilisons pas de prise d'empreinte comportementale."
