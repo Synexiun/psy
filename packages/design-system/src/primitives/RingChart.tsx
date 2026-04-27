@@ -73,8 +73,8 @@ export function RingChart({
   const total = segments.reduce((sum, seg) => sum + seg.value, 0);
 
   // Convert gapDegrees to arc length fraction of circumference.
-  // Only apply gaps when there are multiple segments.
-  const gapArc = segments.length > 1 ? (gapDegrees / 360) * circumference : 0;
+  // Applied unconditionally; callers who want no gap pass gapDegrees={0}.
+  const gapArc = (gapDegrees / 360) * circumference;
 
   // Build per-segment rendering data.
   let startAngle = 0; // degrees; SVG is rotated -90° so 0° maps to the top
