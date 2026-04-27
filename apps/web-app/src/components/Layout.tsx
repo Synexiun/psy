@@ -1,11 +1,14 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { TopBar } from '@disciplineos/design-system/primitives/TopBar';
 import type { LocaleOption } from '@disciplineos/design-system/primitives/TopBar';
 import { SidebarNav } from './SidebarNav';
 import { BottomNav } from './BottomNav';
 import { WordmarkSvg } from './WordmarkSvg';
+import { NotificationsDrawer } from './NotificationsDrawer';
+import { useNotificationCount } from '@/hooks/useNotificationCount';
 import * as React from 'react';
 
 const LOCALE_OPTIONS: LocaleOption[] = [
@@ -21,16 +24,18 @@ interface LayoutProps {
 }
 
 export function Layout({ children, locale }: LayoutProps): React.ReactElement {
-  // useTranslations kept for any future layout-level translated strings
   useTranslations();
+  const [notifOpen, setNotifOpen] = useState<boolean>(false);
+  const { count } = useNotificationCount();
 
-  // onBellClick: undefined — wired in Task 6.7b (NotificationsDrawer)
   return (
     <div className="flex min-h-screen flex-col bg-surface-primary">
       <TopBar
         wordmark={<WordmarkSvg />}
         locale={locale}
         localeOptions={LOCALE_OPTIONS}
+        bellCount={count}
+        onBellClick={() => setNotifOpen(true)}
       />
       <div className="flex flex-1">
         <aside
@@ -46,6 +51,11 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
         </main>
       </div>
       <BottomNav locale={locale} />
+      <NotificationsDrawer
+        open={notifOpen}
+        onClose={() => setNotifOpen(false)}
+        count={count}
+      />
     </div>
   );
 }
