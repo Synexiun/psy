@@ -1,3 +1,4 @@
+'use client';
 /**
  * Contract tests for packages/design-system/src/primitives/Trend.tsx
  *
@@ -23,7 +24,7 @@
  * 15.  axe: no violations (color-contrast + region rules disabled)
  */
 
-import * as React from 'react';
+import type * as React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { configureAxe, toHaveNoViolations } from 'jest-axe';
@@ -193,7 +194,9 @@ describe('Trend — clinical warning', () => {
     const calls = warnSpy.mock.calls;
     const trendCall = calls.find((c) => typeof c[0] === 'string' && (c[0] as string).includes('[Trend]'));
     expect(trendCall).toBeDefined();
-    expect(trendCall?.[0]).toContain('[Trend]');
+    if (trendCall !== undefined) {
+      expect(trendCall[0]).toContain('[Trend]');
+    }
   });
 
   // ---------------------------------------------------------------------------
