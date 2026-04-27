@@ -65,6 +65,20 @@ describe('Stat — renders label', () => {
 });
 
 // ---------------------------------------------------------------------------
+// No delta when `delta` is undefined
+// ---------------------------------------------------------------------------
+
+describe('Stat — no delta when delta is undefined', () => {
+  it('does not render a delta indicator when delta prop is omitted', () => {
+    const { container } = render(<Stat value={42} label="Score" />);
+    // When no delta is provided, no SVG arrow and no signal color class should be present
+    expect(container.querySelector('svg[aria-hidden="true"]')).toBeNull();
+    expect(container.querySelector('.text-signal-stable')).toBeNull();
+    expect(container.querySelector('.text-signal-warning')).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 3. delta > 0 → text-signal-stable + up arrow
 // ---------------------------------------------------------------------------
 
@@ -281,6 +295,20 @@ describe('Stat — size variants', () => {
     const { container } = render(<Stat value={47} label="Resilience Days" size="lg" />);
     const numberSpan = container.querySelector('.text-6xl');
     expect(numberSpan).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Custom className applied
+// ---------------------------------------------------------------------------
+
+describe('Stat — custom className', () => {
+  it('applies a custom className to the root container element', () => {
+    const { container } = render(
+      <Stat value={42} label="Score" className="my-custom-class" />,
+    );
+    const root = container.firstElementChild;
+    expect(root?.classList.contains('my-custom-class')).toBe(true);
   });
 });
 
