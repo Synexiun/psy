@@ -4,6 +4,8 @@ generateSW({
   globDirectory: '../web-crisis/out/',
   globPatterns: [
     'en/crisis/**/*.html',
+    'ar/crisis/**/*.html',
+    'fa/crisis/**/*.html',
   ],
   swDest: 'public/sw.js',
   runtimeCaching: [],
