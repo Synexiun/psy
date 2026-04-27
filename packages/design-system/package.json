@@ -39,7 +39,8 @@
     "./primitives/RingChart": "./src/primitives/RingChart.tsx",
     "./primitives/BarChart": "./src/primitives/BarChart.tsx",
     "./primitives/Banner": "./src/primitives/Banner.tsx",
-    "./primitives/EmptyState": "./src/primitives/EmptyState.tsx"
+    "./primitives/EmptyState": "./src/primitives/EmptyState.tsx",
+    "./clinical/BreathingPulse": "./src/clinical/BreathingPulse.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
