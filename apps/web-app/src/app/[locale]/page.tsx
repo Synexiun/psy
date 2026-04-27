@@ -13,7 +13,7 @@ const MoodSparkline = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm animate-pulse min-h-[8.75rem]">
+      <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm animate-pulse min-h-[9.25rem]">
         <div className="h-4 w-32 rounded bg-surface-tertiary" />
         <div className="mt-4 h-12 rounded bg-surface-tertiary" />
       </div>
