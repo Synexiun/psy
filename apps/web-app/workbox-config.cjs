@@ -3,9 +3,9 @@ const { generateSW } = require('workbox-build');
 generateSW({
   globDirectory: '../web-crisis/out/',
   globPatterns: [
-    'en/crisis/**/*.html',
-    'ar/crisis/**/*.html',
-    'fa/crisis/**/*.html',
+    'en/index.html',
+    'ar/index.html',
+    'fa/index.html',
   ],
   swDest: 'public/sw.js',
   runtimeCaching: [],
