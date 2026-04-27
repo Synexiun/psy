@@ -72,23 +72,18 @@ export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
         <p className="mt-2 text-sm text-ink-secondary">{config.message}</p>
       </div>
       <div
-        className="hidden h-12 w-12 shrink-0 rounded-full sm:flex sm:items-center sm:justify-center"
-        style={{
-          backgroundColor:
-            config.tone === 'calm'
-              ? 'color-mix(in oklab, var(--color-signal-stable) 15%, transparent)'
-              : config.tone === 'warning'
-                ? 'color-mix(in oklab, var(--color-signal-warning) 15%, transparent)'
-                : config.tone === 'crisis'
-                  ? 'color-mix(in oklab, var(--color-signal-crisis) 15%, transparent)'
-                  : 'var(--color-surface-tertiary)',
-        }}
+        className={[
+          'hidden h-4 w-4 shrink-0 rounded-full sm:block',
+          config.tone === 'calm'
+            ? 'bg-signal-stable'
+            : config.tone === 'warning'
+              ? 'bg-signal-warning'
+              : config.tone === 'crisis'
+                ? 'bg-signal-crisis'
+                : 'bg-surface-tertiary',
+        ].join(' ')}
         aria-hidden="true"
-      >
-        <span className="text-2xl">
-          {config.tone === 'calm' ? '🌿' : config.tone === 'warning' ? '⚡' : config.tone === 'crisis' ? '🔥' : '➖'}
-        </span>
-      </div>
+      />
     </div>
   );
 }

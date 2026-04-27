@@ -2,6 +2,7 @@
 
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { ProgressRing, Skeleton } from '@disciplineos/design-system';
+import { ResilienceRing } from '@disciplineos/design-system/clinical/ResilienceRing';
 import type { StreakData } from '@/hooks/useDashboardData';
 
 interface StreakWidgetProps {
@@ -55,14 +56,10 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
       </div>
 
       <div className="flex items-center gap-5 rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm transition-shadow hover:shadow-md">
-        <ProgressRing
+        <ResilienceRing
           value={data.resilience_days}
           max={resilienceMax}
           size={100}
-          strokeWidth={8}
-          color="var(--color-signal-stable)"
-          label={formatNumberClinical(data.resilience_days)}
-          sublabel="Resilience"
           ariaLabel={`Resilience streak: ${formatNumberClinical(data.resilience_days)} days`}
         />
         <div className="min-w-0">

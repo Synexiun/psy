@@ -64,6 +64,29 @@ test.describe('Dashboard per locale', () => {
         const sparkline = page.locator('svg[role="img"][aria-label*="Mood trend"]').first();
         await expect(sparkline).toBeVisible();
       });
+
+      test('renders dashboard hero section with data-testid', async ({ page }) => {
+        const hero = page.locator('[data-testid="dashboard-hero"]');
+        await expect(hero).toBeVisible();
+      });
+
+      test('renders pattern preview tiles (not PatternCard dismiss UI)', async ({ page }) => {
+        const tiles = page.locator('[data-testid="pattern-preview-tile"]');
+        // Stub data has 2 patterns — at least 1 should be visible.
+        await expect(tiles.first()).toBeVisible();
+      });
+
+      test('renders "All patterns" link pointing to patterns page', async ({ page }) => {
+        const link = page.locator(`a[href="/${locale}/patterns"]`);
+        await expect(link).toBeVisible();
+      });
+
+      test('crisis link is present in quick actions', async ({ page }) => {
+        const crisisLink = page
+          .locator('section[aria-labelledby="quick-actions"]')
+          .getByRole('link', { name: /crisis help/i });
+        await expect(crisisLink).toBeVisible();
+      });
     });
   }
 
