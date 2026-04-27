@@ -35,7 +35,8 @@
     "./primitives/TopBar": "./src/primitives/TopBar.tsx",
     "./primitives/BottomNav": "./src/primitives/BottomNav.tsx",
     "./primitives/WizardShell": "./src/primitives/WizardShell.tsx",
-    "./primitives/Stat": "./src/primitives/Stat.tsx"
+    "./primitives/Stat": "./src/primitives/Stat.tsx",
+    "./primitives/Trend": "./src/primitives/Trend.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
