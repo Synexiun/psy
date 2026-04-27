@@ -33,7 +33,8 @@
     "./primitives/Toast": "./src/primitives/Toast.tsx",
     "./primitives/PageShell": "./src/primitives/PageShell.tsx",
     "./primitives/TopBar": "./src/primitives/TopBar.tsx",
-    "./primitives/BottomNav": "./src/primitives/BottomNav.tsx"
+    "./primitives/BottomNav": "./src/primitives/BottomNav.tsx",
+    "./primitives/WizardShell": "./src/primitives/WizardShell.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
