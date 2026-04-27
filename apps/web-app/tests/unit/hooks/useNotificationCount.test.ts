@@ -26,10 +26,9 @@ describe('useNotificationCount', () => {
     expect(result.current.count).toBe(0);
   });
 
-  it('count is stable across re-renders (stub never changes)', () => {
+  it('count remains 0 after re-render (stub never changes)', () => {
     const { result, rerender } = renderHook(() => useNotificationCount());
-    const firstCount = result.current.count;
     rerender();
-    expect(result.current.count).toBe(firstCount);
+    expect(result.current.count).toBe(0);
   });
 });
