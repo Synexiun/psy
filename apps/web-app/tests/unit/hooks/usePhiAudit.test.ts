@@ -105,3 +105,17 @@ describe('usePhiAudit — error handling', () => {
     unmount();
   });
 });
+
+describe('usePhiAudit — cancellation', () => {
+  it('does not call logPhiRead when component unmounts before token resolves', async () => {
+    let resolveToken!: (v: string | null) => void;
+    const getToken = vi.fn().mockReturnValue(new Promise<string | null>((r) => { resolveToken = r; }));
+    mockUseAuth.mockReturnValue({ getToken } as ReturnType<typeof useAuth>);
+
+    const { unmount } = renderHook(() => usePhiAudit('/journal'));
+    unmount(); // cancelled = true before promise settles
+    resolveToken('tok-cancel');
+    await new Promise<void>((r) => setTimeout(r, 0));
+    expect(mockLogPhiRead).not.toHaveBeenCalled();
+  });
+});
