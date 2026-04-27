@@ -329,8 +329,51 @@ describe('BottomNav — RTL context', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 10. axe accessibility
+// 10. href prop — renders <a> instead of <button>
 // ---------------------------------------------------------------------------
+
+describe('BottomNav — href rendering', () => {
+  it('renders as <a> when href is provided', () => {
+    const items: BottomNavItem[] = [
+      { value: 'home', label: 'Home', icon: makeIcon('H'), href: '/home' },
+    ];
+    render(<BottomNav items={items} />);
+    const link = screen.getByRole('link', { name: /home/i });
+    expect(link).toBeInTheDocument();
+    expect(link.tagName).toBe('A');
+    expect(link).toHaveAttribute('href', '/home');
+  });
+
+  it('renders as <button> when href is omitted', () => {
+    const items: BottomNavItem[] = [
+      { value: 'home', label: 'Home', icon: makeIcon('H') },
+    ];
+    render(<BottomNav items={items} />);
+    const btn = screen.getByRole('button', { name: /home/i });
+    expect(btn).toBeInTheDocument();
+    expect(btn.tagName).toBe('BUTTON');
+    expect(btn).not.toHaveAttribute('href');
+  });
+
+  it('<a> item carries aria-current="page" when active', () => {
+    const items: BottomNavItem[] = [
+      { value: 'home', label: 'Home', icon: makeIcon('H'), href: '/home' },
+    ];
+    render(<BottomNav items={items} activeValue="home" />);
+    const link = screen.getByRole('link', { name: /home/i });
+    expect(link).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('<a> item does not carry aria-current when inactive', () => {
+    const items: BottomNavItem[] = [
+      { value: 'home', label: 'Home', icon: makeIcon('H'), href: '/home' },
+      { value: 'tools', label: 'Tools', icon: makeIcon('T'), href: '/tools' },
+    ];
+    render(<BottomNav items={items} activeValue="tools" />);
+    const homeLink = screen.getByRole('link', { name: /home/i });
+    expect(homeLink).not.toHaveAttribute('aria-current');
+  });
+});
 
 const axe = configureAxe({
   rules: {

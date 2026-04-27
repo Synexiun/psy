@@ -26,7 +26,7 @@
  * Token mapping:
  *   Container         : fixed bottom-0 inset-x-0 z-40 border-t border-border-subtle bg-surface-primary
  *   Inactive item     : text-ink-tertiary
- *   Active item       : text-accent-bronze
+ *   Active item       : text-accent-bronze (icon) + text-ink-primary (label)
  *   Focus ring        : focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent-bronze/30
  *   Crisis item       : text-[#8B0000] (oxblood — no token yet)
  *   Active dot        : bg-accent-bronze (normal) / bg-[#8B0000] (crisis)
@@ -118,21 +118,19 @@ export function BottomNav({
             .filter(Boolean)
             .join(' ');
 
-          const optionalButtonProps = {
-            ...(isDisabled && { disabled: true as const }),
-            ...(isActive && { 'aria-current': 'page' as const }),
-            ...(item.href !== undefined && { href: item.href }),
-          };
+          // Label colour: crisis always oxblood (inherited via colorClass), active
+          // non-crisis gets text-ink-primary so it reads distinctly from the icon's
+          // text-accent-bronze, inactive gets text-ink-tertiary (inherited).
+          const labelClass = [
+            'text-[10px] font-medium leading-none',
+            !isCrisis && isActive ? 'text-ink-primary' : '',
+          ]
+            .filter(Boolean)
+            .join(' ');
 
-          return (
-            <button
-              key={item.value}
-              type="button"
-              onClick={() => onItemClick?.(item.value)}
-              aria-label={item.label}
-              className={baseClass}
-              {...optionalButtonProps}
-            >
+          // Shared inner content — same for both element types.
+          const innerContent = (
+            <>
               {/* Active indicator dot — above the icon */}
               <span
                 className={[
@@ -146,7 +144,37 @@ export function BottomNav({
                 {item.icon}
               </span>
               {/* Label */}
-              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+              <span className={labelClass}>{item.label}</span>
+            </>
+          );
+
+          // When href is provided render an <a> — <a> elements have no disabled
+          // attribute semantics, so disabled crisis items just rely on styling.
+          if (item.href !== undefined) {
+            return (
+              <a
+                key={item.value}
+                href={item.href}
+                aria-label={item.label}
+                {...(isActive && { 'aria-current': 'page' as const })}
+                className={baseClass}
+              >
+                {innerContent}
+              </a>
+            );
+          }
+
+          return (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onItemClick?.(item.value)}
+              {...(isDisabled && { disabled: true as const })}
+              {...(isActive && { 'aria-current': 'page' as const })}
+              aria-label={item.label}
+              className={baseClass}
+            >
+              {innerContent}
             </button>
           );
         })}
