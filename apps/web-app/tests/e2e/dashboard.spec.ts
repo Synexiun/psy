@@ -1,3 +1,4 @@
+'use client';
 /**
  * E2E tests for the authenticated user app dashboard.
  *

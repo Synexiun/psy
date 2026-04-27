@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { Badge } from '@disciplineos/design-system';
 import type { PatternData } from '@/hooks/useDashboardData';
 

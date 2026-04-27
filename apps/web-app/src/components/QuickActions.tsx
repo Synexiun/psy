@@ -1,5 +1,7 @@
 'use client';
 
+import * as React from 'react';
+
 interface QuickActionsProps {
   locale: string;
 }
