@@ -165,7 +165,7 @@ interface LocaleSelectProps {
 function LocaleSelect({ locale, localeOptions, onLocaleChange }: LocaleSelectProps): React.ReactElement {
   return (
     <select
-      value={locale}
+      value={locale ?? ''}
       onChange={(e) => onLocaleChange?.(e.target.value)}
       aria-label="Select language"
       className="cursor-pointer rounded-md border-0 bg-transparent ps-2 pe-6 py-1 text-sm text-ink-tertiary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30"
