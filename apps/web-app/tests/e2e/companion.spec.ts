@@ -83,4 +83,11 @@ test.describe('Companion page accessibility', () => {
     const section = page.locator('section[aria-labelledby="companion-next-steps-heading"]');
     await expect(section).toBeVisible();
   });
+
+  test('axe scan finds no violations on companion page', async ({ page }) => {
+    await page.goto('/en/companion');
+    const { default: AxeBuilder } = await import('@axe-core/playwright');
+    const results = await new AxeBuilder({ page }).analyze();
+    expect(results.violations).toEqual([]);
+  });
 });

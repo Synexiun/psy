@@ -27,7 +27,22 @@ export function useCompanion(): CompanionState {
   const activeTemplates = (templates.templates as RelapseTemplate[]).filter(
     (t) => t.status === 'draft' || t.status === 'active',
   );
+  if (activeTemplates.length === 0) {
+    return {
+      template: {
+        id: 'fallback',
+        text: 'You are not alone. Take one step at a time.',
+        tags: [],
+        status: 'active',
+      },
+    };
+  }
   const idx = new Date().getDay() % activeTemplates.length;
-  const template = activeTemplates[idx] ?? activeTemplates[0]!;
+  const template = activeTemplates[idx] ?? activeTemplates[0] ?? {
+    id: 'fallback',
+    text: 'You are not alone. Take one step at a time.',
+    tags: [],
+    status: 'active',
+  };
   return { template };
 }

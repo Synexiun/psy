@@ -143,8 +143,45 @@ describe('CRITICAL clinical contracts (per CLAUDE.md non-negotiables)', () => {
   // DEFERRED — 5.8 CompassionTemplate (Rule #4 — templates from JSON, no failure framing)
   // -------------------------------------------------------------------------
 
-  it.todo('CompassionTemplate: loads-from-shared-rules-relapse-templates-json (Task 5.8 — v1.1)');
-  it.todo('CompassionTemplate: no-failure-framing-copy (Task 5.8 — v1.1)');
+  it('CompassionTemplate: loads-from-shared-rules-relapse-templates-json [ACTIVE]', async () => {
+    const { readFileSync } = await import('fs');
+    const { resolve } = await import('path');
+    const sharedTemplates = JSON.parse(
+      readFileSync(resolve(process.cwd(), '../../shared-rules/relapse_templates.json'), 'utf-8'),
+    ) as { templates: Array<{ id: string; text: string }> };
+    const webAppTemplates = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'src/data/relapse_templates.json'), 'utf-8'),
+    ) as { templates: Array<{ id: string; text: string }> };
+    expect(sharedTemplates.templates.length).toBeGreaterThan(0);
+    expect(webAppTemplates.templates.length).toBe(sharedTemplates.templates.length);
+    for (let i = 0; i < sharedTemplates.templates.length; i++) {
+      expect(webAppTemplates.templates[i]?.id).toBe(sharedTemplates.templates[i]?.id);
+      expect(webAppTemplates.templates[i]?.text).toBe(sharedTemplates.templates[i]?.text);
+    }
+  });
+
+  it('CompassionTemplate: no-failure-framing-copy [ACTIVE]', async () => {
+    const { readFileSync } = await import('fs');
+    const { resolve } = await import('path');
+    const source = JSON.parse(
+      readFileSync(resolve(process.cwd(), 'src/data/relapse_templates.json'), 'utf-8'),
+    ) as { templates: Array<{ text: string }> };
+    const FAILURE_FRAMING_PATTERNS = [
+      'failed',
+      'failure',
+      'streak reset',
+      'you broke',
+      'you ruined',
+      'you let',
+      'disappointing',
+      'shameful',
+    ];
+    for (const template of source.templates) {
+      for (const pattern of FAILURE_FRAMING_PATTERNS) {
+        expect(template.text.toLowerCase(), `Template text contains failure framing: "${pattern}"`).not.toContain(pattern);
+      }
+    }
+  });
 
   // -------------------------------------------------------------------------
   // DEFERRED — 5.9 CrisisCard (Rule #1 — no LLM on crisis path)
