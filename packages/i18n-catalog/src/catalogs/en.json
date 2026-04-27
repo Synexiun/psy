@@ -329,6 +329,15 @@
         "downloadErrorGeneric": "Something went wrong. Please try again.",
         "deleteErrorGeneric": "Something went wrong. Please try again or contact support."
       },
+      "appearance": {
+        "title": "Appearance",
+        "theme": "Theme",
+        "themeDescription": "Choose between dark and light mode",
+        "themeDark": "Dark",
+        "themeLight": "Light",
+        "language": "Language",
+        "languageDescription": "Choose your preferred language"
+      },
       "about": {
         "title": "About",
         "version": "Version",

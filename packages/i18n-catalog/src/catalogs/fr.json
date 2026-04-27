@@ -330,6 +330,15 @@
         "downloadErrorGeneric": "__NEEDS_REVIEW__: Something went wrong. Please try again.",
         "deleteErrorGeneric": "__NEEDS_REVIEW__: Something went wrong. Please try again or contact support."
       },
+      "appearance": {
+        "title": "__NEEDS_REVIEW__: Appearance",
+        "theme": "__NEEDS_REVIEW__: Theme",
+        "themeDescription": "__NEEDS_REVIEW__: Choose between dark and light mode",
+        "themeDark": "__NEEDS_REVIEW__: Dark",
+        "themeLight": "__NEEDS_REVIEW__: Light",
+        "language": "__NEEDS_REVIEW__: Language",
+        "languageDescription": "__NEEDS_REVIEW__: Choose your preferred language"
+      },
       "about": {
         "title": "__NEEDS_REVIEW__: About",
         "version": "__NEEDS_REVIEW__: Version",
