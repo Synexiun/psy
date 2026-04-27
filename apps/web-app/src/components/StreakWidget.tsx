@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { ProgressRing, Skeleton } from '@disciplineos/design-system';
 import { ResilienceRing } from '@disciplineos/design-system/clinical/ResilienceRing';
@@ -14,6 +14,7 @@ interface StreakWidgetProps {
 
 export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
   const t = useTranslations('streak');
+  const locale = useLocale();
 
   if (isLoading || !data) {
     return (
@@ -53,7 +54,7 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
           </p>
           {data.continuous_streak_start && (
             <p className="mt-1 text-xs text-ink-tertiary">
-              {t('continuous.since', { date: new Date(data.continuous_streak_start).toLocaleDateString() })}
+              {t('continuous.since', { date: new Date(data.continuous_streak_start).toLocaleDateString(locale) })}
             </p>
           )}
         </div>

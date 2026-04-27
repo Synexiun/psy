@@ -23,6 +23,7 @@ vi.mock('@disciplineos/i18n-catalog', () => ({
 }));
 
 vi.mock('next-intl', () => ({
+  useLocale: () => 'en',
   useTranslations: (_ns: string) => (key: string, params?: Record<string, unknown>) => {
     const map: Record<string, string> = {
       'continuous.sublabel': 'Continuous',
