@@ -4,7 +4,7 @@ import { use, useMemo } from 'react';
 import { useTranslations } from 'next-intl';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
-import { Button, Card, ProgressRing } from '@/components/primitives';
+import { Button, Card, ProgressRing } from '@disciplineos/design-system';
 import { useAssessmentSessions } from '@/hooks/useDashboardData';
 
 // ---------------------------------------------------------------------------

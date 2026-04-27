@@ -4,7 +4,7 @@
 // content shape: Layout shell → header → quick-actions → state indicator →
 // streak widget → patterns/insights grid → sidebar.
 
-import { Skeleton } from '@/components/primitives';
+import { Skeleton } from '@disciplineos/design-system';
 
 function SectionLabel() {
   return <Skeleton variant="text" width="6rem" height="0.75rem" className="mb-3" />;

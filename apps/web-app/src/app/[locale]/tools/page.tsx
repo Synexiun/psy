@@ -3,7 +3,7 @@
 import { use } from 'react';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
-import { Card, Badge } from '@/components/primitives';
+import { Card, Badge } from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
 // Tool catalogue — entirely static / deterministic. No API call, works offline.

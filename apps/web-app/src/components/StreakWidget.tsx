@@ -1,7 +1,7 @@
 'use client';
 
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
-import { ProgressRing, Skeleton } from './primitives';
+import { ProgressRing, Skeleton } from '@disciplineos/design-system';
 import type { StreakData } from '@/hooks/useDashboardData';
 
 interface StreakWidgetProps {

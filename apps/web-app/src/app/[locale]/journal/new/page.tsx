@@ -15,7 +15,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { Layout } from '@/components/Layout';
-import { Button, Card } from '@/components/primitives';
+import { Button, Card } from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
 // Constants

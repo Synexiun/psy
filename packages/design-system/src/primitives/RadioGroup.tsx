@@ -16,7 +16,7 @@
  *   Transition easing  : ease-default  (--ease-default in @theme)
  *
  * RTL: wrap in a `dir="rtl"` container — Radix picks up direction from DOM context.
- * Logical properties only; no ml-*/mr-*/pl-*/pr-* classes anywhere in this file.
+ * Logical properties only; no ml-[x]/mr-[x]/pl-[x]/pr-[x] classes anywhere in this file.
  */
 import * as React from 'react';
 import { useId } from 'react';

@@ -24,7 +24,7 @@
  * intentional exception to the logical-properties rule.
  *
  * RTL: All internal layout (title/close row, description, body) uses logical
- * CSS properties exclusively — no ml-*/mr-*/pl-*/pr-* classes appear here.
+ * CSS properties exclusively — no ml-[x]/mr-[x]/pl-[x]/pr-[x] classes appear here.
  *
  * Logical properties only for content layout; physical `left`/`top` only for
  * the fixed-position viewport centering transform.

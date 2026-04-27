@@ -16,7 +16,7 @@ import {
   Divider,
   Card,
   Badge,
-} from '@disciplineos/design-system/primitives/web';
+} from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
 // Input
@@ -224,26 +224,26 @@ describe('Badge (extended API)', () => {
   it('uses default variant classes without props', () => {
     const { container } = render(<Badge>Tag</Badge>);
     const el = container.firstElementChild;
-    // default variant: bg-[hsl(217,91%,96%)]
-    expect(el?.className).toContain('hsl(217,91%,96%)');
+    // default variant: bg-accent-bronze/15 (Quiet Strength token)
+    expect(el?.className).toContain('bg-accent-bronze/15');
   });
 
   it('applies success variant classes', () => {
     const { container } = render(<Badge variant="success">Success</Badge>);
     const el = container.firstElementChild;
-    expect(el?.className).toContain('hsl(142,71%,93%)');
+    expect(el?.className).toContain('bg-signal-stable/15');
   });
 
   it('applies danger variant classes', () => {
     const { container } = render(<Badge variant="danger">Danger</Badge>);
     const el = container.firstElementChild;
-    expect(el?.className).toContain('hsl(0,84%,95%)');
+    expect(el?.className).toContain('bg-signal-crisis/15');
   });
 
   it('applies warning variant classes', () => {
     const { container } = render(<Badge variant="warning">Warning</Badge>);
     const el = container.firstElementChild;
-    expect(el?.className).toContain('hsl(38,92%,93%)');
+    expect(el?.className).toContain('bg-signal-warning/15');
   });
 
   it('applies md size classes', () => {
@@ -272,8 +272,8 @@ describe('Badge (extended API)', () => {
       </Badge>,
     );
     const el = container.firstElementChild;
-    // danger bg should be present, not calm bg
-    expect(el?.className).toContain('hsl(0,84%,95%)');
-    expect(el?.className).not.toContain('bg-calm');
+    // danger bg (signal-crisis token) should be present, not calm (teal) bg
+    expect(el?.className).toContain('bg-signal-crisis/15');
+    expect(el?.className).not.toContain('bg-accent-teal');
   });
 });

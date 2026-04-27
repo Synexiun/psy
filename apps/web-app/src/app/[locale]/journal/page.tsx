@@ -3,7 +3,7 @@
 import { use } from 'react';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
-import { Button, Card, Badge } from '@/components/primitives';
+import { Button, Card, Badge } from '@disciplineos/design-system';
 import { useJournalEntries } from '@/hooks/useDashboardData';
 
 // ---------------------------------------------------------------------------

@@ -5,7 +5,7 @@
  * Uses the Skeleton primitive to mirror the layout of the real page.
  */
 
-import { Skeleton } from '@/components/primitives';
+import { Skeleton } from '@disciplineos/design-system';
 
 export default function JournalNewLoading(): React.JSX.Element {
   return (

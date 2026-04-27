@@ -1,7 +1,7 @@
 'use client';
 
 import { formatPercentClinical } from '@disciplineos/i18n-catalog';
-import { Card, Badge } from './primitives';
+import { Card, Badge } from '@disciplineos/design-system';
 import type { PatternData } from '@/hooks/useDashboardData';
 
 interface PatternCardProps {

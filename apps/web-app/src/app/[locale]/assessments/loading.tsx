@@ -2,7 +2,7 @@
 // Rendered while the AssessmentsPage Server Component is streaming.
 // Mirrors the assessments page layout: header, instrument card grid, disclaimer.
 
-import { Skeleton } from '@/components/primitives';
+import { Skeleton } from '@disciplineos/design-system';
 
 function AssessmentCardSkeleton() {
   return (

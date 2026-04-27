@@ -4,7 +4,7 @@ import { use, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useUser, useAuth, useClerk } from '@clerk/nextjs';
 import { Layout } from '@/components/Layout';
-import { Button, Card } from '@/components/primitives';
+import { Button, Card } from '@disciplineos/design-system';
 import { requestDataExport, requestAccountDeletion } from '@/lib/api';
 
 const APP_VERSION = '1.0.0-beta';

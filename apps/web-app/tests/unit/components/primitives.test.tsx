@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { Button, Card, Badge, ProgressRing, Skeleton } from '@/components/primitives';
+import { Button, Card, Badge, ProgressRing, Skeleton } from '@disciplineos/design-system';
 
 describe('Button', () => {
   it('renders children', () => {

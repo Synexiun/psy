@@ -19,7 +19,7 @@
  * in a `dir="rtl"` container and logical CSS properties handle label/track
  * mirroring automatically.
  *
- * Logical properties only; no ml-*/mr-*/pl-*/pr-* classes anywhere in this file.
+ * Logical properties only; no ml-[x]/mr-[x]/pl-[x]/pr-[x] classes anywhere in this file.
  */
 import * as React from 'react';
 import { useId } from 'react';

@@ -1,7 +1,7 @@
 'use client';
 
 import { formatPercentClinical } from '@disciplineos/i18n-catalog';
-import { Badge, Skeleton } from './primitives';
+import { Badge, Skeleton } from '@disciplineos/design-system';
 import type { StateEstimateData } from '@/hooks/useDashboardData';
 
 interface StateIndicatorProps {

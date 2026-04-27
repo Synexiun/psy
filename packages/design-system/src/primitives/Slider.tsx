@@ -16,7 +16,7 @@
  *   Transition easing: ease-default  (--ease-default in @theme)
  *
  * RTL: `dir` prop is forwarded directly to RadixSlider.Root — no wrapper div
- * workaround needed. Logical properties only; no ml-*/mr-*/pl-*/pr-* classes.
+ * workaround needed. Logical properties only; no ml-[x]/mr-[x]/pl-[x]/pr-[x] classes.
  */
 import * as React from 'react';
 import * as RadixSlider from '@radix-ui/react-slider';

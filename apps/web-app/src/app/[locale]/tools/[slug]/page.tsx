@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { notFound } from 'next/navigation';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layout } from '@/components/Layout';
-import { Card, Badge, Button } from '@/components/primitives';
+import { Card, Badge, Button } from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
 // Tool catalogue — mirrors tools/page.tsx. Entirely static/deterministic.

@@ -1,7 +1,7 @@
 'use client';
 
 import type { CheckInHistory } from '@/lib/api';
-import { Sparkline, Skeleton } from './primitives';
+import { Sparkline, Skeleton } from '@disciplineos/design-system';
 
 interface MoodSparklineProps {
   data?: CheckInHistory | undefined;

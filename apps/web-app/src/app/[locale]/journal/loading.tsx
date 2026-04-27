@@ -2,7 +2,7 @@
 // Rendered while the JournalPage Server Component (or its data) is streaming.
 // Mirrors the journal page layout: header, "New entry" button, entry list.
 
-import { Skeleton } from '@/components/primitives';
+import { Skeleton } from '@disciplineos/design-system';
 
 function JournalEntryCardSkeleton() {
   return (

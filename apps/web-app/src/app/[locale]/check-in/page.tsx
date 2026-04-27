@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
-import { Button, Card } from '@/components/primitives';
+import { Button, Card } from '@disciplineos/design-system';
 import { submitCheckIn } from '@/lib/api';
 
 // Non-display constants (not i18n strings)

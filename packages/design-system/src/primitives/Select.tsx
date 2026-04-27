@@ -17,7 +17,7 @@
  *
  * RTL: wrap in a `dir="rtl"` container — Radix picks up direction from DOM
  * context. `ps-*`/`pe-*`/`start-*`/`end-*` logical properties handle mirroring.
- * Logical properties only; no ml-*/mr-*/pl-*/pr-*/left-*/right-* classes
+ * Logical properties only; no ml-[x]/mr-[x]/pl-[x]/pr-[x]/left-[x]/right-[x] classes
  * anywhere in this file (animation utility names like slide-in-from-top-2
  * describe animation origin, not directional padding/margin — they are exempt).
  */

@@ -9,7 +9,6 @@
   "exports": {
     ".": "./src/index.ts",
     "./tokens": "./src/tokens.ts",
-    "./primitives/web": "./src/primitives/web.tsx",
     "./primitives/web-utils": "./src/primitives/web.ts",
     "./primitives/Button": "./src/primitives/Button.tsx",
     "./primitives/Card": "./src/primitives/Card.tsx",
