@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { use } from 'react';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
@@ -66,12 +67,36 @@ const TOOLS: CopingTool[] = [
   },
 ];
 
-const CATEGORY_ICONS: Record<ToolCategory, string> = {
-  breathing: '🌬',
-  grounding: '🌱',
-  body: '💧',
-  mindfulness: '🧘',
-};
+function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElement {
+  switch (category) {
+    case 'breathing':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <path d="M5 8h14M5 12h10M5 16h7"/>
+        </svg>
+      );
+    case 'grounding':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <path d="M12 22V12M12 12C12 7 17 4 20 4c0 5-3 8-8 8z"/>
+          <path d="M12 12C12 8 7 5 4 6c0 4 3 7 8 6z"/>
+        </svg>
+      );
+    case 'body':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+        </svg>
+      );
+    case 'mindfulness':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      );
+  }
+}
 
 const CATEGORY_BADGE_TONE: Record<ToolCategory, 'neutral' | 'calm' | 'warning' | 'success'> = {
   breathing: 'calm',
@@ -96,8 +121,8 @@ function ToolCard({ tool, locale }: { tool: CopingTool; locale: string }) {
     >
       <Card hover className="h-full">
         <div className="flex items-start justify-between gap-2">
-          <span className="text-2xl leading-none" aria-hidden="true">
-            {CATEGORY_ICONS[tool.category]}
+          <span className="text-2xl leading-none">
+            <CategoryIcon category={tool.category} />
           </span>
           <div className="flex items-center gap-1.5 shrink-0">
             {tool.featured && (
@@ -160,8 +185,8 @@ function ToolsInner({ locale }: { locale: string }) {
               aria-label={`Open ${t(`tools.items.${featured.catalogKey}.name`)}`}
             >
               <Card tone="calm" hover className="flex gap-4 items-start">
-                <span className="text-3xl leading-none shrink-0" aria-hidden="true">
-                  {CATEGORY_ICONS[featured.category]}
+                <span className="text-3xl leading-none shrink-0">
+                  <CategoryIcon category={featured.category} />
                 </span>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">

@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { use } from 'react';
 import { useTranslations } from 'next-intl';
 import { notFound } from 'next/navigation';
@@ -44,12 +45,36 @@ export const TOOLS: CopingTool[] = [
 
 export const TOOL_IDS = TOOLS.map((t) => t.id);
 
-const CATEGORY_ICONS: Record<ToolCategory, string> = {
-  breathing: '🌬',
-  grounding: '🌱',
-  body: '💧',
-  mindfulness: '🧘',
-};
+function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElement {
+  switch (category) {
+    case 'breathing':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <path d="M5 8h14M5 12h10M5 16h7"/>
+        </svg>
+      );
+    case 'grounding':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <path d="M12 22V12M12 12C12 7 17 4 20 4c0 5-3 8-8 8z"/>
+          <path d="M12 12C12 8 7 5 4 6c0 4 3 7 8 6z"/>
+        </svg>
+      );
+    case 'body':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>
+        </svg>
+      );
+    case 'mindfulness':
+      return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6" aria-hidden="true">
+          <circle cx="12" cy="12" r="9"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      );
+  }
+}
 
 const CATEGORY_BADGE_TONE: Record<ToolCategory, 'neutral' | 'calm' | 'warning' | 'success'> = {
   breathing: 'calm',
@@ -214,7 +239,11 @@ function NumberedSteps({ steps, onComplete }: NumberedStepsProps) {
                     }`}
                     aria-hidden="true"
                   >
-                    {isChecked ? '✓' : String(i + 1)}
+                    {isChecked ? (
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" width="12" height="12" aria-hidden="true">
+                        <path d="M2 6l3 3 5-5"/>
+                      </svg>
+                    ) : String(i + 1)}
                   </span>
                   <div>
                     <p className={`text-sm font-medium leading-snug ${isChecked ? 'line-through text-ink-quaternary' : 'text-ink-primary'}`}>
@@ -251,7 +280,10 @@ function NumberedSteps({ steps, onComplete }: NumberedStepsProps) {
 function CompletionCard({ locale }: { locale: string }) {
   return (
     <Card tone="calm" className="flex flex-col items-center text-center gap-4 py-10">
-      <span className="text-4xl" aria-hidden="true">🌿</span>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="var(--color-signal-stable)" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" width="48" height="48" aria-hidden="true">
+        <path d="M24 44V24M24 24C24 14 34 8 40 8c0 10-6 16-16 16z"/>
+        <path d="M24 24C24 16 14 10 8 12c0 8 6 14 16 12z"/>
+      </svg>
       <div>
         <p className="text-lg font-semibold text-ink-primary">You showed up. That matters.</p>
         <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
@@ -542,7 +574,6 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
   const tool = TOOLS.find((tc) => tc.id === slug);
   if (!tool) notFound();
 
-  const icon = CATEGORY_ICONS[tool.category];
   const badgeTone = CATEGORY_BADGE_TONE[tool.category];
 
   return (
@@ -561,8 +592,8 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
 
         {/* Tool header */}
         <header className="flex items-start gap-4">
-          <span className="text-4xl leading-none mt-0.5 shrink-0" aria-hidden="true">
-            {icon}
+          <span className="text-4xl leading-none mt-0.5 shrink-0">
+            <CategoryIcon category={tool.category} />
           </span>
           <div className="min-w-0 space-y-1.5">
             <div className="flex items-center gap-2 flex-wrap">

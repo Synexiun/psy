@@ -1,4 +1,4 @@
-/* eslint-disable */
+'use client';
 /**
  * E2E tests for the coping tools page (/en/tools).
  *
@@ -145,5 +145,38 @@ test.describe('Tools page accessibility', () => {
       const text = await toolNames.nth(i).innerText();
       expect(text.trim().length).toBeGreaterThan(0);
     }
+  });
+});
+
+test.describe('Tool detail page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/en/tools/box-breathing');
+  });
+
+  test('renders tool name as h1', async ({ page }) => {
+    const h1 = page.locator('h1');
+    await expect(h1).toBeVisible();
+  });
+
+  test('renders breadcrumb back link to /tools', async ({ page }) => {
+    const backLink = page.locator('nav[aria-label="Breadcrumb"] a');
+    await expect(backLink).toBeVisible();
+    const href = await backLink.getAttribute('href');
+    expect(href).toBe('/en/tools');
+  });
+
+  test('renders start button for box breathing', async ({ page }) => {
+    const startBtn = page.getByRole('button', { name: /start/i });
+    await expect(startBtn).toBeVisible();
+  });
+
+  test('crisis link is visible on detail page', async ({ page }) => {
+    const crisisLink = page.locator('a[href="/en/crisis"]').first();
+    await expect(crisisLink).toBeVisible();
+  });
+
+  test('invalid tool slug returns 404', async ({ page }) => {
+    const response = await page.goto('/en/tools/not-a-real-tool');
+    expect(response?.status()).toBe(404);
   });
 });
