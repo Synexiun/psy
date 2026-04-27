@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useTranslations } from 'next-intl';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
 
 // ---------------------------------------------------------------------------
@@ -32,6 +33,7 @@ export function useIsOnline(): boolean {
 const PANEL_ID = 'offline-indicator-panel';
 
 export function OfflineIndicator(): React.ReactElement | null {
+  const t = useTranslations('offlineIndicator');
   const isOnline = useIsOnline();
   const { queuedCount } = useOfflineQueue();
   const [open, setOpen] = React.useState(false);
@@ -56,23 +58,23 @@ export function OfflineIndicator(): React.ReactElement | null {
   }
 
   const pillLabel = isOnline
-    ? `${queuedCount} check-in(s) pending sync`
-    : `Offline — ${queuedCount} pending`;
+    ? t('pillAriaOnline', { count: queuedCount })
+    : t('pillAriaOffline', { count: queuedCount });
 
   const pillText = isOnline
-    ? `${queuedCount} pending sync`
+    ? t('pillTextOnline', { count: queuedCount })
     : queuedCount > 0
-      ? `Offline · ${queuedCount} pending`
-      : 'Offline';
+      ? t('pillTextOfflinePending', { count: queuedCount })
+      : t('pillTextOffline');
 
   // Panel message
   let statusMessage: string;
   if (!isOnline) {
-    statusMessage = 'Offline — check-ins will sync when you reconnect';
+    statusMessage = t('statusOffline');
   } else if (queuedCount > 0) {
-    statusMessage = `Back online — syncing ${queuedCount} check-in(s)`;
+    statusMessage = t('statusSyncing', { count: queuedCount });
   } else {
-    statusMessage = 'All synced ✓';
+    statusMessage = t('statusSynced');
   }
 
   const pillBase =
@@ -120,7 +122,7 @@ export function OfflineIndicator(): React.ReactElement | null {
           {queuedCount > 0 && (
             <div className="mt-3 flex items-center gap-2">
               <span className="inline-flex items-center rounded-full bg-yellow-100 px-2.5 py-0.5 text-xs font-semibold text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">
-                {queuedCount} check-in{queuedCount !== 1 ? 's' : ''} pending
+                {t('pendingCount', { count: queuedCount })}
               </span>
             </div>
           )}
@@ -129,10 +131,10 @@ export function OfflineIndicator(): React.ReactElement | null {
           <button
             type="button"
             onClick={() => setOpen(false)}
-            aria-label="Dismiss offline status panel"
+            aria-label={t('dismissAriaLabel')}
             className="mt-4 w-full rounded-md border border-border-subtle bg-surface-secondary py-1.5 text-xs text-ink-secondary transition-colors hover:bg-surface-secondary/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30"
           >
-            Dismiss
+            {t('dismiss')}
           </button>
         </div>
       )}

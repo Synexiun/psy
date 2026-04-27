@@ -562,5 +562,18 @@
     "heading": "__NEEDS_REVIEW__: Mood trend",
     "subtitle": "__NEEDS_REVIEW__: Last {count} check-ins",
     "ariaLabel": "__NEEDS_REVIEW__: Mood trend over last {count} check-ins"
+  },
+  "offlineIndicator": {
+    "pillAriaOnline": "__NEEDS_REVIEW__: {count} check-in(s) pending sync",
+    "pillAriaOffline": "__NEEDS_REVIEW__: Offline — {count} pending",
+    "pillTextOnline": "__NEEDS_REVIEW__: {count} pending sync",
+    "pillTextOfflinePending": "__NEEDS_REVIEW__: Offline · {count} pending",
+    "pillTextOffline": "__NEEDS_REVIEW__: Offline",
+    "statusOffline": "__NEEDS_REVIEW__: Offline — check-ins will sync when you reconnect",
+    "statusSyncing": "__NEEDS_REVIEW__: Back online — syncing {count} check-in(s)",
+    "statusSynced": "__NEEDS_REVIEW__: All synced ✓",
+    "pendingCount": "__NEEDS_REVIEW__: {count} check-in(s) pending",
+    "dismiss": "__NEEDS_REVIEW__: Dismiss",
+    "dismissAriaLabel": "__NEEDS_REVIEW__: Dismiss offline status panel"
   }
 }

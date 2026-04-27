@@ -561,5 +561,18 @@
     "heading": "Mood trend",
     "subtitle": "Last {count} check-ins",
     "ariaLabel": "Mood trend over last {count} check-ins"
+  },
+  "offlineIndicator": {
+    "pillAriaOnline": "{count} check-in(s) pending sync",
+    "pillAriaOffline": "Offline — {count} pending",
+    "pillTextOnline": "{count} pending sync",
+    "pillTextOfflinePending": "Offline · {count} pending",
+    "pillTextOffline": "Offline",
+    "statusOffline": "Offline — check-ins will sync when you reconnect",
+    "statusSyncing": "Back online — syncing {count} check-in(s)",
+    "statusSynced": "All synced ✓",
+    "pendingCount": "{count} check-in(s) pending",
+    "dismiss": "Dismiss",
+    "dismissAriaLabel": "Dismiss offline status panel"
   }
 }
