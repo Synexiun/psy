@@ -33,6 +33,7 @@ export default function DashboardPage({
 
 function DashboardInner({ locale }: { locale: string }) {
   const t = useTranslations();
+  const td = useTranslations('dashboard');
   const streak = useStreak();
   const patterns = usePatterns();
   const state = useStateEstimate();
@@ -84,7 +85,7 @@ function DashboardInner({ locale }: { locale: string }) {
 
         <section aria-labelledby="streak-heading" data-testid="dashboard-hero">
           <h2 id="streak-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary">
-            Streaks
+            {td('section.streaks')}
           </h2>
           <StreakWidget data={streak.data} isLoading={streak.isLoading} />
         </section>
@@ -92,7 +93,7 @@ function DashboardInner({ locale }: { locale: string }) {
         <div className="grid gap-6 lg:grid-cols-3">
           <section className="lg:col-span-2" aria-labelledby="patterns-heading">
             <h2 id="patterns-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary">
-              Insights
+              {td('section.insights')}
             </h2>
             <div className="space-y-3">
               {patterns.isLoading && (
@@ -112,7 +113,7 @@ function DashboardInner({ locale }: { locale: string }) {
               ))}
               {!patterns.isLoading && patterns.data?.length === 0 && (
                 <p className="py-8 text-center text-sm text-ink-quaternary">
-                  No patterns detected yet. Keep checking in — insights appear with more data.
+                  {td('patterns.empty')}
                 </p>
               )}
               {!patterns.isLoading && (patterns.data?.length ?? 0) > 0 && (
@@ -120,7 +121,7 @@ function DashboardInner({ locale }: { locale: string }) {
                   href={`/${locale}/patterns`}
                   className="inline-flex items-center gap-1 text-sm font-medium text-accent-bronze hover:text-accent-bronze/80 transition-colors"
                 >
-                  All patterns
+                  {td('section.allPatterns')}
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 24 24"
@@ -139,14 +140,13 @@ function DashboardInner({ locale }: { locale: string }) {
             </div>
           </section>
 
-          <aside aria-label="Dashboard sidebar" className="space-y-6">
+          <aside aria-label={td('section.sidebarLabel')} className="space-y-6">
             <MoodSparkline data={checkInHistory.data} isLoading={isLoading} />
 
             <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm">
-              <p className="text-sm font-medium text-ink-primary">Daily tip</p>
+              <p className="text-sm font-medium text-ink-primary">{td('section.dailyTip')}</p>
               <p className="mt-2 text-sm leading-relaxed text-ink-secondary">
-                When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves —
-                most pass within 3–5 minutes.
+                {td('section.dailyTipBody')}
               </p>
             </div>
           </aside>

@@ -471,5 +471,18 @@
     "nudgeFrequencyLow": "Rarely (crisis only)",
     "nudgeFrequencyMedium": "Moderate (recommended)",
     "nudgeFrequencyHigh": "Frequent"
+  },
+  "dashboard": {
+    "section": {
+      "streaks": "Streaks",
+      "insights": "Insights",
+      "allPatterns": "All patterns",
+      "dailyTip": "Daily tip",
+      "dailyTipBody": "When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves — most pass within 3–5 minutes.",
+      "sidebarLabel": "Dashboard sidebar"
+    },
+    "patterns": {
+      "empty": "No patterns detected yet. Keep checking in — insights appear with more data."
+    }
   }
 }
