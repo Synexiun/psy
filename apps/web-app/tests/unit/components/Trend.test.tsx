@@ -23,6 +23,7 @@
  * 15.  axe: no violations (color-contrast + region rules disabled)
  */
 
+import * as React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render } from '@testing-library/react';
 import { configureAxe, toHaveNoViolations } from 'jest-axe';
@@ -273,6 +274,21 @@ describe('Trend — color forwarded to Sparkline', () => {
     );
     // LinePath renders a <path> with the stroke attribute set to the color
     const strokeEl = container.querySelector(`[stroke="${customColor}"]`);
+    expect(strokeEl).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 12b. Default color forwarded to Sparkline when color prop is omitted
+// ---------------------------------------------------------------------------
+
+describe('Trend — default color forwarded to Sparkline', () => {
+  it('uses var(--color-accent-bronze) as the default sparkline stroke', () => {
+    const { container } = render(
+      <Trend value={20} label="Test" data={[10, 15, 20]} />,
+    );
+    // Sparkline renders a <path> with stroke set to the color prop
+    const strokeEl = container.querySelector('[stroke="var(--color-accent-bronze)"]');
     expect(strokeEl).not.toBeNull();
   });
 });

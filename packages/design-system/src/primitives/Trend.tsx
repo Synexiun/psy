@@ -63,7 +63,7 @@ export function Trend({
   clinical,
   formatValue,
   size = 'sm',
-  color,
+  color = 'var(--color-accent-bronze)',
   sparklineAriaLabel,
   className = '',
 }: TrendProps): React.ReactElement {
@@ -91,7 +91,7 @@ export function Trend({
   // Build Sparkline props similarly
   const sparklineProps = {
     data,
-    ...(color !== undefined && { color }),
+    color,
     ...(sparklineAriaLabel !== undefined && { ariaLabel: sparklineAriaLabel }),
   };
 
