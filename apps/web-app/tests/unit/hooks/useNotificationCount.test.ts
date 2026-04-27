@@ -21,14 +21,15 @@ describe('useNotificationCount', () => {
     expect(typeof result.current.count).toBe('number');
   });
 
-  it('stub returns count of 0', () => {
+  it('stub returns count matching notifications stub unread items', () => {
     const { result } = renderHook(() => useNotificationCount());
-    expect(result.current.count).toBe(0);
+    // notificationsStubs has 1 unread item (n1) — matches useNotifications() unreadCount
+    expect(result.current.count).toBe(1);
   });
 
-  it('count remains 0 after re-render (stub never changes)', () => {
+  it('count remains stable after re-render (stub never changes)', () => {
     const { result, rerender } = renderHook(() => useNotificationCount());
     rerender();
-    expect(result.current.count).toBe(0);
+    expect(result.current.count).toBe(1);
   });
 });

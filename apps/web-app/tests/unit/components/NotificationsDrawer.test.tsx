@@ -34,6 +34,35 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { configureAxe, toHaveNoViolations } from 'jest-axe';
 import { NotificationsDrawer } from '../../../src/components/NotificationsDrawer';
 
+// next-intl requires NextIntlClientProvider context; mock for unit tests
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string, params?: Record<string, unknown>) => {
+    if (key === 'drawerTitle') return 'Notifications';
+    if (key === 'closeLabel') return 'Close notifications';
+    if (key === 'unreadCount') return `${params?.count ?? 0} unread`;
+    if (key === 'empty') return 'No notifications yet';
+    return key;
+  },
+}));
+
+// Freeze markAllRead as a no-op so unreadCount stays at 1 during assertions.
+// The hook itself is tested in useNotificationCount.test.ts.
+vi.mock('../../../src/hooks/useNotifications', () => ({
+  useNotifications: () => ({
+    items: [
+      { id: 'n1', text: 'Your last check-in showed a rising urge. You handled it — well done.', timestamp: '', read: false },
+      { id: 'n2', text: 'New pattern detected: urges are higher on weekday evenings.', timestamp: '', read: true },
+      { id: 'n3', text: 'Your resilience streak is growing. Keep going.', timestamp: '', read: true },
+    ],
+    unreadCount: 1,
+    markAllRead: vi.fn(),
+    prefs: {
+      pushEnabled: false, emailEnabled: true, nudgeFrequency: 'medium' as const,
+      setPushEnabled: vi.fn(), setEmailEnabled: vi.fn(), setNudgeFrequency: vi.fn(),
+    },
+  }),
+}));
+
 expect.extend(toHaveNoViolations);
 
 // ---------------------------------------------------------------------------

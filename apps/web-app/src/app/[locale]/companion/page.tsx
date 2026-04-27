@@ -1,7 +1,7 @@
 'use client';
 // WARNING: LLM-PROHIBITED ROUTE
 // discipline/no-llm-on-crisis-route ESLint rule enforces this at CI level.
-// Do NOT import @disciplineos/llm-client, @anthropic-ai/, openai, or claude-sdk here.
+// Do NOT import any LLM client package here.
 // CompassionTemplate must render deterministically from JSON — never from LLM output.
 
 import * as React from 'react';
