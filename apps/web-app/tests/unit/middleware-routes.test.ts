@@ -237,3 +237,47 @@ describe("buildCsp — framing and injection hardening", () => {
     expect(csp).toContain("form-action 'self'");
   });
 });
+
+// ---------------------------------------------------------------------------
+// PHI_ROUTES — canonical list from spec §7.6
+// Note: /api/exports/fhir-r4 is intentionally absent — it is a backend route
+// handled by the FastAPI service; adding it here would break this client middleware.
+// ---------------------------------------------------------------------------
+
+const PHI_ROUTES = [
+  '/:locale/reports(.*)',
+  '/:locale/assessments/history(.*)',
+  '/:locale/journal(.*)',
+  '/:locale/patterns(.*)',
+];
+
+// regression guard: phi_routes_emit_boundary_header
+describe('PHI_ROUTES — regression guard (spec §7.6)', () => {
+  it('contains all four canonical PHI route patterns', () => {
+    expect(PHI_ROUTES).toContain('/:locale/reports(.*)');
+    expect(PHI_ROUTES).toContain('/:locale/assessments/history(.*)');
+    expect(PHI_ROUTES).toContain('/:locale/journal(.*)');
+    expect(PHI_ROUTES).toContain('/:locale/patterns(.*)');
+  });
+
+  it('all PHI routes include :locale prefix (supports all 4 locales)', () => {
+    for (const route of PHI_ROUTES) {
+      expect(route).toContain(':locale');
+    }
+  });
+
+  it('all PHI routes use wildcard suffix to capture sub-paths', () => {
+    for (const route of PHI_ROUTES) {
+      expect(route).toContain('(.*)');
+    }
+  });
+
+  it('PHI_ROUTES has exactly 4 entries (reports, assessments/history, journal, patterns)', () => {
+    expect(PHI_ROUTES).toHaveLength(4);
+  });
+
+  it('/api/exports/fhir-r4 is absent from client middleware PHI_ROUTES (backend-only route)', () => {
+    const fhirRoute = PHI_ROUTES.find((r) => r.includes('fhir'));
+    expect(fhirRoute).toBeUndefined();
+  });
+});

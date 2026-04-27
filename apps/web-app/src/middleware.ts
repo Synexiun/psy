@@ -17,6 +17,15 @@ const PUBLIC_ROUTES = [
 
 const isPublic = createRouteMatcher(PUBLIC_ROUTES);
 
+const PHI_ROUTES = [
+  '/:locale/reports(.*)',
+  '/:locale/assessments/history(.*)',
+  '/:locale/journal(.*)',
+  '/:locale/patterns(.*)',
+];
+
+const isPhiRoute = createRouteMatcher(PHI_ROUTES);
+
 /**
  * Build a per-request Content-Security-Policy with a cryptographic nonce.
  * The nonce is forwarded to the layout via the `x-nonce` request header so
@@ -73,6 +82,9 @@ export default clerkMiddleware((auth, req) => {
   // redirect or a rewrite — we always want the nonce-based policy on it).
   const response = intlResponse ?? NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', buildCsp(nonce));
+  if (isPhiRoute(req)) {
+    response.headers.set('X-Phi-Boundary', '1');
+  }
   return response;
 });
 
