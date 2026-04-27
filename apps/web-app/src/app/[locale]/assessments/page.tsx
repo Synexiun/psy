@@ -1,6 +1,8 @@
 'use client';
 
+import * as React from 'react';
 import { use, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { Layout } from '@/components/Layout';
@@ -109,6 +111,7 @@ function AssessmentCard({
   locale: string;
 }) {
   const t = useTranslations();
+  const router = useRouter();
   const hasScore = instrument.lastScore !== null && instrument.lastDate !== null;
 
   return (
@@ -182,9 +185,7 @@ function AssessmentCard({
         variant={hasScore ? 'secondary' : 'primary'}
         size="sm"
         className="w-full min-h-[44px] mt-auto"
-        onClick={() => {
-          window.location.href = `/${locale}/assessments/${instrument.id}`;
-        }}
+        onClick={() => { router.push(`/${locale}/assessments/${instrument.id}`); }}
       >
         {t('assessments.takeAssessment')}
       </Button>

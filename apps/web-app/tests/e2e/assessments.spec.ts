@@ -1,4 +1,4 @@
-/* eslint-disable */
+'use client';
 /**
  * E2E tests for the assessments page (/en/assessments).
  *
@@ -185,5 +185,42 @@ test.describe('Assessments page accessibility', () => {
     // PSS-10 stub has no score — its ring shows dashed border, aria-label says "no score yet"
     const noScoreEl = page.locator('[aria-label*="PSS-10"][aria-label*="no score yet"]');
     await expect(noScoreEl).toBeVisible();
+  });
+});
+
+test.describe('Assessment history detail page', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/en/assessments/history/stub-session-id');
+  });
+
+  test('renders history detail heading', async ({ page }) => {
+    const h1 = page.locator('h1');
+    await expect(h1).toBeVisible();
+  });
+
+  test('renders breadcrumb back to assessments', async ({ page }) => {
+    const backBtn = page.locator('nav[aria-label="Breadcrumb"] button');
+    await expect(backBtn).toBeVisible();
+  });
+
+  test('renders score with clinical-number class', async ({ page }) => {
+    const scoreEl = page.locator('.clinical-number').first();
+    await expect(scoreEl).toBeVisible();
+  });
+
+  test('crisis link is visible', async ({ page }) => {
+    const crisisLink = page.locator('a[href="/en/crisis"]').first();
+    await expect(crisisLink).toBeVisible();
+  });
+
+  test('PHI audit fires on history detail mount (POST to /api/audit/phi-read)', async ({ page }) => {
+    const auditRequests: string[] = [];
+    await page.route('**/api/audit/phi-read', (route) => {
+      auditRequests.push(route.request().url());
+      void route.fulfill({ status: 200, body: JSON.stringify({ ok: true }) });
+    });
+    await page.goto('/en/assessments/history/stub-session-id');
+    await page.waitForTimeout(500);
+    expect(auditRequests.length).toBeGreaterThanOrEqual(1);
   });
 });
