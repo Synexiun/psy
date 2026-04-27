@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { ProgressRing, Skeleton } from '@disciplineos/design-system';
 import { ResilienceRing } from '@disciplineos/design-system/clinical/ResilienceRing';
@@ -25,7 +26,7 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
   }
 
   const continuousMax = Math.max(data.continuous_days, 30);
-  const resilienceMax = Math.max(data.resilience_days, 60);
+  const resilienceMax = Math.max(data.resilience_days, 30);
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">

@@ -1,5 +1,6 @@
 'use client';
 
+import * as React from 'react';
 import { formatPercentClinical } from '@disciplineos/i18n-catalog';
 import { Badge, Skeleton } from '@disciplineos/design-system';
 import type { StateEstimateData } from '@/hooks/useDashboardData';
@@ -80,7 +81,7 @@ export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
               ? 'bg-signal-warning'
               : config.tone === 'crisis'
                 ? 'bg-signal-crisis'
-                : 'bg-surface-tertiary',
+                : 'bg-ink-quaternary',
         ].join(' ')}
         aria-hidden="true"
       />
