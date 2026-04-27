@@ -40,7 +40,8 @@
     "./primitives/BarChart": "./src/primitives/BarChart.tsx",
     "./primitives/Banner": "./src/primitives/Banner.tsx",
     "./primitives/EmptyState": "./src/primitives/EmptyState.tsx",
-    "./clinical/BreathingPulse": "./src/clinical/BreathingPulse.tsx"
+    "./clinical/BreathingPulse": "./src/clinical/BreathingPulse.tsx",
+    "./clinical/ResilienceRing": "./src/clinical/ResilienceRing.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
