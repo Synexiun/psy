@@ -15,6 +15,21 @@ const nextConfig = {
     '@disciplineos/safety-directory',
   ],
   typedRoutes: true,
+  experimental: {
+    optimizePackageImports: [
+      '@disciplineos/design-system',
+      '@disciplineos/i18n-catalog',
+      '@visx/shape',
+      '@visx/scale',
+      '@visx/group',
+      '@visx/axis',
+      '@visx/grid',
+      '@visx/gradient',
+      '@visx/tooltip',
+      '@visx/responsive',
+    ],
+    optimizeServerReact: true,
+  },
   async headers() {
     // Content-Security-Policy is intentionally absent here.
     // It is set dynamically per-request by middleware.ts using a cryptographic

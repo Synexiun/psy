@@ -7,7 +7,19 @@ import { StreakWidget } from '@/components/StreakWidget';
 import { PatternsPreviewTile } from '@/components/PatternsPreviewTile';
 import { QuickActions } from '@/components/QuickActions';
 import { StateIndicator } from '@/components/StateIndicator';
-import { MoodSparkline } from '@/components/MoodSparkline';
+import dynamic from 'next/dynamic';
+const MoodSparkline = dynamic(
+  () => import('@/components/MoodSparkline').then((m) => ({ default: m.MoodSparkline })),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm animate-pulse">
+        <div className="h-4 w-32 rounded bg-surface-tertiary" />
+        <div className="mt-4 h-12 rounded bg-surface-tertiary" />
+      </div>
+    ),
+  },
+);
 import { useStreak, usePatterns, useStateEstimate, useCheckInHistory } from '@/hooks/useDashboardData';
 
 export default function DashboardPage({
