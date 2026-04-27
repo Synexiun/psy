@@ -38,7 +38,8 @@
     "./primitives/Stat": "./src/primitives/Stat.tsx",
     "./primitives/Trend": "./src/primitives/Trend.tsx",
     "./primitives/RingChart": "./src/primitives/RingChart.tsx",
-    "./primitives/BarChart": "./src/primitives/BarChart.tsx"
+    "./primitives/BarChart": "./src/primitives/BarChart.tsx",
+    "./primitives/Banner": "./src/primitives/Banner.tsx"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
