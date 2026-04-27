@@ -104,7 +104,7 @@ function JournalEntryInner({ locale, entryId }: { locale: string; entryId: strin
             href={`/${locale}/crisis`}
             className="text-xs text-ink-quaternary hover:text-signal-crisis transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 rounded"
           >
-            Need immediate help? Get support →
+            {t('checkIn.needHelp')}
           </a>
         </footer>
       </div>
