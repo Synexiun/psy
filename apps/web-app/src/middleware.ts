@@ -18,6 +18,7 @@ const PUBLIC_ROUTES = [
 const isPublic = createRouteMatcher(PUBLIC_ROUTES);
 
 const PHI_ROUTES = [
+  '/:locale/check-in(.*)',
   '/:locale/reports(.*)',
   '/:locale/assessments/history(.*)',
   '/:locale/journal(.*)',
@@ -44,6 +45,7 @@ function buildCsp(nonce: string): string {
     "font-src 'self' data:",
     "connect-src 'self' https://*.clerk.accounts.dev https://api.disciplineos.com",
     "frame-src https://challenges.cloudflare.com",
+    "worker-src 'self'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",

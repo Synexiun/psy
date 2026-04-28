@@ -24,14 +24,15 @@ interface JournalEntry {
 }
 
 
-function formatEntryDate(iso: string): string {
+function formatEntryDate(iso: string, locale: string): string {
   try {
-    return new Intl.DateTimeFormat('en', {
+    return new Intl.DateTimeFormat(locale, {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      numberingSystem: 'latn',
     }).format(new Date(iso));
   } catch {
     return iso;
@@ -115,7 +116,7 @@ function JournalInner({ locale }: { locale: string }) {
                   <a
                     href={`/${locale}/journal/${entry.id}`}
                     className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded-xl"
-                    aria-label={`Open journal entry from ${formatEntryDate(entry.date)}`}
+                    aria-label={`Open journal entry from ${formatEntryDate(entry.date, locale)}`}
                   >
                     <Card hover className="cursor-pointer">
                       <div className="flex items-start justify-between gap-3">
@@ -123,7 +124,7 @@ function JournalInner({ locale }: { locale: string }) {
                           dateTime={entry.date}
                           className="shrink-0 text-xs font-medium text-ink-quaternary"
                         >
-                          {formatEntryDate(entry.date)}
+                          {formatEntryDate(entry.date, locale)}
                         </time>
                         <div className="flex shrink-0 items-center gap-2">
                           {entry.isVoice && (

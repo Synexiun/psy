@@ -96,7 +96,7 @@ describe('StateIndicator', () => {
 
   it('has accessible wrapper with aria-label mentioning Stable', () => {
     render(<StateIndicator data={makeEstimate({ state_label: 'stable' })} isLoading={false} />);
-    expect(screen.getByRole('img', { name: /stable/i })).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /stable/i })).toBeInTheDocument();
   });
 
   // --- "rising_urge" state --------------------------------------------------

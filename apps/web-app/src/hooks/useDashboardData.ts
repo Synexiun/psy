@@ -176,7 +176,7 @@ export function useStreak(): UseQueryResult<StreakData> {
     queryFn: async (): Promise<StreakData> => {
       if (stubMode) return STREAK_STUB;
       const token = await getToken();
-      if (token === null) return STREAK_STUB;
+      if (token === null) throw new Error('Session expired');
       return getStreakState(token);
     },
     initialData: stubMode ? STREAK_STUB : undefined,
@@ -198,7 +198,7 @@ export function usePatterns(): UseQueryResult<PatternData[]> {
     queryFn: async (): Promise<PatternData[]> => {
       if (stubMode) return PATTERNS_STUB;
       const token = await getToken();
-      if (token === null) return PATTERNS_STUB;
+      if (token === null) throw new Error('Session expired');
       return getPatterns(token);
     },
     initialData: stubMode ? PATTERNS_STUB : undefined,
@@ -221,7 +221,7 @@ export function useStateEstimate(): UseQueryResult<StateEstimateData | null> {
     queryFn: async (): Promise<StateEstimateData | null> => {
       if (stubMode) return STATE_STUB;
       const token = await getToken();
-      if (token === null) return STATE_STUB;
+      if (token === null) throw new Error('Session expired');
       return getStateEstimate(token);
     },
     initialData: stubMode ? STATE_STUB : undefined,
@@ -243,7 +243,7 @@ export function useJournalEntries(): UseQueryResult<JournalData> {
     queryFn: async (): Promise<JournalData> => {
       if (stubMode) return JOURNAL_STUB;
       const token = await getToken();
-      if (token === null) return JOURNAL_STUB;
+      if (token === null) throw new Error('Session expired');
       return getJournalEntries(token);
     },
     initialData: stubMode ? JOURNAL_STUB : undefined,
@@ -267,7 +267,7 @@ export function useCheckInHistory(): UseQueryResult<CheckInHistoryData> {
     queryFn: async (): Promise<CheckInHistoryData> => {
       if (stubMode) return CHECK_IN_HISTORY_STUB;
       const token = await getToken();
-      if (token === null) return CHECK_IN_HISTORY_STUB;
+      if (token === null) throw new Error('Session expired');
       return getCheckInHistory(token);
     },
     initialData: stubMode ? CHECK_IN_HISTORY_STUB : undefined,
@@ -316,7 +316,7 @@ export function useAssessmentSessions(): UseQueryResult<AssessmentSessionData[]>
     queryFn: async (): Promise<AssessmentSessionData[]> => {
       if (stubMode) return ASSESSMENT_SESSIONS_STUB;
       const token = await getToken();
-      if (token === null) return ASSESSMENT_SESSIONS_STUB;
+      if (token === null) throw new Error('Session expired');
       return getAssessmentSessions(token);
     },
     initialData: stubMode ? ASSESSMENT_SESSIONS_STUB : undefined,

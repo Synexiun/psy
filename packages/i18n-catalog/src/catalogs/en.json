@@ -125,7 +125,7 @@
     "title": "Patterns",
     "subtitle": "Behavioral patterns detected from your check-ins",
     "activeHeading": "Active insights",
-    "empty": "No patterns detected yet â€” keep logging check-ins",
+    "empty": "No patterns detected yet — keep logging check-ins",
     "confidenceLabel": "Confidence",
     "detectedLabel": "Detected signals",
     "viewDetails": "View details",
@@ -189,8 +189,8 @@
     "openTool": "Open a coping tool",
     "logAnother": "Log another check-in",
     "needHelp": "Need immediate help?",
-    "offlineQueue": "{count} check-in{count, plural, one {} other {s}} saved â€” will sync when online",
-    "offlineSaved": "Saved for later â€” will sync when you're back online",
+    "offlineQueue": "{count} check-in{count, plural, one {} other {s}} saved — will sync when online",
+    "offlineSaved": "Saved for later — will sync when you're back online",
     "triggers": {
       "stress": "Stress",
       "boredom": "Boredom",
@@ -249,7 +249,7 @@
       },
       "urgeSurfing": {
         "name": "Urge Surfing",
-        "description": "Observe the urge like a wave â€” it rises, peaks, and passes.",
+        "description": "Observe the urge like a wave — it rises, peaks, and passes.",
         "duration": "6"
       },
       "stopTechnique": {
@@ -264,7 +264,7 @@
       },
       "delayDistract": {
         "name": "Delay & Distract",
-        "description": "Commit to waiting 10 minutes â€” urges nearly always pass.",
+        "description": "Commit to waiting 10 minutes — urges nearly always pass.",
         "duration": "5"
       }
     }
@@ -315,7 +315,7 @@
       "safetyMessage": "You mentioned thoughts of self-harm. You don't have to face this alone.",
       "crisisLink": "See crisis resources",
       "clinicalDisclaimer": "This assessment is not a substitute for professional clinical evaluation.",
-      "submitting": "Submittingâ€¦",
+      "submitting": "Submitting…",
       "submitError": "Something went wrong. Please try again.",
       "answerRequired": "Please select an answer before continuing.",
       "descriptions": {
@@ -338,7 +338,7 @@
     "title": "Reports",
     "subtitle": "Your progress over time, by period",
     "periodsHeading": "Report periods",
-    "empty": "No reports yet â€” check back after your first assessment",
+    "empty": "No reports yet — check back after your first assessment",
     "scoreStart": "Start",
     "scoreEnd": "End",
     "resilience": "Resilience",
@@ -429,7 +429,7 @@
     "articles": {
       "howItWorks": "How It Works",
       "howItWorksExcerpt": "A plain-language explanation of the urge-behavior cycle and how Discipline OS supports you.",
-      "howItWorksBody": "Urges are brief. They typically peak within 15â€“20 minutes and then subside â€” whether or not you act on them. The Discipline OS check-in captures that moment so you can learn your own patterns over time.",
+      "howItWorksBody": "Urges are brief. They typically peak within 15â€“20 minutes and then subside — whether or not you act on them. The Discipline OS check-in captures that moment so you can learn your own patterns over time.",
       "assessmentsExplained": "Assessments Explained",
       "assessmentsExplainedExcerpt": "What PHQ-9, GAD-7, and the other validated scales measure and why they matter.",
       "assessmentsExplainedBody": "Validated psychometric instruments give you and your care team an objective window into how you are doing. PHQ-9 measures depression severity; GAD-7 measures anxiety; WHO-5 measures wellbeing. Scores are always shown in standardized format so they can be compared with published research.",
@@ -437,10 +437,10 @@
       "afterALapseExcerpt": "A lapse is not a failure. Here is how to use it as information.",
       "afterALapseBody": "Slipping once does not erase your progress. Resilience is measured in days of effort, not in days without any urge. The compassion-first framing here is intentional: shame is a high-risk state, not a motivator.",
       "urgeSurfing": "Urge Surfing",
-      "urgeSurfingExcerpt": "Ride the wave rather than fighting it â€” a mindfulness-based urge technique.",
+      "urgeSurfingExcerpt": "Ride the wave rather than fighting it — a mindfulness-based urge technique.",
       "urgeSurfingBody": "Urge surfing treats an urge like an ocean wave: it rises, crests, and falls on its own. Instead of suppressing or acting on the urge, you observe it with curiosity. Notice where you feel it in your body. Name it. Watch it shift.",
       "cognitiveDefusion": "Cognitive Defusion",
-      "cognitiveDefusionExcerpt": "See thoughts as events, not facts â€” the core ACT technique.",
+      "cognitiveDefusionExcerpt": "See thoughts as events, not facts — the core ACT technique.",
       "cognitiveDefusionBody": "Cognitive defusion creates distance between you and your thoughts. Instead of 'I need to use,' you practice 'I am having the thought that I need to use.' That small shift weakens the thought's grip.",
       "implementationIntentions": "Implementation Intentions",
       "implementationIntentionsExcerpt": "If-then plans that make coping automatic when stress peaks.",
@@ -450,18 +450,18 @@
       "boxBreathingBody": "Inhale for 4 counts. Hold for 4. Exhale for 4. Hold for 4. Repeat 4 cycles. This activates the parasympathetic nervous system and reduces cortisol within minutes.",
       "bodyScan": "Body Scan",
       "bodyScanExcerpt": "A progressive relaxation technique that restores presence.",
-      "bodyScanBody": "Lie or sit comfortably. Starting at your feet, bring gentle attention to each area of your body â€” noticing sensation without judgment. Move slowly upward. This practice interrupts the anxiety loop that drives urges.",
+      "bodyScanBody": "Lie or sit comfortably. Starting at your feet, bring gentle attention to each area of your body — noticing sensation without judgment. Move slowly upward. This practice interrupts the anxiety loop that drives urges.",
       "selfCompassion": "Self-Compassion",
       "selfCompassionExcerpt": "Kristen Neff's three-component model applied to recovery.",
       "selfCompassionBody": "Self-compassion has three components: mindfulness (noticing suffering without exaggerating it), common humanity (recognizing that struggle is part of the shared human experience), and self-kindness (treating yourself as you would a good friend).",
       "gettingStarted": "Getting Started",
-      "gettingStartedExcerpt": "Your first week with Discipline OS â€” what to do and what to expect.",
-      "gettingStartedBody": "Start with one check-in per day. You do not need to log every urge â€” just log honestly when you do. The app learns your patterns from real data, not from perfect data.",
+      "gettingStartedExcerpt": "Your first week with Discipline OS — what to do and what to expect.",
+      "gettingStartedBody": "Start with one check-in per day. You do not need to log every urge — just log honestly when you do. The app learns your patterns from real data, not from perfect data.",
       "tippTechnique": "TIPP Technique",
-      "tippTechniqueExcerpt": "Temperature, Intense exercise, Paced breathing, Progressive relaxation â€” the DBT crisis toolkit.",
+      "tippTechniqueExcerpt": "Temperature, Intense exercise, Paced breathing, Progressive relaxation — the DBT crisis toolkit.",
       "tippTechniqueBody": "TIPP skills work by changing your physiology quickly. Cold water on the face activates the dive reflex. Intense exercise burns off adrenaline. Paced breathing slows the heart rate. Use TIPP when emotion is so high that cognitive skills cannot get traction.",
       "contactAHuman": "Contact a Human",
-      "contactAHumanExcerpt": "When to reach out â€” and how to make it easier before you need it.",
+      "contactAHumanExcerpt": "When to reach out — and how to make it easier before you need it.",
       "contactAHumanBody": "Identify one person you trust before you need them. Tell them you may call in a crisis. Rehearse the call in your head. The crisis resources in the Help section are also available 24/7.",
       "safetyResources": "Safety Resources",
       "safetyResourcesExcerpt": "Free, confidential support lines available around the clock.",
@@ -486,11 +486,11 @@
       "insights": "Insights",
       "allPatterns": "All patterns",
       "dailyTip": "Daily tip",
-      "dailyTipBody": "When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves â€” most pass within 3â€“5 minutes.",
+      "dailyTipBody": "When an urge rises, wait 60 seconds before acting. Urges peak and fall like waves — most pass within 3â€“5 minutes.",
       "sidebarLabel": "Dashboard sidebar"
     },
     "patterns": {
-      "empty": "No patterns detected yet. Keep checking in â€” insights appear with more data."
+      "empty": "No patterns detected yet. Keep checking in — insights appear with more data."
     }
   },
   "stateIndicator": {
@@ -575,6 +575,10 @@
     "dismiss": "Dismiss",
     "dismissAriaLabel": "Dismiss offline status panel"
   },
+  "errors": {
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "submitFailed": "Unable to save. Please try again."
+  },
   "journalNew": {
     "draftRestored": "Restored unsaved draft",
     "editorAriaLabel": "Journal entry",
@@ -586,6 +590,7 @@
     "moodLegend": "How are you feeling?",
     "moodOptionalHint": "(optional, up to {max})",
     "moodGroupAriaLabel": "Mood tags",
+    "saveError": "Unable to save entry. Please try again.",
     "discard": "Discard",
     "saveEntry": "Save entry",
     "mood": {

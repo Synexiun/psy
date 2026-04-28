@@ -86,7 +86,7 @@ export function BottomNav({
   return (
     <nav
       aria-label="Main navigation"
-      className={`fixed bottom-0 inset-x-0 z-40 border-t border-border-subtle bg-surface-primary ${className}`.trim()}
+      className={`fixed bottom-0 inset-x-0 z-40 border-t border-border-subtle bg-surface-primary pb-[env(safe-area-inset-bottom)] ${className}`.trim()}
     >
       <div className="flex h-16 items-stretch">
         {items.map((item) => {

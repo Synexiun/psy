@@ -48,7 +48,7 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
         >
           <SidebarNav locale={locale} />
         </aside>
-        <main className="flex-1 overflow-y-auto pb-24 lg:pb-8">
+        <main className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8">
           <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
             {children}
           </div>

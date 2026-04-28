@@ -10,6 +10,7 @@ import { Button, Card } from '@disciplineos/design-system';
 import { UrgeSlider } from '@disciplineos/design-system/clinical/UrgeSlider';
 import { submitCheckIn } from '@/lib/api';
 import { useOfflineQueue } from '@/hooks/useOfflineQueue';
+import { usePhiAudit } from '@/hooks/usePhiAudit';
 
 // Non-display constants (not i18n strings)
 const COPY = {
@@ -50,6 +51,7 @@ function CheckInInner({ locale }: { locale: string }) {
   const t = useTranslations();
   const { getToken } = useAuth();
   const router = useRouter();
+  usePhiAudit('/check-in');
 
   const [intensity, setIntensity] = useState(0);
   const [selectedTriggers, setSelectedTriggers] = useState<Set<TriggerTag>>(new Set());

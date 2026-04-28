@@ -50,9 +50,8 @@ export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
   const config = { label, tone, message };
 
   return (
-    <div
+    <section
       className="flex items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm"
-      role="img"
       aria-label={t('ariaLabel', { label: config.label })}
     >
       <div>
@@ -77,6 +76,6 @@ export function StateIndicator({ data, isLoading }: StateIndicatorProps) {
         ].join(' ')}
         aria-hidden="true"
       />
-    </div>
+    </section>
   );
 }

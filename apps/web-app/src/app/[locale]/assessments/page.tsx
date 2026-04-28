@@ -85,12 +85,13 @@ const INSTRUMENT_METADATA: Omit<AssessmentInstrument, 'lastDate' | 'lastScore' |
 ];
 
 
-function formatDate(iso: string): string {
+function formatDate(iso: string, locale: string): string {
   try {
-    return new Intl.DateTimeFormat('en', {
+    return new Intl.DateTimeFormat(locale, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
+      numberingSystem: 'latn',
     }).format(new Date(iso));
   } catch {
     return iso;
@@ -164,7 +165,7 @@ function AssessmentCard({
           <>
             <p className="text-xs text-ink-quaternary">
               {t('assessments.lastCompleted')}:{' '}
-              <span className="text-ink-secondary font-medium">{formatDate(instrument.lastDate!)}</span>
+              <span className="text-ink-secondary font-medium">{formatDate(instrument.lastDate!, locale)}</span>
             </p>
             {instrument.lastSeverity && (
               <p className="text-xs text-ink-quaternary">

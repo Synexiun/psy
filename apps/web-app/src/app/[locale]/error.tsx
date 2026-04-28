@@ -76,6 +76,14 @@ export default function LocaleError({ error, reset }: ErrorPageProps): React.JSX
           Go home
         </a>
       </div>
+
+      {/* Crisis link — hardcoded because locale is unavailable in an error boundary */}
+      <a
+        href="/en/crisis"
+        className="mt-6 text-sm font-medium text-signal-crisis underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 rounded"
+      >
+        I need help now
+      </a>
     </main>
   );
 }

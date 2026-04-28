@@ -225,6 +225,8 @@ function JournalNewInner({ locale }: { locale: string }) {
       });
 
       if (!response.ok) {
+        // Show a generic message to the user; log the raw detail for observability.
+        // Never surface raw API error strings directly — they may contain server internals.
         let detail = `HTTP ${response.status}`;
         try {
           const body = (await response.json()) as { detail?: string };
@@ -232,7 +234,8 @@ function JournalNewInner({ locale }: { locale: string }) {
         } catch {
           // non-JSON body — keep default
         }
-        throw new Error(detail);
+        console.error('[journal/new] save failed:', detail);
+        throw new Error(tj('saveError'));
       }
 
       // Success — clear the draft and navigate to the listing
@@ -295,10 +298,16 @@ function JournalNewInner({ locale }: { locale: string }) {
         </nav>
 
         {/* Page heading */}
-        <header>
+        <header className="flex items-start justify-between gap-4">
           <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">
             {t('journal.newEntry')}
           </h1>
+          <a
+            href={`/${locale}/crisis`}
+            className="shrink-0 text-sm font-medium text-signal-crisis hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-crisis/30 rounded transition-opacity"
+          >
+            {t('nav.crisis')}
+          </a>
         </header>
 
         {/* Restored-draft banner */}
