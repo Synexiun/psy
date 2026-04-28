@@ -242,8 +242,14 @@ function JournalNewInner({ locale }: { locale: string }) {
       clearDraft();
       router.push(`/${locale}/journal`);
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Unable to save entry. Please try again.';
+      const isOffline =
+        !navigator.onLine ||
+        (err instanceof TypeError && err.message.toLowerCase().includes('fetch'));
+      const message = isOffline
+        ? tj('offlineDraftSaved')
+        : err instanceof Error
+          ? err.message
+          : tj('saveError');
       setSubmitError(message);
       setIsSubmitting(false);
     }

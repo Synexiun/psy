@@ -200,7 +200,7 @@ function AssessmentCard({
 
 function AssessmentsInner({ locale }: { locale: string }) {
   const t = useTranslations();
-  const { data: sessions } = useAssessmentSessions();
+  const { data: sessions, isLoading } = useAssessmentSessions();
 
   // Merge latest session data into static instrument metadata.
   const instruments: AssessmentInstrument[] = useMemo(() => {
@@ -245,14 +245,26 @@ function AssessmentsInner({ locale }: { locale: string }) {
             Available assessments
           </h2>
           <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
-            {instruments.map((instrument) => (
-              <AssessmentCard
-                key={instrument.id}
-                instrument={instrument}
-                catalogKey={INSTRUMENT_CATALOG_KEY[instrument.id] ?? 'phq9'}
-                locale={locale}
-              />
-            ))}
+            {isLoading
+              ? Array.from({ length: 5 }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm"
+                    aria-hidden="true"
+                  >
+                    <div className="h-5 w-24 animate-pulse rounded bg-border-subtle" />
+                    <div className="mt-2 h-3 w-40 animate-pulse rounded bg-border-subtle" />
+                    <div className="mt-4 h-10 w-full animate-pulse rounded bg-border-subtle" />
+                  </div>
+                ))
+              : instruments.map((instrument) => (
+                  <AssessmentCard
+                    key={instrument.id}
+                    instrument={instrument}
+                    catalogKey={INSTRUMENT_CATALOG_KEY[instrument.id] ?? 'phq9'}
+                    locale={locale}
+                  />
+                ))}
           </div>
         </section>
 

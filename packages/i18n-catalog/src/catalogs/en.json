@@ -591,6 +591,7 @@
     "moodOptionalHint": "(optional, up to {max})",
     "moodGroupAriaLabel": "Mood tags",
     "saveError": "Unable to save entry. Please try again.",
+    "offlineDraftSaved": "You're offline — your draft is saved locally and will save when you reconnect.",
     "discard": "Discard",
     "saveEntry": "Save entry",
     "mood": {

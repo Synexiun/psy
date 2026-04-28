@@ -592,6 +592,7 @@
     "moodOptionalHint": "__NEEDS_REVIEW__: (optional, up to {max})",
     "moodGroupAriaLabel": "__NEEDS_REVIEW__: Mood tags",
     "saveError": "__NEEDS_REVIEW__: Unable to save entry. Please try again.",
+    "offlineDraftSaved": "__NEEDS_REVIEW__: You're offline — your draft is saved locally and will save when you reconnect.",
     "discard": "__NEEDS_REVIEW__: Discard",
     "saveEntry": "__NEEDS_REVIEW__: Save entry",
     "mood": {

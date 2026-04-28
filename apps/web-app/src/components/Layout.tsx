@@ -32,6 +32,13 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-primary">
+      {/* Skip navigation — WCAG 2.4.1 bypass blocks */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-accent-bronze focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white focus:outline-none"
+      >
+        Skip to main content
+      </a>
       <TopBar
         wordmark={<WordmarkSvg />}
         locale={locale}
@@ -48,7 +55,7 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
         >
           <SidebarNav locale={locale} />
         </aside>
-        <main className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8">
+        <main id="main-content" className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8">
           <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
             {children}
           </div>
