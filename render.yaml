@@ -63,13 +63,14 @@ services:
       - key: ALLOWED_ORIGINS
         sync: false
 
+  - type: redis
+    name: discipline-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList: []
+
 databases:
   - name: discipline-db
     plan: starter
     databaseName: discipline
     user: discipline
-
-  - type: redis
-    name: discipline-redis
-    plan: starter
-    maxmemoryPolicy: allkeys-lru
