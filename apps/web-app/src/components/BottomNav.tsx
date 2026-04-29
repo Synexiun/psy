@@ -86,5 +86,6 @@ export function BottomNav({ locale }: AppBottomNavProps): React.ReactElement {
     return undefined;
   }
 
-  return <BottomNavPrimitive items={items} activeValue={resolveActiveValue()} />;
+  const activeValue = resolveActiveValue();
+  return <BottomNavPrimitive items={items} {...(activeValue !== undefined && { activeValue })} />;
 }

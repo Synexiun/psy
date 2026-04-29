@@ -29,7 +29,9 @@ function getDb(): Promise<IDBPDatabase> {
       throw err;
     });
   }
-  return dbPromise;
+  // dbPromise is guaranteed non-null here: we either just assigned it
+  // or the guard confirmed it was already set.
+  return dbPromise!;
 }
 
 export async function enqueueCheckIn(payload: Omit<QueuedCheckIn, 'id'>): Promise<void> {

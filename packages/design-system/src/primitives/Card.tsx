@@ -77,7 +77,6 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
     const effectiveTone = tone !== undefined ? (toneCls[tone] ?? '') : '';
 
     return (
-      // @ts-expect-error — polymorphic element: Tag is constrained to CardAs ('div'|'article'|'section')
       <Tag
         ref={ref}
         className={`${base} ${paddingCls[padding]} ${shadowCls[shadow]} ${effectiveTone} ${hoverCls} ${className}`.trim()}

@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import { SignUp } from '@clerk/nextjs';
 import { setRequestLocale } from 'next-intl/server';
 import Link from 'next/link';
+
+export const metadata: Metadata = { title: 'Create Account' };
 
 export default async function SignUpPage({
   params,

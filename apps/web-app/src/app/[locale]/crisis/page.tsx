@@ -6,10 +6,16 @@
  * from apps/web-crisis/out/ — the web-crisis static export is single-page-per-locale
  * (no crisis/ subdirectory), so the locale root IS the crisis page.
  */
+import type { Metadata } from 'next';
 import { useTranslations } from 'next-intl';
 import { setRequestLocale } from 'next-intl/server';
 import { resolveEntry, type Locale as SafetyLocale } from '@disciplineos/safety-directory';
 import { type Locale } from '@disciplineos/i18n-catalog';
+
+export const metadata: Metadata = {
+  title: 'Crisis Support',
+  description: 'Immediate crisis support resources and emergency contacts. You are not alone.',
+};
 
 export default async function CrisisPage({
   params,

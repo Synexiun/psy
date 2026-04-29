@@ -1,6 +1,9 @@
+import type { Metadata } from 'next';
 import { SignIn } from '@clerk/nextjs';
 import { setRequestLocale } from 'next-intl/server';
 import Link from 'next/link';
+
+export const metadata: Metadata = { title: 'Sign In' };
 
 export default async function SignInPage({
   params,

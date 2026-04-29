@@ -1,6 +1,6 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import createMiddleware from 'next-intl/middleware';
-import { NextResponse } from 'next/server';
+import { NextResponse, NextRequest } from 'next/server';
 
 import { routing } from './i18n/routing';
 
@@ -46,6 +46,7 @@ function buildCsp(nonce: string): string {
     "connect-src 'self' https://*.clerk.accounts.dev https://api.disciplineos.com",
     "frame-src https://challenges.cloudflare.com",
     "worker-src 'self'",
+    "object-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -77,7 +78,7 @@ export default clerkMiddleware((auth, req) => {
 
   // Run next-intl with the augmented request headers.
   const intlResponse = intl(
-    new Request(req.url, { headers: requestHeaders, method: req.method }),
+    new NextRequest(req.url, { headers: requestHeaders, method: req.method }),
   );
 
   // Attach the CSP header to whatever response next-intl produced (could be a

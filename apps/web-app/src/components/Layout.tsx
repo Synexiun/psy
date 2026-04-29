@@ -9,6 +9,7 @@ import { BottomNav } from './BottomNav';
 import { WordmarkSvg } from './WordmarkSvg';
 import { NotificationsDrawer } from './NotificationsDrawer';
 import { OfflineIndicator, useIsOnline } from './OfflineIndicator';
+import { RouteAnnouncer } from './RouteAnnouncer';
 import { useNotificationCount } from '@/hooks/useNotificationCount';
 import * as React from 'react';
 
@@ -32,6 +33,7 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
 
   return (
     <div className="flex min-h-screen flex-col bg-surface-primary">
+      <RouteAnnouncer />
       {/* Skip navigation — WCAG 2.4.1 bypass blocks */}
       <a
         href="#main-content"
@@ -55,7 +57,7 @@ export function Layout({ children, locale }: LayoutProps): React.ReactElement {
         >
           <SidebarNav locale={locale} />
         </aside>
-        <main id="main-content" className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8">
+        <main id="main-content" tabIndex={-1} className="flex-1 overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-8 focus:outline-none">
           <div className="mx-auto max-w-5xl px-4 py-6 sm:px-6 lg:py-8">
             {children}
           </div>

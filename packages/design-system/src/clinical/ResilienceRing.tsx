@@ -82,7 +82,7 @@ export function ResilienceRing({
         color="var(--color-accent-bronze)"
         label={label}
         sublabel="days"
-        ariaLabel={ariaLabel}
+        {...(ariaLabel !== undefined && { ariaLabel })}
       />
     </div>
   );

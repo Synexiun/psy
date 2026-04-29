@@ -97,7 +97,7 @@ function CheckInInner({ locale }: { locale: string }) {
           await enqueue({
             intensity,
             triggerTags: Array.from(selectedTriggers),
-            notes: notes || undefined,
+            ...(notes && { notes }),
           });
           setOfflineQueued(true);
           setSubmitted(true);

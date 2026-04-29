@@ -57,7 +57,7 @@ test.describe('Dashboard per locale', () => {
       });
 
       test('renders state indicator badge', async ({ page }) => {
-        const badge = page.locator('[role="img"][aria-label^="Current state"]').first();
+        const badge = page.getByRole('region', { name: /current state/i }).first();
         await expect(badge).toBeVisible();
       });
 

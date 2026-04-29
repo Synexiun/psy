@@ -80,7 +80,7 @@ function DashboardInner({ locale }: { locale: string }) {
           <h2 id="state-heading" className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-quaternary">
             {t('common.state.online')}
           </h2>
-          <StateIndicator data={state.data} isLoading={state.isLoading} />
+          <StateIndicator data={state.data ?? undefined} isLoading={state.isLoading} />
         </section>
 
         <section aria-labelledby="streak-heading" data-testid="dashboard-hero">

@@ -177,7 +177,7 @@ export function useStreak(): UseQueryResult<StreakData> {
       if (token === null) throw new Error('Session expired');
       return getStreakState(token);
     },
-    initialData: stubMode ? STREAK_STUB : undefined,
+    ...(stubMode && { initialData: STREAK_STUB }),
     staleTime: 30_000,
     retry: 2,
   });
@@ -199,7 +199,7 @@ export function usePatterns(): UseQueryResult<PatternData[]> {
       if (token === null) throw new Error('Session expired');
       return getPatterns(token);
     },
-    initialData: stubMode ? PATTERNS_STUB : undefined,
+    ...(stubMode && { initialData: PATTERNS_STUB }),
     staleTime: 30_000,
     retry: 2,
   });
@@ -222,7 +222,7 @@ export function useStateEstimate(): UseQueryResult<StateEstimateData | null> {
       if (token === null) throw new Error('Session expired');
       return getStateEstimate(token);
     },
-    initialData: stubMode ? STATE_STUB : undefined,
+    ...(stubMode && { initialData: STATE_STUB }),
     staleTime: 30_000,
     retry: 2,
   });
@@ -244,7 +244,7 @@ export function useJournalEntries(): UseQueryResult<JournalData> {
       if (token === null) throw new Error('Session expired');
       return getJournalEntries(token);
     },
-    initialData: stubMode ? JOURNAL_STUB : undefined,
+    ...(stubMode && { initialData: JOURNAL_STUB }),
     staleTime: 30_000,
     retry: 2,
   });
@@ -268,7 +268,7 @@ export function useCheckInHistory(): UseQueryResult<CheckInHistoryData> {
       if (token === null) throw new Error('Session expired');
       return getCheckInHistory(token);
     },
-    initialData: stubMode ? CHECK_IN_HISTORY_STUB : undefined,
+    ...(stubMode && { initialData: CHECK_IN_HISTORY_STUB }),
     staleTime: 30_000,
     retry: 2,
   });
@@ -317,7 +317,7 @@ export function useAssessmentSessions(): UseQueryResult<AssessmentSessionData[]>
       if (token === null) throw new Error('Session expired');
       return getAssessmentSessions(token);
     },
-    initialData: stubMode ? ASSESSMENT_SESSIONS_STUB : undefined,
+    ...(stubMode && { initialData: ASSESSMENT_SESSIONS_STUB }),
     staleTime: 30_000,
     retry: 2,
   });
