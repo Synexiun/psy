@@ -25,20 +25,6 @@ import { Layout } from '@/components/Layout';
 import { Button, Card } from '@disciplineos/design-system';
 
 // ---------------------------------------------------------------------------
-// Static params — tells Next.js which [instrument] slugs are valid at build time.
-// ---------------------------------------------------------------------------
-
-export function generateStaticParams(): Array<{ instrument: string }> {
-  return [
-    { instrument: 'phq-9' },
-    { instrument: 'gad-7' },
-    { instrument: 'who-5' },
-    { instrument: 'audit-c' },
-    { instrument: 'pss-10' },
-  ];
-}
-
-// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
