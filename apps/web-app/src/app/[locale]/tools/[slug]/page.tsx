@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layout } from '@/components/Layout';
 import { Card, Badge, Button } from '@disciplineos/design-system';
 import type { ToolCategory, CopingTool } from '@/lib/tools-catalog';
-import { TOOLS, TOOL_IDS } from '@/lib/tools-catalog';
+import { TOOLS } from '@/lib/tools-catalog';
 
 function CategoryIcon({ category }: { category: ToolCategory }): React.ReactElement {
   switch (category) {
@@ -56,14 +56,6 @@ const CATEGORY_BADGE_TONE: Record<ToolCategory, 'neutral' | 'calm' | 'warning' |
   body: 'warning',
   mindfulness: 'success',
 };
-
-// ---------------------------------------------------------------------------
-// generateStaticParams — all 8 tool slugs are statically known.
-// ---------------------------------------------------------------------------
-
-export function generateStaticParams() {
-  return TOOL_IDS.map((id) => ({ slug: id }));
-}
 
 // ---------------------------------------------------------------------------
 // Box Breathing — 4-phase animated timer

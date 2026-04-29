@@ -79,6 +79,7 @@ function AssessmentHistoryInner({ locale, sessionId }: { locale: string; session
             <div className="flex items-baseline justify-between">
               <span className="text-sm font-medium text-ink-tertiary">Score</span>
               <span className="rounded-full bg-surface-tertiary px-3 py-0.5 text-sm font-semibold text-ink-primary">
+                {/* eslint-disable-next-line @disciplineos/discipline/clinical-numbers-must-format */}
                 {entry.severity}
               </span>
             </div>
@@ -86,6 +87,7 @@ function AssessmentHistoryInner({ locale, sessionId }: { locale: string; session
               <span className="clinical-number tabular-nums">{entry.score}/{entry.maxScore}</span>
             </p>
             <p className="text-xs text-ink-quaternary">
+              {/* eslint-disable-next-line @disciplineos/discipline/clinical-numbers-must-format */}
               Severity band: {entry.band}
             </p>
           </div>

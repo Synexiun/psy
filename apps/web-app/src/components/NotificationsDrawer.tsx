@@ -15,7 +15,7 @@ export function NotificationsDrawer({ open, onClose }: NotificationsDrawerProps)
 
   React.useEffect(() => {
     if (open) markAllRead();
-  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open, markAllRead]);
 
   return (
     <Sheet

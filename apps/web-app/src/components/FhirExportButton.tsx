@@ -12,7 +12,7 @@ interface FhirExportButtonProps {
   errorLabel: string;
 }
 
-export function FhirExportButton({ periodId, locale: _locale, label, stepUpLabel, errorLabel }: FhirExportButtonProps): React.ReactElement {
+export function FhirExportButton({ periodId, label, stepUpLabel, errorLabel }: FhirExportButtonProps): React.ReactElement {
   const { getToken } = useAuth();
   const [status, setStatus] = useState<'idle' | 'loading' | 'step-up-required' | 'error'>('idle');
   const cancelledRef = useRef(false);

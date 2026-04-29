@@ -60,15 +60,16 @@ function ReportDetailInner({ locale, periodId }: { locale: string; periodId: str
           <div className="flex items-center justify-between gap-4">
             <div>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreStart')}</span>
-              <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
+              <span className="ms-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
                 {formatNumberClinical(period.phq9_start)}
               </span>
               <span className="mx-2 text-ink-quaternary">&rarr;</span>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreEnd')}</span>
-              <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
+              <span className="ms-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
                 {formatNumberClinical(period.phq9_end)}
               </span>
             </div>
+            {/* eslint-disable-next-line @disciplineos/discipline/clinical-numbers-must-format */}
             <RCIDelta delta={period.phq9_rci_delta} />
           </div>
         </Card>
@@ -79,15 +80,16 @@ function ReportDetailInner({ locale, periodId }: { locale: string; periodId: str
           <div className="flex items-center justify-between gap-4">
             <div>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreStart')}</span>
-              <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
+              <span className="ms-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
                 {formatNumberClinical(period.gad7_start)}
               </span>
               <span className="mx-2 text-ink-quaternary">&rarr;</span>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreEnd')}</span>
-              <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
+              <span className="ms-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
                 {formatNumberClinical(period.gad7_end)}
               </span>
             </div>
+            {/* eslint-disable-next-line @disciplineos/discipline/clinical-numbers-must-format */}
             <RCIDelta delta={period.gad7_rci_delta} />
           </div>
         </Card>

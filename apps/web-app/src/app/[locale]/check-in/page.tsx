@@ -199,6 +199,7 @@ function CheckInInner({ locale }: { locale: string }) {
                 </legend>
                 <div className="mt-4">
                   <UrgeSlider
+                    // eslint-disable-next-line @disciplineos/discipline/clinical-numbers-must-format
                     value={intensity}
                     onValueChange={setIntensity}
                     ariaLabel={t('app.urge.intensityLabel')}

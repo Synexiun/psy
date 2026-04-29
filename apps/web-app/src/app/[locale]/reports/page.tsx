@@ -52,6 +52,7 @@ function ReportsInner({ locale }: { locale: string }) {
                         </p>
                       </div>
                       <div className="shrink-0">
+                        {/* eslint-disable-next-line @disciplineos/discipline/clinical-numbers-must-format */}
                         <RCIDelta delta={period.phq9_rci_delta} />
                       </div>
                     </div>

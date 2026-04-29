@@ -112,3 +112,4 @@ local-data/
 *.mlpackage
 checkpoints/
 models/*.bin
+.vercel

@@ -26,8 +26,6 @@ export function ThemeSync(): null {
     const storedTheme = user.unsafeMetadata['theme'];
     if (typeof storedTheme === 'string' && storedTheme === resolvedTheme) return;
 
-    // Fire-and-forget: theme preference is non-critical UI state.
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     void user.update({
       unsafeMetadata: { ...user.unsafeMetadata, theme: resolvedTheme },
     });
