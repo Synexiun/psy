@@ -2,9 +2,9 @@
 
 import * as React from 'react';
 import { use } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
+import { BackBreadcrumb } from '@/components/BackBreadcrumb';
 import { Card, Badge } from '@disciplineos/design-system';
 import { InsightCard } from '@disciplineos/design-system';
 import { usePhiAudit } from '@/hooks/usePhiAudit';
@@ -41,7 +41,6 @@ function isKnownPatternType(v: string): v is KnownPatternType {
 function PatternDetailInner({ locale, patternId }: { locale: string; patternId: string }) {
   usePhiAudit('/patterns/[id]');
   const t = useTranslations();
-  const router = useRouter();
   const { data: patterns, isLoading } = usePatterns();
 
   const pattern = (patterns ?? []).find((p) => p.pattern_id === patternId);
@@ -65,29 +64,7 @@ function PatternDetailInner({ locale, patternId }: { locale: string; patternId: 
   return (
     <Layout locale={locale}>
       <div className="space-y-6 max-w-2xl mx-auto">
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb">
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/patterns`)}
-            className="inline-flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-accent-bronze transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-4 w-4"
-              aria-hidden="true"
-            >
-              <path d="M19 12H5M12 5l-7 7 7 7" />
-            </svg>
-            {t('patterns.title')}
-          </button>
-        </nav>
+        <BackBreadcrumb label={t('patterns.title')} href={`/${locale}/patterns`} />
 
         {/* Header */}
         <header>

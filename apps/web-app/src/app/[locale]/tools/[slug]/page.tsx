@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { notFound } from 'next/navigation';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Layout } from '@/components/Layout';
+import { BackBreadcrumb } from '@/components/BackBreadcrumb';
 import { Card, Badge, Button } from '@disciplineos/design-system';
 import type { ToolCategory, CopingTool } from '@/lib/tools-catalog';
 import { TOOLS } from '@/lib/tools-catalog';
@@ -545,16 +546,7 @@ function ToolDetailInner({ locale, slug }: { locale: string; slug: string }) {
   return (
     <Layout locale={locale}>
       <div className="space-y-6 max-w-2xl mx-auto">
-        {/* Back link */}
-        <nav aria-label="Breadcrumb">
-          <a
-            href={`/${locale}/tools`}
-            className="inline-flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-accent-bronze transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
-          >
-            <span aria-hidden="true">←</span>
-            {t('nav.tools')}
-          </a>
-        </nav>
+        <BackBreadcrumb label={t('nav.tools')} href={`/${locale}/tools`} />
 
         {/* Tool header */}
         <header className="flex items-start gap-4">

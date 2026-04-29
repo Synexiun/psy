@@ -2,11 +2,11 @@
 
 import * as React from 'react';
 import { use } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
 import { Card, Badge } from '@disciplineos/design-system';
 import { usePhiAudit } from '@/hooks/usePhiAudit';
+import { BackBreadcrumb } from '@/components/BackBreadcrumb';
 
 // ---------------------------------------------------------------------------
 // Stub entry — replaced by useQuery(journalEntry, id) in Phase 5
@@ -41,7 +41,6 @@ function formatEntryDate(iso: string): string {
 function JournalEntryInner({ locale, entryId }: { locale: string; entryId: string }) {
   usePhiAudit('/journal/[id]');
   const t = useTranslations();
-  const router = useRouter();
 
   const entry: JournalEntryDetail = {
     id: entryId,
@@ -53,19 +52,7 @@ function JournalEntryInner({ locale, entryId }: { locale: string; entryId: strin
   return (
     <Layout locale={locale}>
       <div className="space-y-6 max-w-2xl mx-auto">
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb">
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/journal`)}
-            className="inline-flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-accent-bronze transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
-              <path d="M19 12H5M12 5l-7 7 7 7"/>
-            </svg>
-            {t('nav.journal')}
-          </button>
-        </nav>
+        <BackBreadcrumb label={t('nav.journal')} href={`/${locale}/journal`} />
 
         {/* Entry header */}
         <header>

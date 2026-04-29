@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { useTheme } from 'next-themes';
 import { Layout } from '@/components/Layout';
 import { Card } from '@disciplineos/design-system';
+import { BackBreadcrumb } from '@/components/BackBreadcrumb';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -158,29 +159,7 @@ function AppearanceInner({ locale }: { locale: string }): React.ReactElement {
   return (
     <Layout locale={locale}>
       <div className="space-y-6">
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb">
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/settings`)}
-            className="inline-flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-ink-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded min-h-[44px] transition-colors"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-4 w-4"
-              aria-hidden="true"
-            >
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            {t('nav.settings')}
-          </button>
-        </nav>
+        <BackBreadcrumb label={t('nav.settings')} href={`/${locale}/settings`} />
 
         {/* Page header */}
         <header>

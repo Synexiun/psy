@@ -2,11 +2,11 @@
 
 import * as React from 'react';
 import { use } from 'react';
-import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
 import { Card } from '@disciplineos/design-system';
 import { useLibraryCategory } from '@/hooks/useLibrary';
+import { BackBreadcrumb } from '@/components/BackBreadcrumb';
 
 function LibraryCategoryInner({
   locale,
@@ -16,7 +16,6 @@ function LibraryCategoryInner({
   categorySlug: string;
 }) {
   const t = useTranslations();
-  const router = useRouter();
   const { category, isLoading } = useLibraryCategory(categorySlug);
 
   if (!category) {
@@ -34,29 +33,7 @@ function LibraryCategoryInner({
   return (
     <Layout locale={locale}>
       <div className="space-y-6">
-        {/* Breadcrumb */}
-        <nav aria-label="Breadcrumb">
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/library`)}
-            className="inline-flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-accent-bronze transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-bronze/30 rounded"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={1.75}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="h-4 w-4"
-              aria-hidden="true"
-            >
-              <path d="M19 12H5M12 5l-7 7 7 7" />
-            </svg>
-            {t('library.title')}
-          </button>
-        </nav>
+        <BackBreadcrumb label={t('library.title')} href={`/${locale}/library`} />
 
         <header>
           <h1 className="text-2xl font-semibold tracking-tight text-ink-primary">

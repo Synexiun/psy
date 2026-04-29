@@ -36,6 +36,7 @@ export * from './primitives/RingChart';
 export * from './primitives/BarChart';
 export * from './primitives/Banner';
 export * from './primitives/EmptyState';
+export * from './primitives/ErrorBoundary';
 export * from './clinical/RCIDelta';
 export * from './clinical/InsightCard';
 export * from './clinical/CompassionTemplate';
