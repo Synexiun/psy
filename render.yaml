@@ -1,0 +1,75 @@
+version: "1"
+
+# Discipline OS — Render Infrastructure Blueprint
+# Connect at: https://dashboard.render.com/select-repo → "Existing Blueprint"
+# After connecting, set the `sync: false` env vars in the dashboard.
+
+services:
+  - type: web
+    name: discipline-api
+    runtime: docker
+    dockerfilePath: services/api/Dockerfile
+    dockerContext: services/api
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: DISCIPLINE_ENV
+        value: prod
+      - key: LOG_LEVEL
+        value: INFO
+      - key: OTEL_SERVICE_NAME
+        value: discipline-api
+      - key: AWS_REGION
+        value: us-east-1
+      # Injected from managed Postgres below
+      - key: DATABASE_URL
+        fromDatabase:
+          name: discipline-db
+          property: connectionString
+      # TimescaleDB: same Postgres instance for now; upgrade to TimescaleDB Cloud
+      # by overriding this var in the dashboard once the extension is enabled.
+      - key: TIMESCALE_URL
+        fromDatabase:
+          name: discipline-db
+          property: connectionString
+      # Injected from managed Redis below
+      - key: REDIS_URL
+        fromService:
+          name: discipline-redis
+          type: redis
+          property: connectionString
+      # Secrets — set values in Render dashboard after first deploy
+      - key: CLERK_SECRET_KEY
+        sync: false
+      - key: CLERK_JWT_ISSUER
+        sync: false
+      - key: SERVER_SESSION_SECRET
+        sync: false
+      - key: AUDIT_CHAIN_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: S3_VOICE_BUCKET
+        sync: false
+      - key: S3_EXPORT_BUCKET
+        sync: false
+      - key: KMS_KEY_ID
+        sync: false
+      - key: ALLOWED_ORIGINS
+        sync: false
+
+databases:
+  - name: discipline-db
+    plan: starter
+    databaseName: discipline
+    user: discipline
+
+  - type: redis
+    name: discipline-redis
+    plan: starter
+    maxmemoryPolicy: allkeys-lru
