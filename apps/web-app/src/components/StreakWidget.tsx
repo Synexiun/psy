@@ -18,13 +18,17 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
 
   if (isLoading || !data) {
     return (
-      <div className="flex items-center gap-6 rounded-xl border border-border-subtle bg-surface-secondary p-6 shadow-sm">
-        <Skeleton variant="circle" height="120px" width="120px" />
-        <div className="flex-1 space-y-3">
-          <Skeleton variant="text" height="1.5rem" width="60%" />
-          <Skeleton variant="text" height="1rem" width="40%" />
-          <Skeleton variant="text" height="1rem" width="80%" />
-        </div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        {[0, 1].map((i) => (
+          <div key={i} className="flex items-center gap-5 rounded-xl border border-border-subtle bg-surface-secondary p-5 shadow-sm">
+            <Skeleton variant="circle" height="100px" width="100px" className="shrink-0" />
+            <div className="flex-1 space-y-2">
+              <Skeleton variant="text" height="1rem" width="60%" />
+              <Skeleton variant="text" height="0.875rem" width="80%" />
+              <Skeleton variant="text" height="0.75rem" width="50%" />
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -54,7 +58,7 @@ export function StreakWidget({ data, isLoading }: StreakWidgetProps) {
           </p>
           {data.continuous_streak_start && (
             <p className="mt-1 text-xs text-ink-tertiary">
-              {t('continuous.since', { date: new Date(data.continuous_streak_start).toLocaleDateString(locale) })}
+              {t('continuous.since', { date: new Intl.DateTimeFormat(locale, { dateStyle: 'medium', numberingSystem: 'latn' } as Intl.DateTimeFormatOptions).format(new Date(data.continuous_streak_start)) })}
             </p>
           )}
         </div>

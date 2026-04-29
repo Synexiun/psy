@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Layout } from '@/components/Layout';
 import { Card, RCIDelta } from '@disciplineos/design-system';
+import { formatNumberClinical } from '@disciplineos/i18n-catalog';
 import { usePhiAudit } from '@/hooks/usePhiAudit';
 import { useReportDetail } from '@/hooks/useReports';
 import { FhirExportButton } from '@/components/FhirExportButton';
@@ -60,12 +61,12 @@ function ReportDetailInner({ locale, periodId }: { locale: string; periodId: str
             <div>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreStart')}</span>
               <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
-                {period.phq9_start.toLocaleString('en', { useGrouping: false })}
+                {formatNumberClinical(period.phq9_start)}
               </span>
               <span className="mx-2 text-ink-quaternary">&rarr;</span>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreEnd')}</span>
               <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
-                {period.phq9_end.toLocaleString('en', { useGrouping: false })}
+                {formatNumberClinical(period.phq9_end)}
               </span>
             </div>
             <RCIDelta delta={period.phq9_rci_delta} />
@@ -79,12 +80,12 @@ function ReportDetailInner({ locale, periodId }: { locale: string; periodId: str
             <div>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreStart')}</span>
               <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
-                {period.gad7_start.toLocaleString('en', { useGrouping: false })}
+                {formatNumberClinical(period.gad7_start)}
               </span>
               <span className="mx-2 text-ink-quaternary">&rarr;</span>
               <span className="text-xs text-ink-quaternary">{t('reports.scoreEnd')}</span>
               <span className="ml-1 text-sm font-medium text-ink-primary clinical-number tabular-nums">
-                {period.gad7_end.toLocaleString('en', { useGrouping: false })}
+                {formatNumberClinical(period.gad7_end)}
               </span>
             </div>
             <RCIDelta delta={period.gad7_rci_delta} />
@@ -98,13 +99,13 @@ function ReportDetailInner({ locale, periodId }: { locale: string; periodId: str
             <div>
               <p className="text-xs text-ink-quaternary">{t('reports.resilienceDays')}</p>
               <p className="text-xl font-semibold text-ink-primary clinical-number tabular-nums">
-                {period.resilience_days.toLocaleString('en', { useGrouping: false })}
+                {formatNumberClinical(period.resilience_days)}
               </p>
             </div>
             <div>
               <p className="text-xs text-ink-quaternary">{t('reports.urgesHandled')}</p>
               <p className="text-xl font-semibold text-ink-primary clinical-number tabular-nums">
-                {period.urges_handled.toLocaleString('en', { useGrouping: false })}
+                {formatNumberClinical(period.urges_handled)}
               </p>
             </div>
           </div>

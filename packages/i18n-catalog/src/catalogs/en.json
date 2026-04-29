@@ -560,7 +560,8 @@
   "moodSparkline": {
     "heading": "Mood trend",
     "subtitle": "Last {count} check-ins",
-    "ariaLabel": "Mood trend over last {count} check-ins"
+    "ariaLabel": "Mood trend over last {count} check-ins",
+    "noDataYet": "No check-ins yet — start logging to see your mood trend."
   },
   "offlineIndicator": {
     "pillAriaOnline": "{count} check-in(s) pending sync",

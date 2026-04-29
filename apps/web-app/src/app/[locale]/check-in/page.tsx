@@ -259,6 +259,7 @@ function CheckInInner({ locale }: { locale: string }) {
                 placeholder={t('checkIn.notesPlaceholder')}
                 rows={3}
                 maxLength={COPY.notesMaxChars}
+                autoComplete="off"
                 className="mt-2 w-full resize-none rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm text-ink-primary placeholder-ink-quaternary focus:border-accent-bronze focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30 transition-colors"
               />
               <p

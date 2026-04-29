@@ -362,7 +362,8 @@ function JournalNewInner({ locale }: { locale: string }) {
               placeholder={tj('placeholder')}
               rows={8}
               maxLength={MAX_CHARS}
-              className="mt-3 w-full resize-y rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm text-ink-primary placeholder-ink-quaternary focus:border-accent-bronze focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30 transition-colors"
+              autoComplete="off"
+              className="mt-3 w-full resize-none rounded-lg border border-border-subtle bg-surface-primary px-3 py-2.5 text-sm text-ink-primary placeholder-ink-quaternary focus:border-accent-bronze focus:bg-surface-secondary focus:outline-none focus:ring-2 focus:ring-accent-bronze/30 transition-colors"
               aria-describedby="journal-char-count journal-word-count"
               disabled={isSubmitting}
             />

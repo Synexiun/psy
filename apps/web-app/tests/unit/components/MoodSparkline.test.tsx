@@ -1,10 +1,8 @@
 /**
  * Unit tests for MoodSparkline.
  *
- * MoodSparkline renders a skeleton during loading, falls back to MOOD_STUB
- * when data is absent or empty, and renders real intensities from data.items
- * when available. The "last N check-ins" counter uses the actual data length,
- * not a hard-coded constant.
+ * Renders a skeleton during loading, an empty state when data is absent or
+ * empty, and the real sparkline + last intensity when data.items is populated.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -12,7 +10,6 @@ import { render, screen } from '@testing-library/react';
 import { MoodSparkline } from '@/components/MoodSparkline';
 import type { CheckInHistory } from '@/lib/api';
 
-// next-intl requires NextIntlClientProvider context; mock for unit tests.
 vi.mock('next-intl', () => ({
   useTranslations: (namespace: string) => (key: string, params?: Record<string, unknown>) => {
     if (namespace === 'moodSparkline') {
@@ -21,6 +18,7 @@ vi.mock('next-intl', () => ({
         heading: 'Mood trend',
         subtitle: `Last ${count ?? '{count}'} check-ins`,
         ariaLabel: `Mood trend over last ${count ?? '{count}'} check-ins`,
+        noDataYet: 'No check-ins yet — start logging to see your mood trend.',
       };
       return catalog[key] ?? key;
     }
@@ -53,9 +51,7 @@ describe('MoodSparkline', () => {
 
   it('renders skeleton when isLoading is true', () => {
     const { container } = render(<MoodSparkline data={undefined} isLoading={true} />);
-    // Skeleton renders pulse animation elements — no "Mood trend" heading yet.
     expect(screen.queryByText('Mood trend')).toBeNull();
-    // The container should have animate-pulse elements.
     const pulseEls = container.querySelectorAll('.animate-pulse');
     expect(pulseEls.length).toBeGreaterThan(0);
   });
@@ -65,31 +61,28 @@ describe('MoodSparkline', () => {
     expect(screen.queryByRole('img')).toBeNull();
   });
 
-  // --- Stub / empty data fallback -------------------------------------------
+  // --- Empty state ----------------------------------------------------------
 
   it('renders "Mood trend" heading when not loading', () => {
     render(<MoodSparkline data={undefined} isLoading={false} />);
     expect(screen.getByText('Mood trend')).toBeInTheDocument();
   });
 
-  it('renders sparkline aria-label when data is undefined (uses MOOD_STUB, length 20)', () => {
+  it('renders empty state message when data is undefined', () => {
     render(<MoodSparkline data={undefined} isLoading={false} />);
-    // MOOD_STUB has 20 entries → "Mood trend over last 20 check-ins"
-    expect(
-      screen.getByRole('img', { name: /mood trend over last 20 check-ins/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/no check-ins yet/i)).toBeInTheDocument();
   });
 
-  it('renders "Last 20 check-ins" counter when using MOOD_STUB', () => {
-    render(<MoodSparkline data={undefined} isLoading={false} />);
-    expect(screen.getByText(/last 20 check-ins/i)).toBeInTheDocument();
-  });
-
-  it('falls back to MOOD_STUB when data.items is empty', () => {
+  it('renders empty state message when data.items is empty', () => {
     const empty = makeHistory([]);
     render(<MoodSparkline data={empty} isLoading={false} />);
-    // MOOD_STUB last value is 7.
-    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText(/no check-ins yet/i)).toBeInTheDocument();
+  });
+
+  it('does not render sparkline or denominator in empty state', () => {
+    render(<MoodSparkline data={undefined} isLoading={false} />);
+    expect(screen.queryByRole('img')).toBeNull();
+    expect(screen.queryByText(/\/\s*10/)).toBeNull();
   });
 
   // --- Real data rendering --------------------------------------------------
@@ -101,10 +94,15 @@ describe('MoodSparkline', () => {
   });
 
   it('renders the last intensity value from real data', () => {
-    // Last item in the array is displayed as the current intensity.
     const history = makeHistory([4, 6, 9]);
     render(<MoodSparkline data={history} isLoading={false} />);
     expect(screen.getByText('9')).toBeInTheDocument();
+  });
+
+  it('renders "/ 10" scale denominator when real data is present', () => {
+    const history = makeHistory([5, 7, 8]);
+    render(<MoodSparkline data={history} isLoading={false} />);
+    expect(screen.getByText(/\/\s*10/)).toBeInTheDocument();
   });
 
   it('sparkline aria-label reflects real data length', () => {
@@ -113,11 +111,6 @@ describe('MoodSparkline', () => {
     expect(
       screen.getByRole('img', { name: /mood trend over last 6 check-ins/i }),
     ).toBeInTheDocument();
-  });
-
-  it('renders "/ 10" scale denominator', () => {
-    render(<MoodSparkline data={undefined} isLoading={false} />);
-    expect(screen.getByText('/ 10')).toBeInTheDocument();
   });
 
   // --- Latin digits ---------------------------------------------------------

@@ -116,8 +116,6 @@ const JOURNAL_STUB: JournalData = {
   total: 2,
 };
 
-// Mirrors the MOOD_STUB array in MoodSparkline so the stub values are
-// consistent whether they come from the component default or this hook.
 const CHECK_IN_HISTORY_STUB: CheckInHistoryData = {
   items: [3, 4, 3, 5, 4, 6, 5, 7, 6, 8, 7, 6, 8, 9, 8, 7, 8, 9, 8, 7].map(
     (intensity, index) => ({
